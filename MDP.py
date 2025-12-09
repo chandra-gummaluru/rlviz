@@ -1,27 +1,39 @@
 import networkx as nx
 import numpy as np
 import matplotlib.pyplot as plt
-
+from jaxtyping import Array, Float16, Tuple, Int
+from typing import List
 #Without Numpy arrays for now. 
 #Will implement with Numpy arrays and add Exploration and Exploitation
 #Will implement with Policy Function Next
 
+class Action:
+    """
+    targets = [Next_States, Probabilities, Rewards]
+    """
+    def __init__(self, name: str, current_state: str, targets: List[Tuple[str, float, float]] =[] ):
+        self.name = name #What action are you?
+        self.current_state = current_state #What state you are at now
+        self.targets = targets #Tuple of next_state, probability, and the reward
+        self.total_probs = 0
 
-class ActionState:
-    def __init__(self, name: str):
+    def add_targets(self, target: Tuple[str, float, float]):
+        self.targets.append(target)
+        
+class State:
+    """
+    actions = [Actions]
+    """
+    def __init__(self, name: str, actions: List[str] = []):
         self.name = name
-        self.position = (0, 0)
-        self.value = 0
-
-class StateState:
-    def __init__(self, name: str):
-        self.name = name
-        self.position = (0, 0)
-        self.value = 0
-
-# class PolicyFunction: 
-#     def __init__(self):
-
+        self.actions = actions
+    
+    def add_actions(self, action: str):
+        self.actions.append(action)
+    
+    def get_actions(self):
+        return self.actions
+    
 class MDP:
     def __init__(self):
         self.states = []
@@ -30,18 +42,19 @@ class MDP:
         self.rewards = {} 
         self.gamma = 0.9
 
-    def add_state(self, state):
+    def add_state(self, state: str):
         self.states.add(state)
 
-    def add_action(self, action):
+    def add_action(self, action: str):
         self.actions.add(action)
 
-    def set_transition(self, state, action, next_state, probability):
+    def set_transition(self, state: str, action: str, next_state: str, probability: float):
         if state not in self.states:
             self.add_state(state)
 
         if next_state not in self.states:
             self.add_state(next_state)
+            
         if action not in self.actions:
             self.add_action(action)
 
