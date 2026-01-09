@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Diagnostic</title>
+</head>
+<body>
+    <h1>Loading Diagnostic</h1>
+    <div id="output"></div>
+    
+    <script>
+        const output = document.getElementById('output');
+        const log = (msg, isError) => {
+            const p = document.createElement('p');
+            p.textContent = msg;
+            p.style.color = isError ? 'red' : 'green';
+            output.appendChild(p);
+        };
+        
+        window.onerror = function(msg, url, line, col, error) {
+            log(`ERROR: ${msg} at ${url}:${line}:${col}`, true);
+            return false;
+        };
+        
+        log('Starting load test...');
+    </script>
+    
+    <!-- Load files in order -->
+    <script src="src/main/domain/nodesObj.js" onload="console.log('✓ nodesObj.js')" onerror="console.error('✗ nodesObj.js')"></script>
+    <script src="src/main/domain/stateNodes.js" onload="console.log('✓ stateNodes.js')" onerror="console.error('✗ stateNodes.js')"></script>
+    <script src="src/main/domain/actionNodes.js" onload="console.log('✓ actionNodes.js')" onerror="console.error('✗ actionNodes.js')"></script>
+    <script src="src/main/domain/edgeObj.js" onload="console.log('✓ edgeObj.js')" onerror="console.error('✗ edgeObj.js')"></script>
+    <script src="src/main/domain/graphObj.js" onload="console.log('✓ graphObj.js')" onerror="console.error('✗ graphObj.js')"></script>
+    <script src="src/main/domain/commandHistory.js" onload="console.log('✓ commandHistory.js')" onerror="console.error('✗ commandHistory.js')"></script>
+
+    <!-- CreateNode Use Case -->
+    <script src="src/main/use_case/createNode/createNodeInputBoundary.js"></script>
+    <script src="src/main/use_case/createNode/createNodeInputData.js"></script>
+    <script src="src/main/use_case/createNode/createNodeInteractor.js"></script>
+    <script src="src/main/use_case/createNode/createNodeOutputBoundary.js"></script>
+    <script src="src/main/use_case/createNode/createNodePresenter.js"></script>
+
+    <!-- CreateEdge Use Case -->
+    <script src="src/main/use_case/createEdge/createEdgeInputBoundary.js"></script>
+    <script src="src/main/use_case/createEdge/createEdgeInputData.js"></script>
+    <script src="src/main/use_case/createEdge/createEdgeInteractor.js"></script>
+    <script src="src/main/use_case/createEdge/createEdgeOutputBoundary.js"></script>
+    <script src="src/main/use_case/createEdge/createEdgePresenter.js"></script>
+
+    <!-- Undo Use Case -->
+    <script src="src/main/use_case/undo/undoInputBoundary.js"></script>
+    <script src="src/main/use_case/undo/undoInputData.js"></script>
+    <script src="src/main/use_case/undo/undoInteractor.js"></script>
+    <script src="src/main/use_case/undo/undoOutputBoundary.js"></script>
+    <script src="src/main/use_case/undo/undoPresenter.js"></script>
+
+    <script>
+        setTimeout(() => {
+            // Check if classes are defined
+            const classes = [
+                'CreateNodeInputBoundary', 'CreateNodeInputData', 'CreateNodeInteractor',
+                'CreateNodeOutputBoundary', 'CreateNodePresenter',
+                'CreateEdgeInputBoundary', 'CreateEdgeInputData', 'CreateEdgeInteractor',
+                'CreateEdgeOutputBoundary', 'CreateEdgePresenter',
+                'UndoInputBoundary', 'UndoInputData', 'UndoInteractor',
+                'UndoOutputBoundary', 'UndoPresenter'
+            ];
+            classes.forEach(cls => {
+                if (typeof window[cls] !== 'undefined') {
+                    log(`✓ ${cls} defined`);
+                } else {
+                    log(`✗ ${cls} NOT defined`, true);
+                }
+            });
+        }, 100);
+    </script>
+</body>
+</html>
