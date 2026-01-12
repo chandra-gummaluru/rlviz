@@ -1,15 +1,13 @@
-
 /**
  * Interactor for Undo use case
  * Contains the business logic for undoing the last operation
  */
-class UndoInteractor extends UndoInputBoundary {
+class UndoInteractor {
     /**
      * @param {CommandHistory} commandHistory - The command history to operate on
      * @param {UndoOutputBoundary} outputBoundary - The output boundary for presenting results
      */
     constructor(commandHistory, outputBoundary) {
-        super();
         if (!commandHistory) {
             throw new Error("CommandHistory is required");
         }
@@ -22,10 +20,9 @@ class UndoInteractor extends UndoInputBoundary {
 
     /**
      * Execute the undo operation
-     * @param {UndoInputData} inputData - The input data (not used for undo)
      * @returns {void}
      */
-    execute(inputData) {
+    execute() {
         // Validate that undo is possible
         if (!this.commandHistory.canUndo()) {
             const responseModel = {

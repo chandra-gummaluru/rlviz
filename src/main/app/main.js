@@ -152,13 +152,20 @@ const onPlay = () => {
     }
 
     // Check if start node is selected
-    if (!canvasViewModel.startNode) {
+    if (!canvasViewModel.startNode && !simulationState.replayInitialized) {
         alert('Please select a start node first by double-clicking a state node');
         return;
     }
 
     const inputData = new PlayInputData();
     playInteractor.execute(inputData);
+
+    // Update play button state (toggle between play and pause)
+    // Note: For first click (initialization), the presenter will set it to playing
+    // For subsequent clicks, we toggle here immediately
+    if (simulationState.replayInitialized) {
+        sideBar.playButton.setPlaying(simulationState.isPlaying);
+    }
 };
 
 const onSkip = () => {
@@ -172,6 +179,12 @@ const onSkip = () => {
     if (!simulationState.replayInitialized) {
         alert('Please click Play first to start the simulation');
         return;
+    }
+
+    // Pause if playing
+    if (simulationState.isPlaying) {
+        simulationState.pause();
+        sideBar.playButton.setPlaying(false);
     }
 
     const inputData = new SkipInputData();
@@ -193,6 +206,9 @@ const onReset = () => {
 
     const inputData = new ResetInputData();
     resetInteractor.execute(inputData);
+
+    // Reset play button to Play state
+    sideBar.playButton.setPlaying(false);
 };
 
 const onToggleSidebar = () => {

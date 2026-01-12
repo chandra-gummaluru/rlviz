@@ -5,6 +5,7 @@ class PlayButton {
         this.width = width;
         this.height = height;
         this.onClick = onClick;
+        this.isPlaying = false;
         this.button = createButton('▶ Play');
         this.button.position(this.x, this.y);
         this.button.size(this.width, this.height);
@@ -45,5 +46,16 @@ class PlayButton {
 
     setColor(color) {
         this.button.style('background-color', color);
+    }
+
+    setPlaying(playing) {
+        this.isPlaying = playing;
+        if (playing) {
+            this.button.html('⏸ Pause');
+            this.setColor('#FF9800'); // Orange color for pause
+        } else {
+            this.button.html('▶ Play');
+            this.setColor('#4CAF50'); // Green color for play
+        }
     }
 }

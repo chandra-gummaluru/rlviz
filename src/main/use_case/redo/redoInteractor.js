@@ -1,15 +1,13 @@
-
 /**
  * Interactor for Redo use case
  * Contains the business logic for redoing the last undone operation
  */
-class RedoInteractor extends RedoInputBoundary {
+class RedoInteractor {
     /**
      * @param {CommandHistory} commandHistory - The command history to operate on
      * @param {RedoOutputBoundary} outputBoundary - The output boundary for presenting results
      */
     constructor(commandHistory, outputBoundary) {
-        super();
         if (!commandHistory) {
             throw new Error("CommandHistory is required");
         }
@@ -22,10 +20,9 @@ class RedoInteractor extends RedoInputBoundary {
 
     /**
      * Execute the redo operation
-     * @param {RedoInputData} inputData - The input data (not used for redo)
      * @returns {void}
      */
-    execute(inputData) {
+    execute() {
         // Validate that redo is possible
         if (!this.commandHistory.canRedo()) {
             const responseModel = {

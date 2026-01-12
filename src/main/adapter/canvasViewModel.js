@@ -586,8 +586,7 @@ class CanvasViewModel {
     undo() {
         // Delegate to interactor if available
         if (this.undoInteractor) {
-            const inputData = new UndoInputData();
-            this.undoInteractor.execute(inputData);
+            this.undoInteractor.execute();
             return this.canUndoFlag;
         } else {
             // Fallback: direct undo
@@ -602,8 +601,7 @@ class CanvasViewModel {
     redo() {
         // Delegate to interactor if available
         if (this.redoInteractor) {
-            const inputData = new RedoInputData();
-            this.redoInteractor.execute(inputData);
+            this.redoInteractor.execute();
             return this.canRedoFlag;
         } else {
             // Fallback: direct redo

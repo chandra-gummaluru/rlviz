@@ -14,6 +14,8 @@ class SimulationPresenter extends SimulationOutputBoundary {
 
     presentInitializationComplete() {
         console.log('[Presenter] Initialization complete');
+        this.mainView.sideBar.playButton.setPlaying(true);
+        this.mainView.sideBar.updateSimulationStatusLine();
         this.mainView.redrawSimulation();
     }
 
@@ -24,6 +26,7 @@ class SimulationPresenter extends SimulationOutputBoundary {
 
     presentRoundComplete(currentNode) {
         console.log(`[Presenter] Round complete at: ${currentNode.name}`);
+        this.mainView.sideBar.updateSimulationStatusLine();
         this.mainView.redrawSimulation();
     }
 
@@ -43,7 +46,7 @@ class SimulationPresenter extends SimulationOutputBoundary {
                 break;
 
             case 'camera_move':
-                // Center camera on current node
+                // Center camera on current node (which is now the toNode after advance)
                 const currentNodeData = this.viewModel.simulationState.currentNode;
                 const currentActualNode = this.viewModel.graph.getNodeById(currentNodeData.id);
                 if (currentActualNode) {
@@ -52,8 +55,12 @@ class SimulationPresenter extends SimulationOutputBoundary {
                 this.mainView.redrawSimulation();
                 break;
 
-            case 'edge_highlight':
             case 'reveal':
+                // Reveal all outgoing edges
+                this.mainView.redrawSimulation();
+                break;
+
+            case 'edge_highlight':
             case 'decision_pause':
             case 'transition_pause':
             case 'pause':
@@ -63,6 +70,7 @@ class SimulationPresenter extends SimulationOutputBoundary {
 
             case 'reset':
                 // Reset complete
+                this.mainView.sideBar.updateSimulationStatusLine();
                 this.mainView.redrawSimulation();
                 break;
         }
@@ -75,6 +83,7 @@ class SimulationPresenter extends SimulationOutputBoundary {
 
     presentTraceEnd() {
         console.log('[Presenter] Reached end of trace');
+        this.mainView.sideBar.playButton.setPlaying(false);
         alert('Simulation complete! Reached end of trace.');
     }
 }

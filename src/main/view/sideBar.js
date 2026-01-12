@@ -191,6 +191,21 @@ class SideBar {
         this.startNodeStatus.html(`<span style="color: #999;">●</span> Start Node: <span style="color: #666;">None selected</span>`);
         this.startNodeStatus.hide(); // Hidden by default
 
+        // Simulation status line (positioned below start node status)
+        this.simulationStatusLine = createElement('div');
+        this.simulationStatusLine.position(20, 185);
+        this.simulationStatusLine.size(220, 50);
+        this.simulationStatusLine.style('font-size', '12px');
+        this.simulationStatusLine.style('line-height', '1.4');
+        this.simulationStatusLine.style('padding', '8px');
+        this.simulationStatusLine.style('background-color', '#ffffff');
+        this.simulationStatusLine.style('border-radius', '4px');
+        this.simulationStatusLine.style('border', 'none');
+        this.simulationStatusLine.style('white-space', 'normal');
+        this.simulationStatusLine.style('word-wrap', 'break-word');
+        this.simulationStatusLine.html(`<span style="color: #999;">●</span> Open | <span style="color: #666;">No simulation running</span>`);
+        this.simulationStatusLine.hide(); // Hidden by default
+
         this.updateModeDisplay();
     }
 
@@ -212,6 +227,7 @@ class SideBar {
             this.helpText.show();
             this.simulatePrompt.hide();
             this.startNodeStatus.hide();
+            this.simulationStatusLine.hide();
             // Hide simulation control buttons
             this.playButton.hide();
             this.skipButton.hide();
@@ -225,6 +241,7 @@ class SideBar {
             this.helpText.hide();
             this.simulatePrompt.show();
             this.startNodeStatus.show();
+            this.simulationStatusLine.show();
             // Show simulation control buttons
             this.playButton.show();
             this.skipButton.show();
@@ -254,7 +271,8 @@ class SideBar {
             this.helpText.hide();
             this.simulatePrompt.hide();
             this.startNodeStatus.hide();
-            
+            this.simulationStatusLine.hide();
+
         } else {
             this.toggleButton.html('<<');
             this.modeSelect.show();
@@ -295,6 +313,69 @@ class SideBar {
             // Start node selected - show active/green state with node name
             this.startNodeStatus.html(`<span style="color: #00E676;">●</span> Start Node: <span style="color: #000; font-weight: bold;">${startNode.getName()}</span>`);
         }
+    }
+
+    updateSimulationStatusLine() {
+        if (!this.simulationStatusLine || !this.canvasViewModel) {
+            return;
+        }
+
+        const simState = this.canvasViewModel.simulationState;
+
+        // If simulation not initialized, show waiting state
+        if (!simState || !simState.replayInitialized) {
+            this.simulationStatusLine.html(`<span style="color: #999;">●</span> Open | <span style="color: #666;">No simulation running</span>`);
+            return;
+        }
+
+        // Calculate round number (each pair of nodes is one round)
+        const roundNumber = Math.floor(simState.currentIndex / 2) + 1;
+        const currentNode = simState.currentNode;
+
+        if (!currentNode) {
+            return;
+        }
+
+        let message = '';
+
+        // Determine message based on current node type
+        if (currentNode.type === 'action') {
+            // State picked this action
+            // Get the previous node (which should be a state)
+            if (simState.currentIndex > 0) {
+                const prevNode = simState.visited[simState.currentIndex - 1];
+                message = `State ${prevNode.name} picked action ${currentNode.name}`;
+            } else {
+                message = `At action ${currentNode.name}`;
+            }
+        } else if (currentNode.type === 'state') {
+            // Action transitioned to this state
+            // Get the previous node (which should be an action)
+            if (simState.currentIndex > 0) {
+                const prevNode = simState.visited[simState.currentIndex - 1];
+
+                // Look up probability and reward from the action node in the graph
+                const actionNode = this.canvasViewModel.graph.getNodeById(prevNode.id);
+                if (actionNode && actionNode.sas) {
+                    // Find the transition to the current state
+                    const transition = actionNode.sas.find(t => t.nextState === currentNode.id);
+                    if (transition) {
+                        const prob = transition.probability.toFixed(2);
+                        const reward = transition.reward >= 0 ? `+${transition.reward}` : transition.reward;
+                        message = `Action ${prevNode.name} transitioned to state ${currentNode.name} with probability ${prob} and reward ${reward}`;
+                    } else {
+                        message = `Action ${prevNode.name} transitioned to state ${currentNode.name}`;
+                    }
+                } else {
+                    message = `At state ${currentNode.name}`;
+                }
+            } else {
+                message = `Starting at state ${currentNode.name}`;
+            }
+        }
+
+        // Format the status line with colored dot
+        this.simulationStatusLine.html(`<span style="color: #00E676;">●</span> Open | Round ${roundNumber}: ${message}`);
     }
 
     updateSimulationButtonPositions() {

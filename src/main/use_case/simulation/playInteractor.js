@@ -24,8 +24,17 @@ class PlayInteractor extends PlayInputBoundary {
             // First Play click: Run initialization
             this.runInitialization(inputData);
         } else {
-            // Subsequent Play clicks: Execute one round
-            this.playNextRound(inputData);
+            // Toggle play/pause
+            if (this.simulationState.isPlaying) {
+                // Pause the simulation
+                this.simulationState.pause();
+                console.log('Simulation paused');
+            } else {
+                // Start continuous play
+                this.simulationState.play();
+                console.log('Simulation started');
+                this.continuousPlay(inputData);
+            }
         }
     }
 
@@ -87,122 +96,125 @@ class PlayInteractor extends PlayInputBoundary {
 
         await this.waitForPhase();
 
-        // Phase 5: COMPLETE - Set initialized and wait for next Play
+        // Phase 5: COMPLETE - Set initialized and start playing automatically
         this.simulationState.start();
+        this.simulationState.play(); // Auto-start continuous play
         this.simulationState.setPhase('idle', 0);
         this.outputBoundary.presentInitializationComplete();
 
-        console.log('Initialization complete, ready for first round');
+        console.log('Initialization complete, starting continuous play');
+
+        // Start continuous play automatically
+        this.continuousPlay(inputData);
     }
 
     /**
-     * Execute one round (State→Action or Action→State)
+     * Continuous play loop
      */
-    playNextRound(inputData) {
-        // Check if we can advance
+    async continuousPlay(inputData) {
+        while (this.simulationState.isPlaying && this.simulationState.canAdvance()) {
+            await this.playNextStep(inputData);
+        }
+
         if (!this.simulationState.canAdvance()) {
+            this.simulationState.pause();
             this.outputBoundary.presentTraceEnd();
             console.log('Reached end of trace');
+        }
+    }
+
+    /**
+     * Execute one step to next node (State→Action or Action→State)
+     */
+    async playNextStep(inputData) {
+        // Check if we can advance
+        if (!this.simulationState.canAdvance()) {
             return;
         }
 
         const currentNode = this.simulationState.currentNode;
         const nextNode = this.simulationState.peekNext();
 
-        console.log(`Round: ${currentNode.type} (${currentNode.name}) -> ${nextNode.type} (${nextNode.name})`);
+        console.log(`Step: ${currentNode.type} (${currentNode.name}) -> ${nextNode.type} (${nextNode.name})`);
 
-        // Determine round type and animate
+        // Determine transition type and animate
         if (currentNode.type === 'state' && nextNode.type === 'action') {
-            this.animateStateToAction(currentNode, nextNode, inputData);
+            await this.animateTransition(currentNode, nextNode, inputData);
         } else if (currentNode.type === 'action' && nextNode.type === 'state') {
-            this.animateActionToState(currentNode, nextNode, inputData);
+            await this.animateTransition(currentNode, nextNode, inputData);
         } else {
             this.outputBoundary.presentError(`Invalid transition: ${currentNode.type} -> ${nextNode.type}`);
         }
     }
 
     /**
-     * Animate State → Action transition
+     * Animate transition from current node to next node
+     * Shows all outgoing edges, highlights chosen edge, moves to next node
      */
-    async animateStateToAction(stateNode, actionNode, inputData) {
-        this.outputBoundary.presentRoundStart(stateNode, actionNode);
+    async animateTransition(fromNode, toNode) {
+        this.outputBoundary.presentRoundStart(fromNode, toNode);
 
-        // Phase 1: DECISION PAUSE
-        this.simulationState.setPhase('pause', this.TIMING.DECISION_PAUSE);
-        this.outputBoundary.presentPhaseChange('decision_pause', this.TIMING.DECISION_PAUSE);
+        // Phase 1: REVEAL ALL OUTGOING EDGES
+        if (fromNode.type === 'state') {
+            // Reveal all action nodes connected from this state
+            const stateNodeInGraph = this.getNodeFromGraph(fromNode.id);
+            if (stateNodeInGraph && stateNodeInGraph.actions) {
+                stateNodeInGraph.actions.forEach(actionId => {
+                    this.simulationState.revealNode(actionId);
+                    this.simulationState.revealEdge(fromNode.id, actionId);
+                });
+            }
+        } else if (fromNode.type === 'action') {
+            // Reveal all state nodes connected from this action
+            const actionNodeInGraph = this.getNodeFromGraph(fromNode.id);
+            if (actionNodeInGraph && actionNodeInGraph.sas) {
+                actionNodeInGraph.sas.forEach(transition => {
+                    this.simulationState.revealNode(transition.nextState);
+                    this.simulationState.revealEdge(fromNode.id, transition.nextState);
+                });
+            }
+        }
 
+        this.simulationState.setPhase('reveal', this.TIMING.DECISION_PAUSE);
+        this.outputBoundary.presentPhaseChange('reveal', this.TIMING.DECISION_PAUSE);
         await this.waitForPhase();
 
-        // Phase 2: EDGE HIGHLIGHT
-        this.simulationState.revealNode(actionNode.id);
-        this.simulationState.revealEdge(stateNode.id, actionNode.id);
-        this.simulationState.highlightEdge(stateNode.id, actionNode.id);
+        // Phase 2: HIGHLIGHT CHOSEN EDGE
+        this.simulationState.highlightEdge(fromNode.id, toNode.id);
         this.simulationState.setPhase('highlight', this.TIMING.EDGE_HIGHLIGHT);
         this.outputBoundary.presentPhaseChange('edge_highlight', this.TIMING.EDGE_HIGHLIGHT);
-
         await this.waitForPhase();
 
-        // Phase 3: TRANSITION PAUSE
-        this.simulationState.setPhase('pause', this.TIMING.TRANSITION_PAUSE);
-        this.outputBoundary.presentPhaseChange('transition_pause', this.TIMING.TRANSITION_PAUSE);
+        // Phase 3: ADVANCE TO NEXT NODE (before camera move so we center on toNode)
+        this.simulationState.advance();
+        this.simulationState.clearHighlight();
 
-        await this.waitForPhase();
-
-        // Phase 4: CAMERA TRANSITION
+        // Phase 4: CAMERA TRANSITION TO NEXT NODE (now currentNode is the toNode)
         this.simulationState.setPhase('transition', this.TIMING.CAMERA_TRANSITION);
         this.outputBoundary.presentPhaseChange('camera_move', this.TIMING.CAMERA_TRANSITION);
-
         await this.waitForPhase();
 
         // Phase 5: COMPLETE
-        this.simulationState.advance();
-        this.simulationState.clearHighlight();
         this.simulationState.setPhase('idle', 0);
         this.outputBoundary.presentRoundComplete(this.simulationState.currentNode);
 
-        console.log('Round complete, advanced to:', this.simulationState.currentNode.name);
+        console.log('Step complete, now at:', this.simulationState.currentNode.name);
     }
 
     /**
-     * Animate Action → State transition
+     * Get node from graph by ID
      */
-    async animateActionToState(actionNode, stateNode, inputData) {
-        this.outputBoundary.presentRoundStart(actionNode, stateNode);
-
-        // Phase 1: DECISION PAUSE
-        this.simulationState.setPhase('pause', this.TIMING.DECISION_PAUSE);
-        this.outputBoundary.presentPhaseChange('decision_pause', this.TIMING.DECISION_PAUSE);
-
-        await this.waitForPhase();
-
-        // Phase 2: EDGE HIGHLIGHT (with probability text)
-        this.simulationState.revealNode(stateNode.id);
-        this.simulationState.revealEdge(actionNode.id, stateNode.id);
-        this.simulationState.highlightEdge(actionNode.id, stateNode.id);
-        this.simulationState.setPhase('highlight', this.TIMING.EDGE_HIGHLIGHT);
-        this.outputBoundary.presentPhaseChange('edge_highlight', this.TIMING.EDGE_HIGHLIGHT);
-
-        await this.waitForPhase();
-
-        // Phase 3: TRANSITION PAUSE
-        this.simulationState.setPhase('pause', this.TIMING.TRANSITION_PAUSE);
-        this.outputBoundary.presentPhaseChange('transition_pause', this.TIMING.TRANSITION_PAUSE);
-
-        await this.waitForPhase();
-
-        // Phase 4: CAMERA TRANSITION
-        this.simulationState.setPhase('transition', this.TIMING.CAMERA_TRANSITION);
-        this.outputBoundary.presentPhaseChange('camera_move', this.TIMING.CAMERA_TRANSITION);
-
-        await this.waitForPhase();
-
-        // Phase 5: COMPLETE
-        this.simulationState.advance();
-        this.simulationState.clearHighlight();
-        this.simulationState.setPhase('idle', 0);
-        this.outputBoundary.presentRoundComplete(this.simulationState.currentNode);
-
-        console.log('Round complete, advanced to:', this.simulationState.currentNode.name);
+    getNodeFromGraph(nodeId) {
+        const startNode = this.startNodeProvider();
+        // Traverse up to get the graph - this is a workaround
+        // In a better architecture, we'd inject the graph directly
+        if (startNode && startNode.constructor && startNode.constructor.name) {
+            // Access via traceGenerator which has graph reference
+            if (this.traceGenerator && this.traceGenerator.graph) {
+                return this.traceGenerator.graph.getNodeById(nodeId);
+            }
+        }
+        return null;
     }
 
     /**

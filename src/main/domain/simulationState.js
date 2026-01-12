@@ -9,6 +9,7 @@ class SimulationState {
         // State flags
         this.replayInitialized = false;  // Has initialization animation completed?
         this.phase = 'idle';  // Current phase: 'idle', 'pause', 'highlight', 'transition'
+        this.isPlaying = false;  // Is continuous play active?
 
         // Animation timing
         this.phaseStartTime = 0;  // When current phase started
@@ -157,9 +158,19 @@ class SimulationState {
         this.currentNode = null;
         this.replayInitialized = false;
         this.phase = 'idle';
+        this.isPlaying = false;
         this.phaseStartTime = 0;
         this.phaseDuration = 0;
         this.clearVisualState();
+    }
+
+    // Play/Pause controls
+    play() {
+        this.isPlaying = true;
+    }
+
+    pause() {
+        this.isPlaying = false;
     }
 
     // Get status for debugging/UI
