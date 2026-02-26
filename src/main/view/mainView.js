@@ -117,14 +117,9 @@ class MainView {
                 }
             }
 
-            // Calculate direction vector from 'from' to 'to'
-            const dx = to.x - from.x;
-            const dy = to.y - from.y;
-            const distance = Math.sqrt(dx * dx + dy * dy);
-
-            // Normalize the direction
-            const normalizedDx = dx / distance;
-            const normalizedDy = dy / distance;
+            // Check if there's a reverse edge (bidirectional)
+            const reverseEdge = this.findReverseEdge(edges, from, to);
+            const isBidirectional = reverseEdge !== null;
 
             // Calculate arrow size
             // State → Action edges: uniform weight (probability not meaningful)
@@ -135,39 +130,124 @@ class MainView {
             } else {
                 weight = 1 + 8 * edge.getProbability(); // Probability-based for Action → State
             }
-            const arrowSize = 8 + weight * 0.5;
 
-            // Calculate the point on the circumference of the 'to' node
-            const toRadius = to.size;
-            const arrowTipX = to.x - normalizedDx * toRadius;
-            const arrowTipY = to.y - normalizedDy * toRadius;
-
-            // End the line before the arrowhead to avoid covering it
-            const lineEndX = arrowTipX - normalizedDx * arrowSize;
-            const lineEndY = arrowTipY - normalizedDy * arrowSize;
-
-            // Draw the edge line (stops before the arrowhead)
             const edgeColor = this.viewModel.getEdgeColor(edge);
-            strokeWeight(weight);
-            stroke(edgeColor);
-            line(from.x, from.y, lineEndX, lineEndY);
 
-            // Draw arrowhead at the circumference
-            this.drawArrowhead(arrowTipX, arrowTipY, normalizedDx, normalizedDy, edgeColor, weight);
-
-            // Only show probability and reward labels for Action → State edges
-            if (from.type === 'action' && to.type === 'state') {
-                const midX = (from.x + to.x) / 2;
-                const midY = (from.y + to.y) / 2;
-
-                noStroke();
-                fill(0);
-                textSize(10);
-                textAlign(CENTER);
-                text(`p=${edge.getProbability().toFixed(2)}`, midX, midY - 8);
-                text(`r=${edge.getReward().toFixed(1)}`, midX, midY + 8);
+            if (isBidirectional) {
+                // Draw curved edge
+                this.drawCurvedEdge(from, to, weight, edgeColor, edge);
+            } else {
+                // Draw straight edge (original behavior)
+                this.drawStraightEdge(from, to, weight, edgeColor, edge);
             }
         });
+    }
+
+    findReverseEdge(edges, from, to) {
+        return edges.find(e =>
+            e.getFromNode().id === to.id && e.getToNode().id === from.id
+        ) || null;
+    }
+
+    drawStraightEdge(from, to, weight, edgeColor, edge) {
+        // Calculate direction vector from 'from' to 'to'
+        const dx = to.x - from.x;
+        const dy = to.y - from.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+
+        // Normalize the direction
+        const normalizedDx = dx / distance;
+        const normalizedDy = dy / distance;
+
+        const arrowSize = 8 + weight * 0.5;
+
+        // Calculate the point on the circumference of the 'to' node
+        const toRadius = to.size;
+        const arrowTipX = to.x - normalizedDx * toRadius;
+        const arrowTipY = to.y - normalizedDy * toRadius;
+
+        // End the line before the arrowhead to avoid covering it
+        const lineEndX = arrowTipX - normalizedDx * arrowSize;
+        const lineEndY = arrowTipY - normalizedDy * arrowSize;
+
+        // Draw the edge line (stops before the arrowhead)
+        strokeWeight(weight);
+        stroke(edgeColor);
+        line(from.x, from.y, lineEndX, lineEndY);
+
+        // Draw arrowhead at the circumference
+        this.drawArrowhead(arrowTipX, arrowTipY, normalizedDx, normalizedDy, edgeColor, weight);
+
+        // Only show probability and reward labels for Action → State edges
+        if (from.type === 'action' && to.type === 'state') {
+            const midX = (from.x + to.x) / 2;
+            const midY = (from.y + to.y) / 2;
+
+            noStroke();
+            fill(0);
+            textSize(10);
+            textAlign(CENTER);
+            text(`p=${edge.getProbability().toFixed(2)}`, midX, midY - 8);
+            text(`r=${edge.getReward().toFixed(1)}`, midX, midY + 8);
+        }
+    }
+
+    drawCurvedEdge(from, to, weight, edgeColor, edge) {
+        // Calculate perpendicular offset for the curve
+        const dx = to.x - from.x;
+        const dy = to.y - from.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+
+        // Perpendicular vector (rotate 90 degrees)
+        const perpX = -dy / distance;
+        const perpY = dx / distance;
+
+        // Control point offset (adjust this value to change curve intensity)
+        const curveOffset = distance * 0.15;
+        const controlX = (from.x + to.x) / 2 + perpX * curveOffset;
+        const controlY = (from.y + to.y) / 2 + perpY * curveOffset;
+
+        // Draw the curved line using quadratic bezier
+        strokeWeight(weight);
+        stroke(edgeColor);
+        noFill();
+        beginShape();
+        vertex(from.x, from.y);
+        quadraticVertex(controlX, controlY, to.x, to.y);
+        endShape();
+
+        // Calculate the tangent at the end of the curve for arrowhead
+        const t = 0.95; // Sample point near the end
+
+        // Tangent direction at t (derivative of quadratic bezier)
+        const tangentDx = 2 * (1 - t) * (controlX - from.x) + 2 * t * (to.x - controlX);
+        const tangentDy = 2 * (1 - t) * (controlY - from.y) + 2 * t * (to.y - controlY);
+        const tangentDist = Math.sqrt(tangentDx * tangentDx + tangentDy * tangentDy);
+        const normalizedTangentDx = tangentDx / tangentDist;
+        const normalizedTangentDy = tangentDy / tangentDist;
+
+        // Calculate arrowhead position on node circumference
+        const toRadius = to.size;
+        const arrowTipX = to.x - normalizedTangentDx * toRadius;
+        const arrowTipY = to.y - normalizedTangentDy * toRadius;
+
+        // Draw arrowhead
+        this.drawArrowhead(arrowTipX, arrowTipY, normalizedTangentDx, normalizedTangentDy, edgeColor, weight);
+
+        // Only show probability and reward labels for Action → State edges
+        if (from.type === 'action' && to.type === 'state') {
+            // Position label on the curve (at t=0.5)
+            const labelT = 0.5;
+            const labelX = (1 - labelT) * (1 - labelT) * from.x + 2 * (1 - labelT) * labelT * controlX + labelT * labelT * to.x;
+            const labelY = (1 - labelT) * (1 - labelT) * from.y + 2 * (1 - labelT) * labelT * controlY + labelT * labelT * to.y;
+
+            noStroke();
+            fill(0);
+            textSize(10);
+            textAlign(CENTER);
+            text(`p=${edge.getProbability().toFixed(2)}`, labelX, labelY - 8);
+            text(`r=${edge.getReward().toFixed(1)}`, labelX, labelY + 8);
+        }
     }
 
     drawArrowhead(x, y, dirX, dirY, color, lineWeight) {
@@ -249,6 +329,8 @@ class MainView {
             this.viewModel.storeDragStartPosition(result.node);
         } else if (result.mode === 'drag_text' && result.label) {
             this.viewModel.storeTextLabelDragStartPosition(result.label);
+        } else if (result.mode === 'resize_start' && result.node) {
+            cursor('nwse-resize');
         }
 
         if (result.mode === 'prompt_edge') {
@@ -303,6 +385,8 @@ class MainView {
         } else if (result.mode === 'drag_text_end' && this.viewModel.heldTextLabel) {
             const label = this.viewModel.heldTextLabel;
             this.viewModel.createMoveTextLabelCommand(label);
+        } else if (result.mode === 'resize_end') {
+            cursor(ARROW);
         }
 
         if (result.mode === 'prompt_edge') {

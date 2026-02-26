@@ -26,7 +26,7 @@ class ZoomOutButton {
 
     setEnabled(isEnabled) {
         this.button.attribute('disabled', !isEnabled ? 'true' : null);
-        this.button.style('background-color', isEnabled ? '#2196F3' : '#CCCCCC');
+        this.button.style('background-color', isEnabled ? '#616161' : '#CCCCCC');
     }
 
     hide() {

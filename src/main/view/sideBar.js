@@ -1,5 +1,5 @@
 class SideBar {
-    constructor(onStateClick, onActionClick, onToggle, onTextBoxClick, onImportGraph, onModeChange, onZoomIn, onZoomOut, onUndo, onRedo, onPlay, onSkip, onReset, canvasViewModel) {
+    constructor(onStateClick, onActionClick, onToggle, onTextBoxClick, onImportGraph, onExportGraph, onModeChange, onZoomIn, onZoomOut, onUndo, onRedo, onPlay, onSkip, onReset, canvasViewModel) {
         this.width = 260;
         this.collapsed = false;
         this.mode = 'editor'; // 'editor' or 'simulate'
@@ -9,6 +9,7 @@ class SideBar {
         this.onToggle = onToggle;
         this.onTextBoxClick = onTextBoxClick;
         this.onImportGraph = onImportGraph;
+        this.onExportGraph = onExportGraph;
         this.onModeChange = onModeChange;
         this.onZoomIn = onZoomIn;
         this.onZoomOut = onZoomOut;
@@ -25,6 +26,7 @@ class SideBar {
         this.actionButton = null;
         this.textButton = null;
         this.importButton = null;
+        this.exportButton = null;
         this.zoomInButton = null;
         this.zoomOutButton = null;
         this.undoButton = null;
@@ -100,9 +102,16 @@ class SideBar {
         );
         console.log('Import button created');
 
+        // Export Graph button
+        this.exportButton = new ExportButton(
+            130, 190, 100, 40,
+            () => this.onExportGraph()
+        );
+        console.log('Export button created');
+
         // Add Text button
         this.textButton = new TextButton(
-            130, 190, 100, 40,
+            20, 240, 100, 40,
             () => this.onTextBoxClick()
         );
         console.log('Text button created');

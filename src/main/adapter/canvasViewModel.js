@@ -21,6 +21,9 @@ class CanvasViewModel {
         this.skipInteractor = interactors ? interactors.skip : null;
         this.resetInteractor = interactors ? interactors.reset : null;
 
+        // Resize interactor
+        this.resizeNodeInteractor = interactors ? interactors.resizeNode : null;
+
         this.mode = 'editor'; // 'editor' or 'simulate'
         this.selectedNode = null;
         this.selectedEdge = null;
@@ -33,6 +36,11 @@ class CanvasViewModel {
         this.dragStartY = 0;
         this.lastClickTime = 0;
         this.lastClickedNode = null;
+
+        // Resize state
+        this.resizingNode = null;
+        this.resizeStartSize = 0;
+        this.resizeStartDistance = 0;
 
         // Simulate mode: start node selection
         this.startNode = null;
@@ -188,6 +196,16 @@ class CanvasViewModel {
             return { mode: 'deselect' };
         }
 
+        // Check if clicking on the edge of the node (for resizing) in editor mode
+        if (this.mode === 'editor' && this.isClickOnNodeEdge(hitNode, x, y)) {
+            this.resizingNode = hitNode;
+            this.resizeStartSize = hitNode.getSize();
+            this.resizeStartDistance = hitNode.distanceTo(x, y);
+            this.selectedEdge = null;
+            this.selectedTextLabel = null;
+            return { mode: 'resize_start', node: hitNode };
+        }
+
         this.heldNode = hitNode;
         this.dragStartX = x;
         this.dragStartY = y;
@@ -207,23 +225,68 @@ class CanvasViewModel {
             const from = edge.getFromNode();
             const to = edge.getToNode();
 
-            // Calculate distance from point to line
-            const dx = to.x - from.x;
-            const dy = to.y - from.y;
-            const length = Math.sqrt(dx * dx + dy * dy);
+            // Check if this edge is part of a bidirectional pair
+            const reverseEdge = this.graph.edges.find(e =>
+                e.getFromNode().id === to.id && e.getToNode().id === from.id
+            );
+            const isBidirectional = reverseEdge !== null;
 
-            if (length === 0) return false;
+            if (isBidirectional) {
+                // For curved edges, check distance to Bezier curve
+                return this.isPointNearCurve(from, to, x, y, threshold);
+            } else {
+                // For straight edges, use original line distance calculation
+                const dx = to.x - from.x;
+                const dy = to.y - from.y;
+                const length = Math.sqrt(dx * dx + dy * dy);
 
-            const dot = ((x - from.x) * dx + (y - from.y) * dy) / (length * length);
+                if (length === 0) return false;
 
-            if (dot < 0 || dot > 1) return false;
+                const dot = ((x - from.x) * dx + (y - from.y) * dy) / (length * length);
 
-            const projX = from.x + dot * dx;
-            const projY = from.y + dot * dy;
-            const distance = Math.sqrt((x - projX) ** 2 + (y - projY) ** 2);
+                if (dot < 0 || dot > 1) return false;
 
-            return distance <= threshold;
+                const projX = from.x + dot * dx;
+                const projY = from.y + dot * dy;
+                const distance = Math.sqrt((x - projX) ** 2 + (y - projY) ** 2);
+
+                return distance <= threshold;
+            }
         });
+    }
+
+    isPointNearCurve(from, to, x, y, threshold) {
+        // Calculate control point for the Bezier curve (same as in drawCurvedEdge)
+        const dx = to.x - from.x;
+        const dy = to.y - from.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+
+        // Perpendicular vector (rotate 90 degrees)
+        const perpX = -dy / distance;
+        const perpY = dx / distance;
+
+        // Control point offset (must match rendering logic)
+        const curveOffset = distance * 0.15;
+        const controlX = (from.x + to.x) / 2 + perpX * curveOffset;
+        const controlY = (from.y + to.y) / 2 + perpY * curveOffset;
+
+        // Sample points along the curve and find minimum distance
+        let minDistance = Infinity;
+        const samples = 20; // Number of sample points along the curve
+
+        for (let i = 0; i <= samples; i++) {
+            const t = i / samples;
+
+            // Quadratic Bezier formula: B(t) = (1-t)² * P0 + 2(1-t)t * P1 + t² * P2
+            const curveX = (1 - t) * (1 - t) * from.x + 2 * (1 - t) * t * controlX + t * t * to.x;
+            const curveY = (1 - t) * (1 - t) * from.y + 2 * (1 - t) * t * controlY + t * t * to.y;
+
+            // Calculate distance from click point to this sample point
+            const dist = Math.sqrt((x - curveX) ** 2 + (y - curveY) ** 2);
+            minDistance = Math.min(minDistance, dist);
+        }
+
+        return minDistance <= threshold;
     }
 
     handleMouseDrag(x, y) {
@@ -232,6 +295,14 @@ class CanvasViewModel {
                                  Math.abs(y - this.heldTextLabel.y);
             this.heldTextLabel.setPosition(x, y);
             return { mode: 'dragging_text', label: this.heldTextLabel };
+        }
+
+        // Handle resizing
+        if (this.resizingNode) {
+            const currentDistance = this.resizingNode.distanceTo(x, y);
+            const newSize = Math.max(10, Math.min(100, currentDistance)); // Clamp between 10 and 100
+            this.resizingNode.setSize(newSize);
+            return { mode: 'resizing', node: this.resizingNode };
         }
 
         if (!this.heldNode) return;
@@ -247,6 +318,23 @@ class CanvasViewModel {
     handleMouseRelease(x, y) {
         const DRAG_THRESHOLD = 5;
         const wasDrag = this.dragDistance > DRAG_THRESHOLD;
+
+        // Handle resize end
+        if (this.resizingNode) {
+            const node = this.resizingNode;
+            const newSize = node.getSize();
+            this.resizingNode = null;
+
+            // Create resize command for undo/redo if size actually changed
+            if (newSize !== this.resizeStartSize) {
+                if (this.resizeNodeInteractor) {
+                    const inputData = new ResizeNodeInputData(node.id, this.resizeStartSize, newSize);
+                    this.resizeNodeInteractor.resizeNode(inputData);
+                }
+            }
+
+            return { mode: 'resize_end', node: node };
+        }
 
         if (this.heldTextLabel) {
             this.heldTextLabel = null;
@@ -324,6 +412,16 @@ class CanvasViewModel {
             }
             return null;
         }
+    }
+
+    isClickOnNodeEdge(node, x, y, edgeThreshold = 8) {
+        // Check if click is within the node boundary
+        const distance = node.distanceTo(x, y);
+        if (distance > node.size) return false;
+
+        // Check if click is near the edge (within threshold pixels of the boundary)
+        const distanceFromEdge = Math.abs(distance - node.size);
+        return distanceFromEdge <= edgeThreshold;
     }
 
     moveNode(nodeId, newX, newY) {
@@ -411,7 +509,7 @@ class CanvasViewModel {
         if (this.mode === 'simulate' && this.simulationState && this.simulationState.replayInitialized) {
             const currentNode = this.simulationState.currentNode;
             if (currentNode && currentNode.id === node.id) {
-                return '#FF9800'; // Bright orange for current simulation node
+                return '#FF9800'; // color
             }
         }
 
@@ -423,7 +521,7 @@ class CanvasViewModel {
         // Editor mode: existing colors
         if (this.selectedNode === node) return '#FFC107'; // Yellow for selected
         if (this.heldNode === node) return '#9CCC65'; // Light green for held
-        return node.type === 'state' ? '#4A90E2' : '#E27D60'; // Blue/Orange
+        return node.type === 'state' ? '#BDBDBD' : '#424242'; // white gray/shit
     }
 
     getEdgeColor(edge) {

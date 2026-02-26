@@ -31,6 +31,7 @@ const redoPresenter = new RedoPresenter(canvasViewModel);
 const setModePresenter = new SetModePresenter(canvasViewModel);
 const zoomPresenter = new ZoomPresenter(canvasViewModel);
 const importGraphPresenter = new ImportGraphPresenter(canvasViewModel);
+const resizeNodePresenter = new ResizeNodePresenter(canvasViewModel);
 
 // Interactors (need domain objects and presenters)
 const createNodeInteractor = new CreateNodeInteractor(graph, createNodePresenter);
@@ -43,6 +44,7 @@ const setModeInteractor = new SetModeInteractor(setModePresenter);
 const zoomInInteractor = new ZoomInInteractor(zoomPresenter);
 const zoomOutInteractor = new ZoomOutInteractor(zoomPresenter);
 const importGraphInteractor = new ImportGraphInteractor(graph, importGraphPresenter);
+const resizeNodeInteractor = new ResizeNodeInteractor(graph, commandHistory, resizeNodePresenter);
 
 // View instances (will be set in setup)
 let mainView;
@@ -67,6 +69,7 @@ canvasViewModel.setModeInteractor = setModeInteractor;
 canvasViewModel.zoomInInteractor = zoomInInteractor;
 canvasViewModel.zoomOutInteractor = zoomOutInteractor;
 canvasViewModel.importGraphInteractor = importGraphInteractor;
+canvasViewModel.resizeNodeInteractor = resizeNodeInteractor;
 
 // Callbacks
 const onStateClick = () => {
@@ -108,6 +111,30 @@ const onImportGraph = () => {
         reader.readAsText(file);
     };
     input.click();
+};
+
+const onExportGraph = () => {
+    console.log('Export graph clicked!');
+    // Get the serialized graph
+    const json = canvasViewModel.serializeGraph();
+
+    // Create a blob from the JSON string
+    const blob = new Blob([json], { type: 'application/json' });
+
+    // Create a download link
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+
+    // Generate filename with timestamp
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+    link.download = `mdp-graph-${timestamp}.json`;
+
+    // Trigger download
+    link.click();
+
+    // Clean up
+    URL.revokeObjectURL(url);
 };
 
 const onModeChange = (mode) => {
@@ -222,7 +249,7 @@ function setup() {
     console.log('Setup called!');
 
     // Create view instances
-    sideBar = new SideBar(onStateClick, onActionClick, onToggleSidebar, onTextBoxClick, onImportGraph, onModeChange, onZoomIn, onZoomOut, onUndo, onRedo, onPlay, onSkip, onReset, canvasViewModel);
+    sideBar = new SideBar(onStateClick, onActionClick, onToggleSidebar, onTextBoxClick, onImportGraph, onExportGraph, onModeChange, onZoomIn, onZoomOut, onUndo, onRedo, onPlay, onSkip, onReset, canvasViewModel);
     console.log('SideBar created:', sideBar);
 
     mainView = new MainView(canvasViewModel, sideBar);

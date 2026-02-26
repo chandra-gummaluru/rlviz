@@ -8,7 +8,7 @@ class ResetButton {
         this.button = createButton('↺ Reset');
         this.button.position(this.x, this.y);
         this.button.size(this.width, this.height);
-        this.setColor('#FF5722'); // Red/Orange color
+        this.setColor('#616161'); // Red/Orange color
         this.button.style('color', '#FFFFFF');
         this.button.style('border', 'none');
         this.button.style('border-radius', '5px');

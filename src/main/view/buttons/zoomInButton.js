@@ -15,7 +15,7 @@ class ZoomInButton {
         });
         this.button.style('width', `${this.width}px`);
         this.button.style('padding', '10px');
-        this.button.style('background-color', '#2196F3');
+        this.button.style('background-color', '#616161');
         this.button.style('color', 'white');
         this.button.style('border', 'none');
         this.button.style('border-radius', '4px');

@@ -1,4 +1,4 @@
-class ImportButton {
+class ExportButton {
     constructor(x, y, width, height, onClick) {
         this.x = x;
         this.y = y;
@@ -6,7 +6,7 @@ class ImportButton {
         this.height = height;
         this.onClick = onClick;
 
-        this.button = createButton('Import Graph');
+        this.button = createButton('Export Graph');
         this.button.position(this.x, this.y);
         this.button.size(this.width, this.height);
         this.button.mousePressed((event) => {
@@ -24,7 +24,7 @@ class ImportButton {
 
     setEnabled(isEnabled) {
         this.button.attribute('disabled', !isEnabled ? 'true' : null);
-        this.button.style('background-color', isEnabled ? '#4CAF50' : '#CCCCCC');
+        this.button.style('background-color', isEnabled ? '#2196F3' : '#CCCCCC');
     }
 
     hide() {

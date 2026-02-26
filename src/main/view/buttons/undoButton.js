@@ -16,7 +16,7 @@ class UndoButton {
             this.button.size(this.width, this.height);
 
             // Styling
-            this.button.style('background-color', '#FF9800');
+            this.button.style('background-color', '#616161');
             this.button.style('color', '#FFFFFF');
             this.button.style('border', 'none');
             this.button.style('border-radius', '5px');

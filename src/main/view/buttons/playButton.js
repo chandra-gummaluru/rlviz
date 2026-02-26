@@ -9,7 +9,7 @@ class PlayButton {
         this.button = createButton('▶ Play');
         this.button.position(this.x, this.y);
         this.button.size(this.width, this.height);
-        this.setColor('#4CAF50'); // Green color
+        this.setColor('#616161'); // Green color
         this.button.style('color', '#FFFFFF');
         this.button.style('border', 'none');
         this.button.style('border-radius', '5px');

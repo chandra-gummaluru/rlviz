@@ -260,3 +260,25 @@ class MoveTextLabelCommand extends Command {
         return `Move text: ${this.textLabel.text}`;
     }
 }
+
+// Command to resize a node
+class ResizeNodeCommand extends Command {
+    constructor(node, oldSize, newSize) {
+        super();
+        this.node = node;
+        this.oldSize = oldSize;
+        this.newSize = newSize;
+    }
+
+    execute() {
+        this.node.setSize(this.newSize);
+    }
+
+    undo() {
+        this.node.setSize(this.oldSize);
+    }
+
+    getDescription() {
+        return `Resize node: ${this.node.name}`;
+    }
+}
