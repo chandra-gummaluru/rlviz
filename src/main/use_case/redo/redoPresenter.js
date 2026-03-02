@@ -24,12 +24,15 @@ class RedoPresenter extends RedoOutputBoundary {
         if (responseModel.success) {
             // Clear any active selections after redo
             this.viewModel.clearSelection();
-            
+
             // Update undo/redo button states
             this.viewModel.updateUndoRedoState(
                 responseModel.canUndo,
                 responseModel.canRedo
             );
+
+            // Trigger visual update
+            redraw();
         } else {
             // Handle error case
             console.warn('Redo failed:', responseModel.error);

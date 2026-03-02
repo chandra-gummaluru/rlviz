@@ -4,6 +4,10 @@ class EdgeObj {
         this.toNode = toNode;
         this.probability = this.clampProbability(probability);
         this.reward = this.sanitizeReward(reward);
+
+        // Label properties for movable/resizable labels
+        this.labelOffset = { x: 0, y: 0 }; // Offset from default position
+        this.labelSize = 12; // Font size (default 12)
     }
 
     clampProbability(prob) {
@@ -80,5 +84,24 @@ class EdgeObj {
         if (!this.fromNode || !this.toNode) return false;
         if (this.fromNode.type === this.toNode.type) return false;
         return true;
+    }
+
+    setLabelOffset(x, y) {
+        this.labelOffset = { x, y };
+    }
+
+    setLabelSize(size) {
+        this.labelSize = Math.max(8, Math.min(24, size)); // Clamp between 8 and 24
+    }
+
+    getLabelColor() {
+        const reward = this.getReward();
+        if (reward > 0) {
+            return color(0, 100, 0); // Dark green for positive
+        } else if (reward < 0) {
+            return color(139, 0, 0); // Dark red for negative
+        } else {
+            return color(0, 0, 0); // Black for zero
+        }
     }
 }

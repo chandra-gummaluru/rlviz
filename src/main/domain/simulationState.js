@@ -19,6 +19,13 @@ class SimulationState {
         this.highlightedEdge = null;  // Currently highlighted edge {fromId, toId}
         this.visibleNodeIds = new Set();  // Set of node IDs that should be visible
         this.visibleEdgeIds = new Set();  // Set of edge IDs (fromId-toId) that should be visible
+
+        // Simulation statistics
+        this.initialState = null;  // Starting state node
+        this.totalReward = 0;  // Accumulated reward
+        this.stepCount = 0;  // Number of state-action-state transitions completed
+        this.currentDecisionProbs = [];  // Available actions with uniform probability
+        this.currentOutcomeProbs = [];  // Possible next states with their probabilities
     }
 
     // Initialize with a generated trace
@@ -34,6 +41,13 @@ class SimulationState {
         this.currentNode = null;
         this.replayInitialized = false;
         this.clearVisualState();
+
+        // Reset simulation statistics
+        this.initialState = visited[0];
+        this.totalReward = 0;
+        this.stepCount = 0;
+        this.currentDecisionProbs = [];
+        this.currentOutcomeProbs = [];
     }
 
     // Start the replay (after initialization)
@@ -162,6 +176,13 @@ class SimulationState {
         this.phaseStartTime = 0;
         this.phaseDuration = 0;
         this.clearVisualState();
+
+        // Reset simulation statistics
+        this.initialState = null;
+        this.totalReward = 0;
+        this.stepCount = 0;
+        this.currentDecisionProbs = [];
+        this.currentOutcomeProbs = [];
     }
 
     // Play/Pause controls
@@ -183,6 +204,69 @@ class SimulationState {
             canAdvance: this.canAdvance(),
             currentType: this.getCurrentType(),
             nextType: this.getNextType()
+        };
+    }
+
+    // Update decision probabilities when at a state node
+    setDecisionProbs(stateNode, graph) {
+        this.currentDecisionProbs = [];
+        if (!stateNode || stateNode.type !== 'state') return;
+
+        const availableActions = stateNode.actions || [];
+        const uniformProb = availableActions.length > 0 ? 1.0 / availableActions.length : 0;
+
+        availableActions.forEach(actionId => {
+            const actionNode = graph.getNodeById(actionId);
+            if (actionNode) {
+                this.currentDecisionProbs.push({
+                    actionName: actionNode.name,
+                    probability: uniformProb
+                });
+            }
+        });
+    }
+
+    // Update outcome probabilities when at an action node
+    setOutcomeProbs(actionNode, graph) {
+        this.currentOutcomeProbs = [];
+        if (!actionNode || actionNode.type !== 'action') return;
+
+        const transitions = actionNode.sas || [];
+        transitions.forEach(transition => {
+            const stateNode = graph.getNodeById(transition.nextState);
+            if (stateNode) {
+                this.currentOutcomeProbs.push({
+                    stateName: stateNode.name,
+                    probability: transition.probability,
+                    reward: transition.reward
+                });
+            }
+        });
+    }
+
+    // Add reward from a transition and increment step count
+    addReward(reward) {
+        this.totalReward += reward;
+        this.stepCount++;
+    }
+
+    // Get current state (for display)
+    getCurrentState() {
+        if (!this.currentNode || this.currentNode.type !== 'state') {
+            return null;
+        }
+        return this.currentNode;
+    }
+
+    // Get simulation statistics for UI
+    getSimulationStats() {
+        return {
+            initialState: this.initialState,
+            currentState: this.getCurrentState(),
+            totalReward: this.totalReward,
+            stepCount: this.stepCount,
+            decisionProbs: this.currentDecisionProbs,
+            outcomeProbs: this.currentOutcomeProbs
         };
     }
 }

@@ -180,16 +180,17 @@ class CanvasViewModel {
             return { mode: 'drag_text', label: hitTextLabel };
         }
 
-        if (!hitNode) {
-            // Check for edge click
-            const hitEdge = this.findEdgeAtPosition(x, y);
-            if (hitEdge) {
-                this.selectedEdge = hitEdge;
-                this.selectedNode = null;
-                this.selectedTextLabel = null;
-                return { mode: 'edge_selected', edge: hitEdge };
-            }
+        // Check for edge click (edges are only selectable outside of nodes)
+        const hitEdge = this.findEdgeAtPosition(x, y);
+        if (hitEdge) {
+            this.selectedEdge = hitEdge;
+            this.selectedNode = null;
+            this.selectedTextLabel = null;
+            return { mode: 'edge_selected', edge: hitEdge };
+        }
 
+        // Check for node click
+        if (!hitNode) {
             this.selectedNode = null;
             this.selectedEdge = null;
             this.selectedTextLabel = null;
@@ -232,30 +233,75 @@ class CanvasViewModel {
             const isBidirectional = reverseEdge !== null;
 
             if (isBidirectional) {
-                // For curved edges, check distance to Bezier curve
-                return this.isPointNearCurve(from, to, x, y, threshold);
+                // For curved edges, check distance to visible curve (excluding node circles)
+                return this.isPointNearVisibleCurve(from, to, x, y, threshold);
             } else {
-                // For straight edges, use original line distance calculation
-                const dx = to.x - from.x;
-                const dy = to.y - from.y;
-                const length = Math.sqrt(dx * dx + dy * dy);
-
-                if (length === 0) return false;
-
-                const dot = ((x - from.x) * dx + (y - from.y) * dy) / (length * length);
-
-                if (dot < 0 || dot > 1) return false;
-
-                const projX = from.x + dot * dx;
-                const projY = from.y + dot * dy;
-                const distance = Math.sqrt((x - projX) ** 2 + (y - projY) ** 2);
-
-                return distance <= threshold;
+                // For straight edges, check distance to visible line segment (excluding node circles)
+                return this.isPointNearVisibleLine(from, to, x, y, threshold);
             }
         });
     }
 
-    isPointNearCurve(from, to, x, y, threshold) {
+    isPointNearVisibleLine(from, to, x, y, threshold) {
+        // Match the EXACT rendering from drawStraightEdge() in mainView.js
+        const dx = to.x - from.x;
+        const dy = to.y - from.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+
+        if (distance === 0) return false;
+
+        const normalizedDx = dx / distance;
+        const normalizedDy = dy / distance;
+
+        // Calculate arrow size (must match rendering logic)
+        // Note: weight varies, but we'll use average weight for detection
+        const weight = from.type === 'state' && to.type === 'action' ? 2 : 5; // Approximate
+        const arrowSize = 8 + weight * 0.5;
+
+        // Calculate where the line actually ends (just before arrowhead)
+        const toRadius = to.size;
+        const arrowTipX = to.x - normalizedDx * toRadius;
+        const arrowTipY = to.y - normalizedDy * toRadius;
+        const lineEndX = arrowTipX - normalizedDx * arrowSize;
+        const lineEndY = arrowTipY - normalizedDy * arrowSize;
+
+        // The line is drawn from from.x, from.y (center) to lineEndX, lineEndY
+        // But we only want the VISIBLE part (outside the from-node circle)
+        const startX = from.x;
+        const startY = from.y;
+        const endX = lineEndX;
+        const endY = lineEndY;
+
+        // Calculate the parametric line: P(t) = start + t * (end - start), where 0 <= t <= 1
+        const lineVecX = endX - startX;
+        const lineVecY = endY - startY;
+        const lineLength = Math.sqrt(lineVecX * lineVecX + lineVecY * lineVecY);
+
+        if (lineLength === 0) return false;
+
+        // Find closest point on the line to (x, y)
+        const dot = ((x - startX) * lineVecX + (y - startY) * lineVecY) / (lineLength * lineLength);
+
+        // Clamp to line segment
+        if (dot < 0 || dot > 1) return false;
+
+        const projX = startX + dot * lineVecX;
+        const projY = startY + dot * lineVecY;
+
+        // Check if the projected point is OUTSIDE the from-node (visible part)
+        const distFromStart = Math.sqrt((projX - from.x) ** 2 + (projY - from.y) ** 2);
+        if (distFromStart <= from.size) {
+            // Point is inside the from-node, not selectable
+            return false;
+        }
+
+        // Check distance from click to projected point
+        const distanceToLine = Math.sqrt((x - projX) ** 2 + (y - projY) ** 2);
+
+        return distanceToLine <= threshold;
+    }
+
+    isPointNearVisibleCurve(from, to, x, y, threshold) {
         // Calculate control point for the Bezier curve (same as in drawCurvedEdge)
         const dx = to.x - from.x;
         const dy = to.y - from.y;
@@ -271,8 +317,9 @@ class CanvasViewModel {
         const controlY = (from.y + to.y) / 2 + perpY * curveOffset;
 
         // Sample points along the curve and find minimum distance
+        // Only consider points that are OUTSIDE both node circles (visible portion)
         let minDistance = Infinity;
-        const samples = 20; // Number of sample points along the curve
+        const samples = 20;
 
         for (let i = 0; i <= samples; i++) {
             const t = i / samples;
@@ -281,10 +328,19 @@ class CanvasViewModel {
             const curveX = (1 - t) * (1 - t) * from.x + 2 * (1 - t) * t * controlX + t * t * to.x;
             const curveY = (1 - t) * (1 - t) * from.y + 2 * (1 - t) * t * controlY + t * t * to.y;
 
-            // Calculate distance from click point to this sample point
-            const dist = Math.sqrt((x - curveX) ** 2 + (y - curveY) ** 2);
-            minDistance = Math.min(minDistance, dist);
+            // Check if this point on the curve is outside both node circles (visible)
+            const distFromStart = Math.sqrt((curveX - from.x) ** 2 + (curveY - from.y) ** 2);
+            const distFromEnd = Math.sqrt((curveX - to.x) ** 2 + (curveY - to.y) ** 2);
+
+            // Only check distance if this curve point is visible (outside both nodes)
+            if (distFromStart > from.size && distFromEnd > to.size) {
+                const dist = Math.sqrt((x - curveX) ** 2 + (y - curveY) ** 2);
+                minDistance = Math.min(minDistance, dist);
+            }
         }
+
+        // If no visible points were found (nodes overlap), return false
+        if (minDistance === Infinity) return false;
 
         return minDistance <= threshold;
     }
@@ -524,6 +580,64 @@ class CanvasViewModel {
         return node.type === 'state' ? '#BDBDBD' : '#424242'; // white gray/shit
     }
 
+    getRewardColorRange() {
+        // Find min and max rewards across all edges
+        const edges = this.graph.edges;
+        if (edges.length === 0) {
+            return { minReward: 0, maxReward: 0 };
+        }
+
+        let minReward = Infinity;
+        let maxReward = -Infinity;
+
+        edges.forEach(edge => {
+            const reward = edge.getReward();
+            minReward = Math.min(minReward, reward);
+            maxReward = Math.max(maxReward, reward);
+        });
+
+        // Handle case where all rewards are the same
+        if (minReward === maxReward) {
+            return { minReward: minReward, maxReward: minReward };
+        }
+
+        return { minReward, maxReward };
+    }
+
+    interpolateColor(reward, minReward, maxReward) {
+        // Gray for reward = 0
+        // Green for positive rewards (up to maxReward)
+        // Red for negative rewards (down to minReward)
+
+        if (reward === 0) {
+            return '#808080'; // Gray
+        }
+
+        if (reward > 0) {
+            // Interpolate from gray to green
+            const normalizedReward = maxReward === 0 ? 0 : reward / maxReward;
+            const intensity = Math.min(1, normalizedReward);
+
+            // Interpolate from gray (128, 128, 128) to bright green (0, 230, 0)
+            const r = Math.round(128 * (1 - intensity));
+            const g = Math.round(128 + 102 * intensity); // 128 to 230
+            const b = Math.round(128 * (1 - intensity));
+
+            return `rgb(${r}, ${g}, ${b})`;
+        } else {
+            // Interpolate from gray to red
+            const normalizedReward = minReward === 0 ? 0 : Math.abs(reward / minReward);
+            const intensity = Math.min(1, normalizedReward);
+
+            // Interpolate from gray (128, 128, 128) to bright red (230, 0, 0)
+            const r = Math.round(128 + 102 * intensity); // 128 to 230
+            const g = Math.round(128 * (1 - intensity));
+            const b = Math.round(128 * (1 - intensity));
+
+            return `rgb(${r}, ${g}, ${b})`;
+        }
+    }
+
     getEdgeColor(edge) {
         // Simulation active: highlight current edge
         if (this.mode === 'simulate' && this.simulationState && this.simulationState.highlightedEdge) {
@@ -534,8 +648,23 @@ class CanvasViewModel {
             }
         }
 
-        // Editor mode: selected edge
-        return this.selectedEdge === edge ? '#FF5722' : '#666666';
+        // Selected edge: keep highlight color
+        if (this.selectedEdge === edge) {
+            return '#FF5722';
+        }
+
+        // Get reward-based color for Action -> State edges
+        const from = edge.getFromNode();
+        const to = edge.getToNode();
+
+        if (from.type === 'action' && to.type === 'state') {
+            const { minReward, maxReward } = this.getRewardColorRange();
+            const reward = edge.getReward();
+            return this.interpolateColor(reward, minReward, maxReward);
+        }
+
+        // Default color for State -> Action edges
+        return '#666666';
     }
 
     getTextLabelColor(label) {

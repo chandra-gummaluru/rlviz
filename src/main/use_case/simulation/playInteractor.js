@@ -154,7 +154,7 @@ class PlayInteractor extends PlayInputBoundary {
     async animateTransition(fromNode, toNode) {
         this.outputBoundary.presentRoundStart(fromNode, toNode);
 
-        // Phase 1: REVEAL ALL OUTGOING EDGES
+        // Phase 1: REVEAL ALL OUTGOING EDGES AND UPDATE PROBABILITIES
         if (fromNode.type === 'state') {
             // Reveal all action nodes connected from this state
             const stateNodeInGraph = this.getNodeFromGraph(fromNode.id);
@@ -164,6 +164,10 @@ class PlayInteractor extends PlayInputBoundary {
                     this.simulationState.revealEdge(fromNode.id, actionId);
                 });
             }
+            // Update decision probabilities p(a|s)
+            if (stateNodeInGraph && this.traceGenerator && this.traceGenerator.graph) {
+                this.simulationState.setDecisionProbs(stateNodeInGraph, this.traceGenerator.graph);
+            }
         } else if (fromNode.type === 'action') {
             // Reveal all state nodes connected from this action
             const actionNodeInGraph = this.getNodeFromGraph(fromNode.id);
@@ -172,6 +176,16 @@ class PlayInteractor extends PlayInputBoundary {
                     this.simulationState.revealNode(transition.nextState);
                     this.simulationState.revealEdge(fromNode.id, transition.nextState);
                 });
+            }
+            // Update outcome probabilities p(s'|a,s) and track reward
+            if (actionNodeInGraph && this.traceGenerator && this.traceGenerator.graph) {
+                this.simulationState.setOutcomeProbs(actionNodeInGraph, this.traceGenerator.graph);
+
+                // Find the transition that leads to toNode and add its reward
+                const transition = actionNodeInGraph.sas.find(t => t.nextState === toNode.id);
+                if (transition) {
+                    this.simulationState.addReward(transition.reward);
+                }
             }
         }
 

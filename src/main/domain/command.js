@@ -282,3 +282,92 @@ class ResizeNodeCommand extends Command {
         return `Resize node: ${this.node.name}`;
     }
 }
+
+// Command to renormalize action node probabilities
+class RenormalizeCommand extends Command {
+    constructor(graph) {
+        super();
+        this.graph = graph;
+        // Store old probabilities for all action nodes
+        this.oldProbabilities = new Map();
+
+        const actionNodes = this.graph.nodes.filter(node => node.type === 'action');
+        actionNodes.forEach(actionNode => {
+            if (actionNode.sas && actionNode.sas.length > 0) {
+                // Deep copy the sas array with probabilities
+                const oldSas = actionNode.sas.map(transition => ({
+                    nextState: transition.nextState,
+                    probability: transition.probability,
+                    reward: transition.reward,
+                    transitionId: transition.transitionId
+                }));
+                this.oldProbabilities.set(actionNode.id, oldSas);
+            }
+        });
+    }
+
+    execute() {
+        const actionNodes = this.graph.nodes.filter(node => node.type === 'action');
+        actionNodes.forEach(actionNode => {
+            if (actionNode.sas && actionNode.sas.length > 0) {
+                actionNode.renormalizeProbabilities(true); // Force normalization
+            }
+        });
+    }
+
+    undo() {
+        // Restore old probabilities
+        this.oldProbabilities.forEach((oldSas, nodeId) => {
+            const actionNode = this.graph.nodes.find(n => n.id === nodeId);
+            if (actionNode) {
+                // Restore the old sas array
+                actionNode.sas = oldSas.map(transition => ({
+                    nextState: transition.nextState,
+                    probability: transition.probability,
+                    reward: transition.reward,
+                    transitionId: transition.transitionId
+                }));
+            }
+        });
+    }
+
+    getDescription() {
+        return `Renormalize probabilities (${this.oldProbabilities.size} actions)`;
+    }
+}
+
+// Command to set/change node image
+class SetImageCommand extends Command {
+    constructor(node, oldImage, newImage) {
+        super();
+        this.node = node;
+        this.oldImage = oldImage; // Can be undefined if no previous image
+        this.newImage = newImage; // Can be undefined to remove image
+    }
+
+    execute() {
+        if (this.newImage === undefined) {
+            delete this.node.image;
+        } else {
+            this.node.image = this.newImage;
+        }
+    }
+
+    undo() {
+        if (this.oldImage === undefined) {
+            delete this.node.image;
+        } else {
+            this.node.image = this.oldImage;
+        }
+    }
+
+    getDescription() {
+        if (this.newImage === undefined) {
+            return `Remove image from: ${this.node.name}`;
+        } else if (this.oldImage === undefined) {
+            return `Add image to: ${this.node.name}`;
+        } else {
+            return `Change image of: ${this.node.name}`;
+        }
+    }
+}

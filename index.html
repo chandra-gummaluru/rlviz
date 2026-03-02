@@ -8,6 +8,20 @@
 
     <link rel="stylesheet" type="text/css" href="style.css">
 
+    <!-- MathJax for LaTeX rendering -->
+    <script>
+      MathJax = {
+        tex: {
+          inlineMath: [['$', '$'], ['\\(', '\\)']],
+          displayMath: [['$$', '$$'], ['\\[', '\\]']]
+        },
+        svg: {
+          fontCache: 'global'
+        }
+      };
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+
     <script src="libraries/p5.min.js"></script>
     <script src="libraries/p5.sound.min.js"></script>
   </head>
@@ -105,15 +119,76 @@
     <script src="src/main/use_case/resizeNode/resizeNodeOutputBoundary.js"></script>
     <script src="src/main/use_case/resizeNode/resizeNodePresenter.js"></script>
 
-    <!-- Adapter Layer -->
-    <script src="src/main/adapter/canvasViewModel.js"></script>
+    <!-- Use Case Layer (refactored - DeleteNode) -->
+    <script src="src/main/use_case/deleteNode/deleteNodeInputBoundary.js"></script>
+    <script src="src/main/use_case/deleteNode/deleteNodeInputData.js"></script>
+    <script src="src/main/use_case/deleteNode/deleteNodeInteractor.js"></script>
+    <script src="src/main/use_case/deleteNode/deleteNodeOutputBoundary.js"></script>
+    <script src="src/main/use_case/deleteNode/deleteNodePresenter.js"></script>
 
-    <!-- View Layer -->
+    <!-- Use Case Layer (refactored - MoveNode) -->
+    <script src="src/main/use_case/moveNode/moveNodeInputBoundary.js"></script>
+    <script src="src/main/use_case/moveNode/moveNodeInputData.js"></script>
+    <script src="src/main/use_case/moveNode/moveNodeInteractor.js"></script>
+    <script src="src/main/use_case/moveNode/moveNodeOutputBoundary.js"></script>
+    <script src="src/main/use_case/moveNode/moveNodePresenter.js"></script>
+
+    <!-- Use Case Layer (refactored - RenameNode) -->
+    <script src="src/main/use_case/renameNode/renameNodeInputBoundary.js"></script>
+    <script src="src/main/use_case/renameNode/renameNodeInputData.js"></script>
+    <script src="src/main/use_case/renameNode/renameNodeInteractor.js"></script>
+    <script src="src/main/use_case/renameNode/renameNodeOutputBoundary.js"></script>
+    <script src="src/main/use_case/renameNode/renameNodePresenter.js"></script>
+
+    <!-- Use Case Layer (refactored - SelectNode) -->
+    <script src="src/main/use_case/selectNode/selectNodeInputBoundary.js"></script>
+    <script src="src/main/use_case/selectNode/selectNodeInputData.js"></script>
+    <script src="src/main/use_case/selectNode/selectNodeInteractor.js"></script>
+    <script src="src/main/use_case/selectNode/selectNodeOutputBoundary.js"></script>
+    <script src="src/main/use_case/selectNode/selectNodePresenter.js"></script>
+
+    <!-- Use Case Layer (refactored - CreateTextLabel) -->
+    <script src="src/main/use_case/createTextLabel/createTextLabelInputBoundary.js"></script>
+    <script src="src/main/use_case/createTextLabel/createTextLabelInputData.js"></script>
+    <script src="src/main/use_case/createTextLabel/createTextLabelInteractor.js"></script>
+    <script src="src/main/use_case/createTextLabel/createTextLabelOutputBoundary.js"></script>
+    <script src="src/main/use_case/createTextLabel/createTextLabelPresenter.js"></script>
+
+    <!-- Use Case Layer - RenormalizeProbabilities -->
+    <script src="src/main/use_case/renormalizeProbabilities/renormalizeProbabilitiesInputBoundary.js"></script>
+    <script src="src/main/use_case/renormalizeProbabilities/renormalizeProbabilitiesInputData.js"></script>
+    <script src="src/main/use_case/renormalizeProbabilities/renormalizeProbabilitiesInteractor.js"></script>
+    <script src="src/main/use_case/renormalizeProbabilities/renormalizeProbabilitiesOutputBoundary.js"></script>
+    <script src="src/main/use_case/renormalizeProbabilities/renormalizeProbabilitiesPresenter.js"></script>
+
+    <!-- Use Case Layer - SetImage -->
+    <script src="src/main/use_case/setImage/setImageInputBoundary.js"></script>
+    <script src="src/main/use_case/setImage/setImageInputData.js"></script>
+    <script src="src/main/use_case/setImage/setImageInteractor.js"></script>
+    <script src="src/main/use_case/setImage/setImageOutputBoundary.js"></script>
+    <script src="src/main/use_case/setImage/setImagePresenter.js"></script>
+
+    <!-- Adapter Layer - ViewModels -->
+    <script src="src/main/adapter/viewmodel/SelectionViewModel.js"></script>
+    <script src="src/main/adapter/viewmodel/ViewportViewModel.js"></script>
+    <script src="src/main/adapter/viewmodel/InteractionViewModel.js"></script>
+    <script src="src/main/adapter/viewmodel/NodeViewModel.js"></script>
+    <script src="src/main/adapter/viewmodel/EdgeViewModel.js"></script>
+    <script src="src/main/adapter/viewmodel/CanvasViewModel.js"></script>
+
+    <!-- Adapter Layer - Controller -->
+    <script src="src/main/adapter/controller/CanvasController.js"></script>
+
+    <!-- View Layer - Helpers -->
+    <script src="src/main/view/helpers/GeometricHelper.js"></script>
+
+    <!-- View Layer - UI Components -->
     <script src="src/main/view/buttons/stateButton.js"></script>
     <script src="src/main/view/buttons/actionButton.js"></script>
     <script src="src/main/view/buttons/importButton.js"></script>
     <script src="src/main/view/buttons/exportButton.js"></script>
     <script src="src/main/view/buttons/textButton.js"></script>
+    <script src="src/main/view/buttons/renormalizeButton.js"></script>
     <script src="src/main/view/buttons/zoomInButton.js"></script>
     <script src="src/main/view/buttons/zoomOutButton.js"></script>
     <script src="src/main/view/buttons/undoButton.js"></script>
@@ -122,6 +197,9 @@
     <script src="src/main/view/buttons/skipButton.js"></script>
     <script src="src/main/view/buttons/resetButton.js"></script>
     <script src="src/main/view/buttons/modeSelect.js"></script>
+    <script src="src/main/view/menuBar.js"></script>
+    <script src="src/main/view/toolBar.js"></script>
+    <script src="src/main/view/rightPanel.js"></script>
     <script src="src/main/view/sideBar.js"></script>
     <script src="src/main/view/mainView.js"></script>
 

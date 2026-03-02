@@ -1,5 +1,5 @@
 class SideBar {
-    constructor(onStateClick, onActionClick, onToggle, onTextBoxClick, onImportGraph, onExportGraph, onModeChange, onZoomIn, onZoomOut, onUndo, onRedo, onPlay, onSkip, onReset, canvasViewModel) {
+    constructor(onStateClick, onActionClick, onToggle, onTextBoxClick, onImportGraph, onExportGraph, onModeChange, onZoomIn, onZoomOut, onUndo, onRedo, onPlay, onSkip, onReset, onRenormalize, canvasViewModel) {
         this.width = 260;
         this.collapsed = false;
         this.mode = 'editor'; // 'editor' or 'simulate'
@@ -18,6 +18,7 @@ class SideBar {
         this.onPlay = onPlay;
         this.onSkip = onSkip;
         this.onReset = onReset;
+        this.onRenormalize = onRenormalize;
         this.canvasViewModel = canvasViewModel;
 
         this.toggleButton = null;
@@ -34,6 +35,7 @@ class SideBar {
         this.playButton = null;
         this.skipButton = null;
         this.resetButton = null;
+        this.renormalizeButton = null;
         this.helpText = null;
         this.startNodeStatus = null;
     }
@@ -115,6 +117,13 @@ class SideBar {
             () => this.onTextBoxClick()
         );
         console.log('Text button created');
+
+        // Renormalize button
+        this.renormalizeButton = new RenormalizeButton(
+            10, 290, 240, 40,
+            () => this.onRenormalize()
+        );
+        console.log('Renormalize button created');
 
         // Simulation control buttons (positioned at top right of screen)
         // These will be positioned dynamically based on window width
@@ -233,6 +242,7 @@ class SideBar {
             this.actionButton.show();
             this.textButton.show();
             this.importButton.show();
+            this.renormalizeButton.show();
             this.helpText.show();
             this.simulatePrompt.hide();
             this.startNodeStatus.hide();
@@ -247,6 +257,7 @@ class SideBar {
             this.actionButton.hide();
             this.textButton.hide();
             this.importButton.hide();
+            this.renormalizeButton.hide();
             this.helpText.hide();
             this.simulatePrompt.show();
             this.startNodeStatus.show();
@@ -270,6 +281,7 @@ class SideBar {
             this.actionButton.hide();
             this.textButton.hide();
             this.importButton.hide();
+            this.renormalizeButton.hide();
             this.zoomInButton.hide();
             this.zoomOutButton.hide();
             this.undoButton.hide();
@@ -300,11 +312,11 @@ class SideBar {
         }
 
         // Update undo button state
-        const canUndo = this.canvasViewModel.canUndo();
+        const canUndo = this.canvasViewModel.canUndoFlag;
         this.undoButton.setEnabled(canUndo);
 
         // Update redo button state
-        const canRedo = this.canvasViewModel.canRedo();
+        const canRedo = this.canvasViewModel.canRedoFlag;
         this.redoButton.setEnabled(canRedo);
     }
 
@@ -313,7 +325,7 @@ class SideBar {
             return;
         }
 
-        const startNode = this.canvasViewModel.startNode;
+        const startNode = this.canvasViewModel.interaction.startNode;
 
         if (!startNode) {
             // No start node selected - show neutral/gray state

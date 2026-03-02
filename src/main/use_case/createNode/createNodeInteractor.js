@@ -24,9 +24,13 @@ class CreateNodeInteractor extends CreateNodeInputBoundary {
                 throw new Error('Invalid node type');
             }
 
-            // Assign ID and add to graph
+            // Assign ID and add directly to graph (no undo/redo)
             node.id = id;
+            console.log('Created node:', node.name, 'with ID:', node.id, 'at position:', node.x, node.y);
             this.graph.addNode(node);
+
+            console.log('Added to graph. Total nodes:', this.graph.nodes.length);
+            console.log('Graph nodes:', this.graph.nodes.map(n => ({ id: n.id, name: n.name })));
 
             // Present success
             this.outputBoundary.presentNodeCreated(node);

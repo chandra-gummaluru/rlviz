@@ -1,8 +1,9 @@
 // Interactor for creating edges
 class CreateEdgeInteractor extends CreateEdgeInputBoundary {
-    constructor(graph, outputBoundary) {
+    constructor(graph, commandHistory, outputBoundary) {
         super();
         this.graph = graph;
+        this.commandHistory = commandHistory;
         this.outputBoundary = outputBoundary;
     }
 
@@ -50,8 +51,9 @@ class CreateEdgeInteractor extends CreateEdgeInputBoundary {
             // Note: Do NOT add to toNode's actions[] - that's for actions available FROM toNode
         }
 
-        // Add edge to graph
-        this.graph.addEdge(edge);
+        // Create and execute command through command history
+        const command = new AddEdgeCommand(this.graph, edge);
+        this.commandHistory.execute(command);
 
         // Present success
         this.outputBoundary.presentEdgeCreated(edge);

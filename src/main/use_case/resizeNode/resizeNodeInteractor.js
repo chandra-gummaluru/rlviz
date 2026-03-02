@@ -15,10 +15,9 @@ class ResizeNodeInteractor extends ResizeNodeInputBoundary {
             return;
         }
 
-        // Create and execute the resize command
+        // Create and execute the resize command through command history
         const command = new ResizeNodeCommand(node, inputData.oldSize, inputData.newSize);
-        command.execute();
-        this.commandHistory.addCommand(command);
+        this.commandHistory.execute(command);
 
         this.outputBoundary.presentNodeResized(node);
     }

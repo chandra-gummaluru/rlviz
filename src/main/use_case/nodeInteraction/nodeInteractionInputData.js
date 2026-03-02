@@ -6,11 +6,5 @@ class FindNodeInputData {
     }
 }
 
-// Input data for moving a node
-class MoveNodeInputData {
-    constructor(nodeId, newX, newY) {
-        this.nodeId = nodeId;
-        this.newX = newX;
-        this.newY = newY;
-    }
-}
+// NOTE: MoveNodeInputData has been moved to src/main/use_case/moveNode/moveNodeInputData.js
+// This legacy class definition has been removed to avoid conflicts

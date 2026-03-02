@@ -4,39 +4,32 @@ const commandHistory = new CommandHistory(50);
 const simulationState = new SimulationState();
 const traceGenerator = new TraceGenerator(graph);
 
-// Adapter - Create ViewModel with temporary null interactors
-const canvasViewModel = new CanvasViewModel(graph, {
-    undo: null,
-    redo: null,
-    setMode: null,
-    zoomIn: null,
-    zoomOut: null,
-    importGraph: null,
-    play: null,
-    skip: null,
-    reset: null,
-    createNode: null,
-    createEdge: null,
-    nodeInteraction: null,
-    serializeGraph: null
-});
+// Adapter - Create ViewModel (no interactors in constructor anymore)
+const canvasViewModel = new CanvasViewModel(graph, simulationState);
 
-// Presenters (need ViewModel reference)
-const createNodePresenter = new CreateNodePresenter(canvasViewModel);
+// Presenters for existing use cases
+const createNodePresenter = new CreateNodePresenter(canvasViewModel.interaction);
 const createEdgePresenter = new CreateEdgePresenter(canvasViewModel);
-const nodeInteractionPresenter = new NodeInteractionPresenter(canvasViewModel);
 const serializeGraphPresenter = new SerializeGraphPresenter(canvasViewModel);
 const undoPresenter = new UndoPresenter(canvasViewModel);
 const redoPresenter = new RedoPresenter(canvasViewModel);
-const setModePresenter = new SetModePresenter(canvasViewModel);
-const zoomPresenter = new ZoomPresenter(canvasViewModel);
+const setModePresenter = new SetModePresenter(canvasViewModel.interaction);
+const zoomPresenter = new ZoomPresenter(canvasViewModel.viewport);
 const importGraphPresenter = new ImportGraphPresenter(canvasViewModel);
-const resizeNodePresenter = new ResizeNodePresenter(canvasViewModel);
 
-// Interactors (need domain objects and presenters)
+// Presenters for new refactored use cases
+const deleteNodePresenter = new DeleteNodePresenter(canvasViewModel.selection);
+const moveNodePresenter = new MoveNodePresenter(canvasViewModel.interaction);
+const renameNodePresenter = new RenameNodePresenter(canvasViewModel.interaction);
+const selectNodePresenter = new SelectNodePresenter(canvasViewModel.selection);
+const createTextLabelPresenter = new CreateTextLabelPresenter(canvasViewModel.interaction);
+const resizeNodePresenter = new ResizeNodePresenter(canvasViewModel);
+const renormalizeProbabilitiesPresenter = new RenormalizeProbabilitiesPresenter(canvasViewModel);
+const setImagePresenter = new SetImagePresenter(canvasViewModel);
+
+// Interactors for existing use cases
 const createNodeInteractor = new CreateNodeInteractor(graph, createNodePresenter);
-const createEdgeInteractor = new CreateEdgeInteractor(graph, createEdgePresenter);
-const nodeInteractionInteractor = new NodeInteractionInteractor(graph, nodeInteractionPresenter);
+const createEdgeInteractor = new CreateEdgeInteractor(graph, commandHistory, createEdgePresenter);
 const serializeGraphInteractor = new SerializeGraphInteractor(graph, serializeGraphPresenter);
 const undoInteractor = new UndoInteractor(commandHistory, undoPresenter);
 const redoInteractor = new RedoInteractor(commandHistory, redoPresenter);
@@ -46,9 +39,42 @@ const zoomOutInteractor = new ZoomOutInteractor(zoomPresenter);
 const importGraphInteractor = new ImportGraphInteractor(graph, importGraphPresenter);
 const resizeNodeInteractor = new ResizeNodeInteractor(graph, commandHistory, resizeNodePresenter);
 
+// Interactors for new refactored use cases
+const deleteNodeInteractor = new DeleteNodeInteractor(graph, commandHistory, deleteNodePresenter);
+const moveNodeInteractor = new MoveNodeInteractor(graph, moveNodePresenter);
+const renameNodeInteractor = new RenameNodeInteractor(graph, commandHistory, renameNodePresenter);
+const selectNodeInteractor = new SelectNodeInteractor(graph, selectNodePresenter);
+const createTextLabelInteractor = new CreateTextLabelInteractor(graph, commandHistory, createTextLabelPresenter);
+const renormalizeProbabilitiesInteractor = new RenormalizeProbabilitiesInteractor(graph, commandHistory, renormalizeProbabilitiesPresenter);
+const setImageInteractor = new SetImageInteractor(graph, commandHistory, setImagePresenter);
+
+// Controller (receives all interactors, delegates to them)
+const canvasController = new CanvasController(canvasViewModel, {
+    createNode: createNodeInteractor,
+    createEdge: createEdgeInteractor,
+    deleteNode: deleteNodeInteractor,
+    moveNode: moveNodeInteractor,
+    renameNode: renameNodeInteractor,
+    selectNode: selectNodeInteractor,
+    createTextLabel: createTextLabelInteractor,
+    resizeNode: resizeNodeInteractor,
+    undo: undoInteractor,
+    redo: redoInteractor,
+    setMode: setModeInteractor,
+    zoomIn: zoomInInteractor,
+    zoomOut: zoomOutInteractor,
+    importGraph: importGraphInteractor,
+    serializeGraph: serializeGraphInteractor,
+    renormalizeProbabilities: renormalizeProbabilitiesInteractor,
+    setImage: setImageInteractor
+});
+
 // View instances (will be set in setup)
 let mainView;
 let sideBar;
+let menuBar;
+let toolBar;
+let rightPanel;
 
 // Simulation Presenter (needs ViewModel and MainView references, created in setup)
 let simulationPresenter;
@@ -56,41 +82,26 @@ let playInteractor;
 let skipInteractor;
 let resetInteractor;
 
-// Wire up interactors to ViewModel (after they're all created)
-canvasViewModel.createNodeInteractor = createNodeInteractor;
-canvasViewModel.createEdgeInteractor = createEdgeInteractor;
-canvasViewModel.nodeInteractionInteractor = nodeInteractionInteractor;
-canvasViewModel.nodeInteractionPresenter = nodeInteractionPresenter;  // For getFoundNode()
-canvasViewModel.serializeGraphInteractor = serializeGraphInteractor;
-canvasViewModel.serializeGraphPresenter = serializeGraphPresenter;  // For getSerializedData()
-canvasViewModel.undoInteractor = undoInteractor;
-canvasViewModel.redoInteractor = redoInteractor;
-canvasViewModel.setModeInteractor = setModeInteractor;
-canvasViewModel.zoomInInteractor = zoomInInteractor;
-canvasViewModel.zoomOutInteractor = zoomOutInteractor;
-canvasViewModel.importGraphInteractor = importGraphInteractor;
-canvasViewModel.resizeNodeInteractor = resizeNodeInteractor;
-
 // Callbacks
 const onStateClick = () => {
     console.log('State button clicked!');
-    canvasViewModel.startNodePlacement('state');
-    console.log('Placement mode:', canvasViewModel.placingMode);
-    console.log('Held node:', canvasViewModel.heldNode);
+    canvasController.startNodePlacement('state');
+    console.log('Placement mode:', canvasViewModel.interaction.placingMode);
+    console.log('Held node:', canvasViewModel.interaction.heldNode);
     redraw();
 };
 
 const onActionClick = () => {
     console.log('Action button clicked!');
-    canvasViewModel.startNodePlacement('action');
-    console.log('Placement mode:', canvasViewModel.placingMode);
-    console.log('Held node:', canvasViewModel.heldNode);
+    canvasController.startNodePlacement('action');
+    console.log('Placement mode:', canvasViewModel.interaction.placingMode);
+    console.log('Held node:', canvasViewModel.interaction.heldNode);
     redraw();
 };
 
 const onTextBoxClick = () => {
     console.log('Text box button clicked!');
-    canvasViewModel.startNodePlacement('textbox');
+    canvasController.startNodePlacement('textbox');
     redraw();
 };
 
@@ -105,7 +116,7 @@ const onImportGraph = () => {
         reader.onload = (event) => {
             // Pass the JSON string directly to importGraph
             // The interactor will handle parsing and validation
-            canvasViewModel.importGraph(event.target.result);
+            canvasController.importGraph(event.target.result);
             redraw();
         };
         reader.readAsText(file);
@@ -116,7 +127,7 @@ const onImportGraph = () => {
 const onExportGraph = () => {
     console.log('Export graph clicked!');
     // Get the serialized graph
-    const json = canvasViewModel.serializeGraph();
+    const json = canvasController.exportGraph();
 
     // Create a blob from the JSON string
     const blob = new Blob([json], { type: 'application/json' });
@@ -139,36 +150,47 @@ const onExportGraph = () => {
 
 const onModeChange = (mode) => {
     console.log('Mode changed to:', mode);
-    canvasViewModel.setMode(mode);
+    canvasController.setMode(mode);
     redraw();
 };
 
 const onZoomIn = () => {
     console.log('Zoom in clicked!');
-    canvasViewModel.zoomIn(windowWidth / 2, windowHeight / 2);
+    canvasController.zoomIn(windowWidth / 2, windowHeight / 2);
     redraw();
 };
 
 const onZoomOut = () => {
     console.log('Zoom out clicked!');
-    canvasViewModel.zoomOut(windowWidth / 2, windowHeight / 2);
+    canvasController.zoomOut(windowWidth / 2, windowHeight / 2);
     redraw();
 };
 
 const onUndo = () => {
     console.log('Undo clicked!');
-    if (canvasViewModel.undo()) {
-        sideBar.updateUndoRedoButtons();
-        redraw();
-    }
+    canvasController.undo();
+    sideBar.updateUndoRedoButtons();
+    redraw();
 };
 
 const onRedo = () => {
     console.log('Redo clicked!');
-    if (canvasViewModel.redo()) {
-        sideBar.updateUndoRedoButtons();
-        redraw();
-    }
+    canvasController.redo();
+    sideBar.updateUndoRedoButtons();
+    redraw();
+};
+
+const onRenormalize = () => {
+    console.log('Renormalize clicked!');
+    const inputData = new RenormalizeProbabilitiesInputData();
+    renormalizeProbabilitiesInteractor.execute(inputData);
+    redraw();
+};
+
+const onResetZoom = () => {
+    console.log('Reset zoom clicked!');
+    canvasViewModel.viewport.reset();
+    redraw();
 };
 
 const onPlay = () => {
@@ -179,7 +201,7 @@ const onPlay = () => {
     }
 
     // Check if start node is selected
-    if (!canvasViewModel.startNode && !simulationState.replayInitialized) {
+    if (!canvasViewModel.interaction.startNode && !simulationState.replayInitialized) {
         alert('Please select a start node first by double-clicking a state node');
         return;
     }
@@ -248,28 +270,57 @@ const onToggleSidebar = () => {
 function setup() {
     console.log('Setup called!');
 
-    // Create view instances
-    sideBar = new SideBar(onStateClick, onActionClick, onToggleSidebar, onTextBoxClick, onImportGraph, onExportGraph, onModeChange, onZoomIn, onZoomOut, onUndo, onRedo, onPlay, onSkip, onReset, canvasViewModel);
-    console.log('SideBar created:', sideBar);
+    // Create menu bar (Row 1)
+    menuBar = new MenuBar({
+        onImport: onImportGraph,
+        onExport: onExportGraph,
+        onUndo: onUndo,
+        onRedo: onRedo,
+        onZoomIn: onZoomIn,
+        onZoomOut: onZoomOut,
+        onResetZoom: onResetZoom
+    });
+    menuBar.setup();
+    console.log('MenuBar created:', menuBar);
 
-    mainView = new MainView(canvasViewModel, sideBar);
+    // Create toolbar (Row 2)
+    toolBar = new ToolBar({
+        onStateClick: onStateClick,
+        onActionClick: onActionClick,
+        onTextBoxClick: onTextBoxClick,
+        onRenormalize: onRenormalize,
+        onPlay: onPlay,
+        onStep: onSkip, // Using skip as step for now
+        onRerun: onReset,
+        onModeChange: onModeChange
+    }, canvasViewModel);
+    toolBar.setup(menuBar.getHeight());
+    console.log('ToolBar created:', toolBar);
+
+    // Create right panel
+    rightPanel = new RightPanel(canvasViewModel, canvasController);
+    rightPanel.setup(menuBar.getHeight() + toolBar.getHeight());
+    console.log('RightPanel created:', rightPanel);
+
+    // Set right panel reference in setModePresenter so it can update when mode changes
+    setModePresenter.setRightPanel(rightPanel);
+
+    // Sidebar removed - functionality now in menuBar and toolBar
+    // sideBar = new SideBar(onStateClick, onActionClick, onToggleSidebar, onTextBoxClick, onImportGraph, onExportGraph, onModeChange, onZoomIn, onZoomOut, onUndo, onRedo, onPlay, onSkip, onReset, onRenormalize, canvasViewModel);
+    // console.log('SideBar created:', sideBar);
+
+    mainView = new MainView(canvasViewModel, canvasController, null, menuBar, toolBar, rightPanel);
     console.log('MainView created:', mainView);
 
     // Create simulation presenter and interactors (need both ViewModel and MainView)
     simulationPresenter = new SimulationPresenter(canvasViewModel, mainView);
 
     // Create start node provider function
-    const startNodeProvider = () => canvasViewModel.startNode;
+    const startNodeProvider = () => canvasViewModel.interaction.startNode;
 
     playInteractor = new PlayInteractor(simulationState, traceGenerator, simulationPresenter, startNodeProvider);
     skipInteractor = new SkipInteractor(simulationState, simulationPresenter);
     resetInteractor = new ResetInteractor(simulationState, simulationPresenter);
-
-    // Wire up simulation interactors to ViewModel
-    canvasViewModel.playInteractor = playInteractor;
-    canvasViewModel.skipInteractor = skipInteractor;
-    canvasViewModel.resetInteractor = resetInteractor;
-    canvasViewModel.simulationState = simulationState;
 
     // Initialize
     mainView.setup();
