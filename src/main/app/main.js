@@ -79,6 +79,8 @@ let rightPanel;
 // Simulation Presenter (needs ViewModel and MainView references, created in setup)
 let simulationPresenter;
 let playInteractor;
+let pauseInteractor;
+let stepInteractor;
 let skipInteractor;
 let resetInteractor;
 
@@ -209,12 +211,51 @@ const onPlay = () => {
     const inputData = new PlayInputData();
     playInteractor.execute(inputData);
 
-    // Update play button state (toggle between play and pause)
-    // Note: For first click (initialization), the presenter will set it to playing
-    // For subsequent clicks, we toggle here immediately
-    if (simulationState.replayInitialized) {
-        sideBar.playButton.setPlaying(simulationState.isPlaying);
+    // Update button states
+    if (toolBar) {
+        toolBar.updateButtonStates(simulationState.isPlaying, simulationState.canAdvance());
     }
+};
+
+const onPause = () => {
+    console.log('Pause clicked!');
+    if (!pauseInteractor) {
+        console.error('PauseInteractor not initialized');
+        return;
+    }
+
+    const inputData = new PauseInputData();
+    pauseInteractor.execute(inputData);
+
+    // Update button states
+    if (toolBar) {
+        toolBar.updateButtonStates(simulationState.isPlaying, simulationState.canAdvance());
+    }
+};
+
+const onStep = () => {
+    console.log('Step clicked!');
+    if (!stepInteractor) {
+        console.error('StepInteractor not initialized');
+        return;
+    }
+
+    // Check if start node is selected for first step
+    if (!canvasViewModel.interaction.startNode && !simulationState.replayInitialized) {
+        alert('Please select a start node first by double-clicking a state node');
+        return;
+    }
+
+    // Pause if playing
+    if (simulationState.isPlaying) {
+        simulationState.pause();
+        if (toolBar) {
+            toolBar.updateButtonStates(false, simulationState.canAdvance());
+        }
+    }
+
+    const inputData = new StepInputData();
+    stepInteractor.execute(inputData);
 };
 
 const onSkip = () => {
@@ -226,14 +267,16 @@ const onSkip = () => {
 
     // Check if simulation has been initialized
     if (!simulationState.replayInitialized) {
-        alert('Please click Play first to start the simulation');
+        alert('Please click Play or Step first to start the simulation');
         return;
     }
 
     // Pause if playing
     if (simulationState.isPlaying) {
         simulationState.pause();
-        sideBar.playButton.setPlaying(false);
+        if (toolBar) {
+            toolBar.updateButtonStates(false, simulationState.canAdvance());
+        }
     }
 
     const inputData = new SkipInputData();
@@ -256,8 +299,10 @@ const onReset = () => {
     const inputData = new ResetInputData();
     resetInteractor.execute(inputData);
 
-    // Reset play button to Play state
-    sideBar.playButton.setPlaying(false);
+    // Reset button states
+    if (toolBar) {
+        toolBar.updateButtonStates(false, simulationState.canAdvance());
+    }
 };
 
 const onToggleSidebar = () => {
@@ -290,7 +335,8 @@ function setup() {
         onTextBoxClick: onTextBoxClick,
         onRenormalize: onRenormalize,
         onPlay: onPlay,
-        onStep: onSkip, // Using skip as step for now
+        onPause: onPause,
+        onStep: onStep, // Step through animation one transition at a time
         onRerun: onReset,
         onModeChange: onModeChange
     }, canvasViewModel);
@@ -319,6 +365,8 @@ function setup() {
     const startNodeProvider = () => canvasViewModel.interaction.startNode;
 
     playInteractor = new PlayInteractor(simulationState, traceGenerator, simulationPresenter, startNodeProvider);
+    pauseInteractor = new PauseInteractor(simulationState, simulationPresenter);
+    stepInteractor = new StepInteractor(simulationState, traceGenerator, simulationPresenter, startNodeProvider);
     skipInteractor = new SkipInteractor(simulationState, simulationPresenter);
     resetInteractor = new ResetInteractor(simulationState, simulationPresenter);
 

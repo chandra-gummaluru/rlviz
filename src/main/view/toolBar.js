@@ -15,7 +15,7 @@ class ToolBar {
         this.renormalizeBtn = null;
 
         // Simulate mode buttons
-        this.playBtn = null;
+        this.playPauseBtn = null; // Single button that toggles between Play and Pause
         this.stepBtn = null;
         this.rerunBtn = null;
 
@@ -89,20 +89,36 @@ class ToolBar {
     }
 
     createSimulateModeButtons() {
-        // Play button
-        this.playBtn = this.createButton('Play', () => this.callbacks.onPlay());
-        this.playBtn.style('background-color', '#4CAF50');
-        this.playBtn.style('color', '#FFFFFF');
+        // Play/Pause toggle button (starts as Play)
+        this.playPauseBtn = this.createButton('▶ Play', () => this.handlePlayPauseClick());
+        this.playPauseBtn.style('background-color', '#4CAF50');
+        this.playPauseBtn.style('color', '#FFFFFF');
+        this.playPauseBtn.elt.dataset.mode = 'play'; // Track current mode
 
         // Step button
-        this.stepBtn = this.createButton('Step', () => this.callbacks.onStep());
+        this.stepBtn = this.createButton('⏭ Step', () => this.callbacks.onStep());
         this.stepBtn.style('background-color', '#2196F3');
         this.stepBtn.style('color', '#FFFFFF');
 
         // Rerun button (Reset)
-        this.rerunBtn = this.createButton('Rerun', () => this.callbacks.onRerun());
-        this.rerunBtn.style('background-color', '#FF9800');
+        this.rerunBtn = this.createButton('⟲ Rerun', () => this.callbacks.onRerun());
+        this.rerunBtn.style('background-color', '#9C27B0');
         this.rerunBtn.style('color', '#FFFFFF');
+    }
+
+    handlePlayPauseClick() {
+        const mode = this.playPauseBtn.elt.dataset.mode;
+        if (mode === 'play') {
+            // Currently showing Play, so execute Play
+            if (this.callbacks.onPlay) {
+                this.callbacks.onPlay();
+            }
+        } else {
+            // Currently showing Pause, so execute Pause
+            if (this.callbacks.onPause) {
+                this.callbacks.onPause();
+            }
+        }
     }
 
     createButton(label, onClick) {
@@ -195,7 +211,7 @@ class ToolBar {
             this.renormalizeBtn.show();
 
             // Hide Simulate mode buttons
-            this.playBtn.hide();
+            this.playPauseBtn.hide();
             this.stepBtn.hide();
             this.rerunBtn.hide();
 
@@ -210,9 +226,12 @@ class ToolBar {
             this.renormalizeBtn.hide();
 
             // Show Simulate mode buttons
-            this.playBtn.show();
+            this.playPauseBtn.show();
             this.stepBtn.show();
             this.rerunBtn.show();
+
+            // Reset to Play mode when entering simulate mode
+            this.setPlayPauseMode('play');
 
             // Update toggle button styles
             this.styleToggleButton(this.editToggleBtn, false);
@@ -238,5 +257,65 @@ class ToolBar {
 
     getCurrentMode() {
         return this.currentMode;
+    }
+
+    // Set Play/Pause button mode and update label
+    setPlayPauseMode(mode) {
+        if (!this.playPauseBtn) return;
+
+        this.playPauseBtn.elt.dataset.mode = mode;
+
+        if (mode === 'play') {
+            this.playPauseBtn.html('▶ Play');
+            this.playPauseBtn.style('background-color', '#4CAF50');
+        } else {
+            this.playPauseBtn.html('⏸ Pause');
+            this.playPauseBtn.style('background-color', '#FF9800');
+        }
+    }
+
+    // Enable/disable Play/Pause button
+    setPlayPauseEnabled(enabled) {
+        if (this.playPauseBtn) {
+            if (enabled) {
+                this.playPauseBtn.removeAttribute('disabled');
+                this.playPauseBtn.style('opacity', '1.0');
+                this.playPauseBtn.style('cursor', 'pointer');
+            } else {
+                this.playPauseBtn.attribute('disabled', '');
+                this.playPauseBtn.style('opacity', '0.5');
+                this.playPauseBtn.style('cursor', 'not-allowed');
+            }
+        }
+    }
+
+    // Enable/disable Step button based on simulation state
+    setStepEnabled(enabled) {
+        if (this.stepBtn) {
+            if (enabled) {
+                this.stepBtn.removeAttribute('disabled');
+                this.stepBtn.style('opacity', '1.0');
+                this.stepBtn.style('cursor', 'pointer');
+            } else {
+                this.stepBtn.attribute('disabled', '');
+                this.stepBtn.style('opacity', '0.5');
+                this.stepBtn.style('cursor', 'not-allowed');
+            }
+        }
+    }
+
+    // Update button states based on simulation state
+    updateButtonStates(isPlaying, canAdvance) {
+        // Toggle Play/Pause button based on playing state
+        if (isPlaying) {
+            this.setPlayPauseMode('pause');
+            this.setPlayPauseEnabled(true); // Always enabled when playing (can pause)
+        } else {
+            this.setPlayPauseMode('play');
+            this.setPlayPauseEnabled(canAdvance); // Only enabled if can advance
+        }
+
+        // Step button: enabled when not playing and can advance
+        this.setStepEnabled(!isPlaying && canAdvance);
     }
 }

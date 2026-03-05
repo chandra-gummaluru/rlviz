@@ -1,13 +1,13 @@
-// Interactor for Play simulation action
-class PlayInteractor extends PlayInputBoundary {
+// Interactor for Step simulation action (advance one transition with animation)
+class StepInteractor extends StepInputBoundary {
     constructor(simulationState, traceGenerator, outputBoundary, startNodeProvider) {
         super();
         this.simulationState = simulationState;
         this.traceGenerator = traceGenerator;
         this.outputBoundary = outputBoundary;
-        this.startNodeProvider = startNodeProvider;  // Function that returns current start node
+        this.startNodeProvider = startNodeProvider;
 
-        // Timing constants (in milliseconds)
+        // Timing constants (in milliseconds) - same as PlayInteractor
         this.TIMING = {
             PRE_SETUP_PAUSE: 500,
             POST_ERASE_PAUSE: 300,
@@ -21,24 +21,18 @@ class PlayInteractor extends PlayInputBoundary {
 
     execute(inputData) {
         if (!this.simulationState.replayInitialized) {
-            // First Play click: Run initialization
+            // First Step click: Initialize without auto-playing
             this.runInitialization(inputData);
         } else {
-            // Start or resume continuous play
-            if (!this.simulationState.isPlaying) {
-                this.simulationState.play();
-                console.log('Simulation started/resumed');
-                this.continuousPlay(inputData);
-            } else {
-                console.log('Simulation already playing');
-            }
+            // Subsequent Step clicks: Advance one step with animation
+            this.stepWithAnimation(inputData);
         }
     }
 
     /**
-     * Initialization sequence (first Play click)
+     * Initialization sequence (first Step click)
      */
-    runInitialization(inputData) {
+    async runInitialization(inputData) {
         // 1. Get start node
         const startNode = this.startNodeProvider();
 
@@ -61,11 +55,11 @@ class PlayInteractor extends PlayInputBoundary {
         console.log('Trace generated:', visited.length, 'nodes');
 
         // 4. Run initialization animation sequence
-        this.animateInitialization(inputData);
+        await this.animateInitialization(inputData);
     }
 
     /**
-     * Initialization animation sequence
+     * Initialization animation sequence (same as PlayInteractor but without auto-play)
      */
     async animateInitialization(inputData) {
         this.outputBoundary.presentInitializationStart();
@@ -73,7 +67,6 @@ class PlayInteractor extends PlayInputBoundary {
         // Phase 1: PRE-SETUP PAUSE
         this.simulationState.setPhase('pause', this.TIMING.PRE_SETUP_PAUSE);
         this.outputBoundary.presentPhaseChange('pause', this.TIMING.PRE_SETUP_PAUSE);
-
         await this.waitForPhase();
 
         // Phase 2: ERASE / RESET PHASE
@@ -84,48 +77,37 @@ class PlayInteractor extends PlayInputBoundary {
         // Phase 3: POST-ERASE PAUSE
         this.simulationState.setPhase('pause', this.TIMING.POST_ERASE_PAUSE);
         this.outputBoundary.presentPhaseChange('pause', this.TIMING.POST_ERASE_PAUSE);
-
         await this.waitForPhase();
 
         // Phase 4: CAMERA CENTERING
         this.simulationState.setPhase('transition', this.TIMING.CAMERA_CENTER);
         this.outputBoundary.presentPhaseChange('center_camera', this.TIMING.CAMERA_CENTER);
-
         await this.waitForPhase();
 
-        // Phase 5: COMPLETE - Set initialized and start playing automatically
+        // Phase 5: COMPLETE - Set initialized but DON'T auto-start playing
         this.simulationState.start();
-        this.simulationState.play(); // Auto-start continuous play
+        this.simulationState.pause(); // Keep it paused (different from PlayInteractor)
         this.simulationState.setPhase('idle', 0);
+
+        // Update probabilities for starting node
+        this.updateProbabilitiesForCurrentNode();
+
         this.outputBoundary.presentInitializationComplete();
-
-        console.log('Initialization complete, starting continuous play');
-
-        // Start continuous play automatically
-        this.continuousPlay(inputData);
+        console.log('Initialization complete, ready for stepping');
     }
 
     /**
-     * Continuous play loop
+     * Execute one step with animation (same as PlayInteractor.playNextStep but doesn't loop)
      */
-    async continuousPlay(inputData) {
-        while (this.simulationState.isPlaying && this.simulationState.canAdvance()) {
-            await this.playNextStep(inputData);
-        }
-
-        if (!this.simulationState.canAdvance()) {
+    async stepWithAnimation(inputData) {
+        // Ensure simulation is paused
+        if (this.simulationState.isPlaying) {
             this.simulationState.pause();
-            this.outputBoundary.presentTraceEnd();
-            console.log('Reached end of trace');
         }
-    }
 
-    /**
-     * Execute one step to next node (State→Action or Action→State)
-     */
-    async playNextStep(inputData) {
         // Check if we can advance
         if (!this.simulationState.canAdvance()) {
+            this.outputBoundary.presentTraceEnd();
             return;
         }
 
@@ -134,19 +116,14 @@ class PlayInteractor extends PlayInputBoundary {
 
         console.log(`Step: ${currentNode.type} (${currentNode.name}) -> ${nextNode.type} (${nextNode.name})`);
 
-        // Determine transition type and animate
-        if (currentNode.type === 'state' && nextNode.type === 'action') {
-            await this.animateTransition(currentNode, nextNode, inputData);
-        } else if (currentNode.type === 'action' && nextNode.type === 'state') {
-            await this.animateTransition(currentNode, nextNode, inputData);
-        } else {
-            this.outputBoundary.presentError(`Invalid transition: ${currentNode.type} -> ${nextNode.type}`);
-        }
+        // Animate the transition
+        await this.animateTransition(currentNode, nextNode);
     }
 
     /**
      * Animate transition from current node to next node
      * Shows all outgoing edges, highlights chosen edge, moves to next node
+     * (Same as PlayInteractor.animateTransition)
      */
     async animateTransition(fromNode, toNode) {
         this.outputBoundary.presentRoundStart(fromNode, toNode);
@@ -210,20 +187,37 @@ class PlayInteractor extends PlayInputBoundary {
         this.outputBoundary.presentRoundComplete(this.simulationState.currentNode);
 
         console.log('Step complete, now at:', this.simulationState.currentNode.name);
+
+        // Check if we reached the end
+        if (!this.simulationState.canAdvance()) {
+            this.outputBoundary.presentTraceEnd();
+        }
+    }
+
+    /**
+     * Update probabilities based on current node
+     */
+    updateProbabilitiesForCurrentNode() {
+        const currentNode = this.simulationState.currentNode;
+        const nodeInGraph = this.getNodeFromGraph(currentNode.id);
+
+        if (!nodeInGraph) return;
+
+        if (currentNode.type === 'state') {
+            // Update decision probabilities p(a|s)
+            this.simulationState.setDecisionProbs(nodeInGraph, this.traceGenerator.graph);
+        } else if (currentNode.type === 'action') {
+            // Update outcome probabilities p(s'|a,s)
+            this.simulationState.setOutcomeProbs(nodeInGraph, this.traceGenerator.graph);
+        }
     }
 
     /**
      * Get node from graph by ID
      */
     getNodeFromGraph(nodeId) {
-        const startNode = this.startNodeProvider();
-        // Traverse up to get the graph - this is a workaround
-        // In a better architecture, we'd inject the graph directly
-        if (startNode && startNode.constructor && startNode.constructor.name) {
-            // Access via traceGenerator which has graph reference
-            if (this.traceGenerator && this.traceGenerator.graph) {
-                return this.traceGenerator.graph.getNodeById(nodeId);
-            }
+        if (this.traceGenerator && this.traceGenerator.graph) {
+            return this.traceGenerator.graph.getNodeById(nodeId);
         }
         return null;
     }

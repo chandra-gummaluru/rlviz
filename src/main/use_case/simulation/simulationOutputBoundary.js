@@ -27,4 +27,8 @@ class SimulationOutputBoundary {
     presentTraceEnd() {
         throw new Error('SimulationOutputBoundary.presentTraceEnd() must be implemented');
     }
+
+    presentPaused() {
+        throw new Error('SimulationOutputBoundary.presentPaused() must be implemented');
+    }
 }

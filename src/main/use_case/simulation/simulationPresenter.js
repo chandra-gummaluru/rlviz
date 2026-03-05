@@ -14,8 +14,10 @@ class SimulationPresenter extends SimulationOutputBoundary {
 
     presentInitializationComplete() {
         console.log('[Presenter] Initialization complete');
-        this.mainView.sideBar.playButton.setPlaying(true);
-        this.mainView.sideBar.updateSimulationStatusLine();
+        // Update button states based on simulation state
+        const isPlaying = this.viewModel.simulationState.isPlaying;
+        const canAdvance = this.viewModel.simulationState.canAdvance();
+        this.mainView.toolBar.updateButtonStates(isPlaying, canAdvance);
         this.mainView.redrawSimulation();
     }
 
@@ -26,7 +28,10 @@ class SimulationPresenter extends SimulationOutputBoundary {
 
     presentRoundComplete(currentNode) {
         console.log(`[Presenter] Round complete at: ${currentNode.name}`);
-        this.mainView.sideBar.updateSimulationStatusLine();
+        // Update button states based on simulation state
+        const isPlaying = this.viewModel.simulationState.isPlaying;
+        const canAdvance = this.viewModel.simulationState.canAdvance();
+        this.mainView.toolBar.updateButtonStates(isPlaying, canAdvance);
         this.mainView.redrawSimulation();
     }
 
@@ -83,7 +88,16 @@ class SimulationPresenter extends SimulationOutputBoundary {
 
     presentTraceEnd() {
         console.log('[Presenter] Reached end of trace');
-        this.mainView.sideBar.playButton.setPlaying(false);
+        // Update button states (can't advance anymore)
+        this.mainView.toolBar.updateButtonStates(false, false);
         alert('Simulation complete! Reached end of trace.');
+    }
+
+    presentPaused() {
+        console.log('[Presenter] Simulation paused');
+        // Update button states (paused, can still advance)
+        const canAdvance = this.viewModel.simulationState.canAdvance();
+        this.mainView.toolBar.updateButtonStates(false, canAdvance);
+        this.mainView.redrawSimulation();
     }
 }
