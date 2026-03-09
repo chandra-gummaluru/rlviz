@@ -41,22 +41,12 @@ class SimulationPresenter extends SimulationOutputBoundary {
         // Trigger appropriate visual updates based on phase
         switch (phase) {
             case 'center_camera':
-                // Center camera on start node
-                const startNode = this.viewModel.simulationState.visited[0];
-                const actualNode = this.viewModel.graph.getNodeById(startNode.id);
-                if (actualNode) {
-                    this.viewModel.centerOnNode(actualNode, this.mainView.canvas.width, this.mainView.canvas.height);
-                }
+                // Skip camera centering - maintain original perspective
                 this.mainView.redrawSimulation();
                 break;
 
             case 'camera_move':
-                // Center camera on current node (which is now the toNode after advance)
-                const currentNodeData = this.viewModel.simulationState.currentNode;
-                const currentActualNode = this.viewModel.graph.getNodeById(currentNodeData.id);
-                if (currentActualNode) {
-                    this.viewModel.centerOnNode(currentActualNode, this.mainView.canvas.width, this.mainView.canvas.height);
-                }
+                // Skip camera centering - maintain original perspective
                 this.mainView.redrawSimulation();
                 break;
 

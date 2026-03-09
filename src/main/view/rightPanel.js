@@ -677,7 +677,7 @@ class RightPanel {
             stepsValue.parent(stepsDiv);
             stepsValue.style('font-size', '24px');
             stepsValue.style('font-weight', '700');
-            stepsValue.style('color', '#000000');
+            stepsValue.style('color', '#2196F3');
         });
 
         // Decision p(a|s) - if at a state

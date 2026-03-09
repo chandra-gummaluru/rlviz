@@ -150,7 +150,7 @@ class CanvasViewModel {
         const centerX = canvasWidth / 2;
         const centerY = canvasHeight / 2;
 
-        this.viewport.zoom = 5.0;
+        // Pan to center on node without changing zoom level
         this.viewport.panX = centerX - (node.x * this.viewport.zoom);
         this.viewport.panY = centerY - (node.y * this.viewport.zoom);
     }

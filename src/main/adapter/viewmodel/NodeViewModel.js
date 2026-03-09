@@ -8,7 +8,7 @@ class NodeViewModel {
     }
 
     get color() {
-        // Simulation active: highlight current node
+        // Simulation active: highlight current node only
         if (this.interactionViewModel.mode === 'simulate' &&
             this.simulationState &&
             this.simulationState.replayInitialized) {
@@ -16,12 +16,6 @@ class NodeViewModel {
             if (currentNode && currentNode.id === this.node.id) {
                 return '#FF9800'; // Orange
             }
-        }
-
-        // Simulate mode: highlight start node with bright green
-        if (this.interactionViewModel.mode === 'simulate' &&
-            this.interactionViewModel.startNode === this.node) {
-            return '#00E676'; // Bright green for start node
         }
 
         // Editor mode: existing colors

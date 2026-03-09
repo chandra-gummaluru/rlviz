@@ -512,12 +512,13 @@ class MainView {
         // Delegate to controller for entity interactions
         this.controller.handleMousePress(mouseX, mouseY);
 
-        // Check if we should center on node (simulate mode double-click)
+        // Check if we should update after simulate mode double-click
         if (this.viewModel.interaction.shouldCenterOnNode && this.viewModel.interaction.nodeToCenterOn) {
-            this.centerOnNode(this.viewModel.interaction.nodeToCenterOn, width, height);
+            // Skip camera centering - just update UI elements
             this.viewModel.interaction.shouldCenterOnNode = false;
             this.viewModel.interaction.nodeToCenterOn = null;
             this.sideBar.updateStartNodeStatus();
+            this.rightPanel.updateContent(); // Update right panel to show new initial state
         }
 
         // Check if edge creation was requested
