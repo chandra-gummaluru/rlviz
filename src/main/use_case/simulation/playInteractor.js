@@ -190,22 +190,82 @@ class PlayInteractor extends PlayInputBoundary {
         this.outputBoundary.presentPhaseChange('reveal', this.TIMING.DECISION_PAUSE);
         await this.waitForPhase();
 
-        // Phase 2: HIGHLIGHT CHOSEN EDGE
+        // Phase 2: SPINNING ARROW (if enabled and at action node)
+        if (this.simulationState.spinningArrowEnabled &&
+            fromNode.type === 'action') {
+            const actionNodeInGraph = this.getNodeFromGraph(fromNode.id);
+            if (actionNodeInGraph && actionNodeInGraph.sas && actionNodeInGraph.sas.length > 0) {
+                // Find the index of the edge leading to toNode
+                const targetIndex = actionNodeInGraph.sas.findIndex(t => t.nextState === toNode.id);
+
+                if (targetIndex !== -1) {
+                    // Prepare edge data for spinning arrow
+                    const edges = actionNodeInGraph.sas.map(transition => ({
+                        probability: transition.probability,
+                        targetId: transition.nextState
+                    }));
+
+                    // Initialize spinning arrow
+                    this.simulationState.initSpinningArrow(edges, targetIndex);
+                    this.simulationState.setPhase('spinning_arrow', this.simulationState.spinningArrowDuration);
+                    this.outputBoundary.presentPhaseChange('spinning_arrow', this.simulationState.spinningArrowDuration);
+                    await this.waitForPhase();
+
+                    // Clear spinning arrow state
+                    this.simulationState.clearSpinningArrow();
+
+                    // Hide all edges/nodes except the chosen one (but keep previously visited nodes/edges visible)
+                    actionNodeInGraph.sas.forEach(transition => {
+                        if (transition.nextState !== toNode.id) {
+                            // Only hide edges that haven't been traversed before
+                            if (!this.simulationState.hasEdgeBeenTraversed(fromNode.id, transition.nextState)) {
+                                this.simulationState.hideEdge(fromNode.id, transition.nextState);
+                            }
+
+                            // Only hide the destination node if it hasn't been visited yet
+                            if (!this.simulationState.hasNodeBeenVisited(transition.nextState)) {
+                                this.simulationState.hideNode(transition.nextState);
+                            }
+                        }
+                    });
+                }
+            }
+        } else if (fromNode.type === 'action') {
+            // If spinning arrow is disabled but we're at an action node, still hide unchosen paths
+            const actionNodeInGraph = this.getNodeFromGraph(fromNode.id);
+            if (actionNodeInGraph && actionNodeInGraph.sas) {
+                actionNodeInGraph.sas.forEach(transition => {
+                    if (transition.nextState !== toNode.id) {
+                        // Only hide edges that haven't been traversed before
+                        if (!this.simulationState.hasEdgeBeenTraversed(fromNode.id, transition.nextState)) {
+                            this.simulationState.hideEdge(fromNode.id, transition.nextState);
+                        }
+
+                        // Only hide the destination node if it hasn't been visited yet
+                        if (!this.simulationState.hasNodeBeenVisited(transition.nextState)) {
+                            this.simulationState.hideNode(transition.nextState);
+                        }
+                    }
+                });
+            }
+        }
+
+        // Phase 3: HIGHLIGHT CHOSEN EDGE
         this.simulationState.highlightEdge(fromNode.id, toNode.id);
         this.simulationState.setPhase('highlight', this.TIMING.EDGE_HIGHLIGHT);
         this.outputBoundary.presentPhaseChange('edge_highlight', this.TIMING.EDGE_HIGHLIGHT);
         await this.waitForPhase();
 
-        // Phase 3: ADVANCE TO NEXT NODE (before camera move so we center on toNode)
+        // Phase 4: ADVANCE TO NEXT NODE (before camera move so we center on toNode)
         this.simulationState.advance();
         this.simulationState.clearHighlight();
 
-        // Phase 4: CAMERA TRANSITION TO NEXT NODE (now currentNode is the toNode)
+        // Phase 5: CAMERA TRANSITION TO NEXT NODE (now currentNode is the toNode)
         this.simulationState.setPhase('transition', this.TIMING.CAMERA_TRANSITION);
         this.outputBoundary.presentPhaseChange('camera_move', this.TIMING.CAMERA_TRANSITION);
         await this.waitForPhase();
 
-        // Phase 5: COMPLETE
+        // Phase 6: COMPLETE
         this.simulationState.setPhase('idle', 0);
         this.outputBoundary.presentRoundComplete(this.simulationState.currentNode);
 

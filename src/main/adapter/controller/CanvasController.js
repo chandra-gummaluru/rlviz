@@ -550,4 +550,22 @@ class CanvasController {
             this.interactors.setImage.execute(inputData);
         }
     }
+
+    // ===== Spinning Arrow Animation =====
+
+    toggleSpinningArrow(enabled) {
+        if (this.interactors.setSpinningArrow) {
+            const duration = this.viewModel.simulationState.spinningArrowDuration;
+            const inputData = new SetSpinningArrowInputData(enabled, duration);
+            this.interactors.setSpinningArrow.execute(inputData);
+        }
+    }
+
+    setSpinningArrowDuration(duration) {
+        if (this.interactors.setSpinningArrow) {
+            const enabled = this.viewModel.simulationState.spinningArrowEnabled;
+            const inputData = new SetSpinningArrowInputData(enabled, duration);
+            this.interactors.setSpinningArrow.execute(inputData);
+        }
+    }
 }

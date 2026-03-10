@@ -26,6 +26,13 @@ class SimulationState {
         this.stepCount = 0;  // Number of state-action-state transitions completed
         this.currentDecisionProbs = [];  // Available actions with uniform probability
         this.currentOutcomeProbs = [];  // Possible next states with their probabilities
+
+        // Spinning arrow animation settings
+        this.spinningArrowEnabled = false;  // Toggle for spinning arrow animation
+        this.spinningArrowDuration = 1500;  // Duration in milliseconds (default 1500ms)
+        this.spinningArrowAngle = 0;  // Current rotation angle in radians
+        this.spinningArrowTargetIndex = -1;  // Pre-selected edge index to stop at
+        this.spinningArrowEdges = [];  // Array of {startAngle, endAngle, edgeIndex, probability, targetId}
     }
 
     // Initialize with a generated trace
@@ -124,6 +131,14 @@ class SimulationState {
         this.visibleEdgeIds.add(`${fromId}-${toId}`);
     }
 
+    hideNode(nodeId) {
+        this.visibleNodeIds.delete(nodeId);
+    }
+
+    hideEdge(fromId, toId) {
+        this.visibleEdgeIds.delete(`${fromId}-${toId}`);
+    }
+
     highlightEdge(fromId, toId) {
         this.highlightedEdge = { fromId, toId };
     }
@@ -144,6 +159,33 @@ class SimulationState {
         if (!this.highlightedEdge) return false;
         return this.highlightedEdge.fromId === fromId &&
                this.highlightedEdge.toId === toId;
+    }
+
+    // Check if a node has been visited in the trace up to the current position
+    hasNodeBeenVisited(nodeId) {
+        if (!this.visited || this.currentIndex < 0) return false;
+
+        // Check if the node appears in the trace up to (and including) the current index
+        for (let i = 0; i <= this.currentIndex; i++) {
+            if (this.visited[i].id === nodeId) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // Check if an edge has been traversed in the trace up to the current position
+    hasEdgeBeenTraversed(fromId, toId) {
+        if (!this.visited || this.currentIndex < 1) return false;
+
+        // Check if the edge (fromId -> toId) appears in consecutive nodes in the trace
+        // up to (and including) the current index
+        for (let i = 0; i < this.currentIndex; i++) {
+            if (this.visited[i].id === fromId && this.visited[i + 1].id === toId) {
+                return true;
+            }
+        }
+        return false;
     }
 
     clearVisualState() {
@@ -268,5 +310,84 @@ class SimulationState {
             decisionProbs: this.currentDecisionProbs,
             outcomeProbs: this.currentOutcomeProbs
         };
+    }
+
+    // Spinning arrow animation methods
+    setSpinningArrowEnabled(enabled) {
+        this.spinningArrowEnabled = enabled;
+    }
+
+    setSpinningArrowDuration(duration) {
+        // Clamp duration between 800ms and 3000ms
+        this.spinningArrowDuration = Math.max(800, Math.min(3000, duration));
+    }
+
+    // Initialize spinning arrow with edges and target selection
+    initSpinningArrow(edges, targetIndex) {
+        this.spinningArrowTargetIndex = targetIndex;
+        this.spinningArrowAngle = 0;
+
+        // Calculate angle segments for each edge based on probability
+        const segments = [];
+        let cumulativeAngle = 0;
+
+        edges.forEach((edge, index) => {
+            const segmentSize = Math.PI * 2 * edge.probability;
+            segments.push({
+                startAngle: cumulativeAngle,
+                endAngle: cumulativeAngle + segmentSize,
+                edgeIndex: index,
+                probability: edge.probability,
+                targetId: edge.targetId
+            });
+            cumulativeAngle += segmentSize;
+        });
+
+        this.spinningArrowEdges = segments;
+    }
+
+    // Calculate arrow angle with easing (ease-out cubic for deceleration)
+    calculateArrowAngle() {
+        if (this.spinningArrowEdges.length === 0 || this.spinningArrowTargetIndex < 0) {
+            return 0;
+        }
+
+        const elapsed = Date.now() - this.phaseStartTime;
+        const t = Math.min(elapsed / this.spinningArrowDuration, 1);
+
+        // Ease-out cubic: starts fast, slows down dramatically at end
+        const eased = 1 - Math.pow(1 - t, 3);
+
+        // Calculate target angle (middle of the target segment)
+        const targetSegment = this.spinningArrowEdges[this.spinningArrowTargetIndex];
+        const targetAngle = (targetSegment.startAngle + targetSegment.endAngle) / 2;
+
+        // Total rotation: 3 full spins + land on target angle
+        const totalRotation = Math.PI * 6 + targetAngle;
+        this.spinningArrowAngle = eased * totalRotation;
+
+        return this.spinningArrowAngle;
+    }
+
+    // Get which edge the arrow is currently pointing at
+    getHighlightedEdgeByArrow() {
+        if (this.spinningArrowEdges.length === 0) return -1;
+
+        const normalizedAngle = this.spinningArrowAngle % (Math.PI * 2);
+
+        for (const segment of this.spinningArrowEdges) {
+            if (normalizedAngle >= segment.startAngle && normalizedAngle < segment.endAngle) {
+                return segment.edgeIndex;
+            }
+        }
+
+        return -1;
+    }
+
+    // Clear spinning arrow state
+    clearSpinningArrow() {
+        this.spinningArrowAngle = 0;
+        this.spinningArrowTargetIndex = -1;
+        this.spinningArrowEdges = [];
     }
 }

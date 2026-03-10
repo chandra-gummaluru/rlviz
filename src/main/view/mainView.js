@@ -54,6 +54,13 @@ class MainView {
         this.drawNodes();
         this.drawTextLabels();
 
+        // Draw spinning arrow if in spinning arrow phase
+        if (this.viewModel.simulationState &&
+            this.viewModel.simulationState.phase === 'spinning_arrow') {
+            console.log('[draw] Calling drawSpinningArrow()');
+            this.drawSpinningArrow();
+        }
+
         pop();
 
         // Draw zoom level indicator
@@ -271,10 +278,22 @@ class MainView {
         const lineEndX = arrowTipX - normalizedDx * arrowSize;
         const lineEndY = arrowTipY - normalizedDy * arrowSize;
 
+        // Check if this edge should be dashed (during spinning arrow phase)
+        const shouldBeDashed = this.shouldEdgeBeDashed(from, to);
+
         // Draw the edge line (stops before the arrowhead)
         strokeWeight(weight);
         stroke(edgeColor);
+
+        if (shouldBeDashed) {
+            drawingContext.setLineDash([8, 4]);
+        }
+
         line(from.x, from.y, lineEndX, lineEndY);
+
+        if (shouldBeDashed) {
+            drawingContext.setLineDash([]);  // Reset to solid
+        }
 
         // Draw arrowhead at the circumference
         this.drawArrowhead(arrowTipX, arrowTipY, normalizedDx, normalizedDy, edgeColor, weight);
@@ -388,6 +407,12 @@ class MainView {
         stroke(edgeColor);
         noFill();
 
+        // Check if this edge should be dashed (during spinning arrow phase)
+        const shouldBeDashed = this.shouldEdgeBeDashed(from, to);
+        if (shouldBeDashed) {
+            drawingContext.setLineDash([8, 4]);
+        }
+
         // Sample points along the curve from tStart to tLineEnd
         beginShape();
         // Always add the start point first
@@ -408,6 +433,10 @@ class MainView {
         const finalY = (1 - tLineEnd) * (1 - tLineEnd) * from.y + 2 * (1 - tLineEnd) * tLineEnd * controlY + tLineEnd * tLineEnd * to.y;
         vertex(finalX, finalY);
         endShape();
+
+        if (shouldBeDashed) {
+            drawingContext.setLineDash([]);  // Reset to solid
+        }
 
         // Draw arrowhead at the intersection point
         this.drawArrowhead(arrowX, arrowY, normalizedTangentDx, normalizedTangentDy, edgeColor, weight);
@@ -452,6 +481,128 @@ class MainView {
         fill(color);
         noStroke();
         triangle(x, y, x1, y1, x2, y2);
+    }
+
+    // Check if an edge should be rendered as dashed during spinning arrow phase
+    shouldEdgeBeDashed(from, to) {
+        // Only during spinning arrow phase in simulate mode
+        if (this.viewModel.interaction.mode !== 'simulate') return false;
+        if (!this.viewModel.simulationState) return false;
+        if (this.viewModel.simulationState.phase !== 'spinning_arrow') return false;
+
+        // Get the current node in simulation
+        const currentNode = this.viewModel.simulationState.currentNode;
+        if (!currentNode || currentNode.type !== 'action') return false;
+
+        // Dash edges that originate from the current action node
+        return from.id === currentNode.id && from.type === 'action' && to.type === 'state';
+    }
+
+    // Draw spinning arrow animation at action node during selection phase
+    drawSpinningArrow() {
+        const simState = this.viewModel.simulationState;
+
+        console.log('[drawSpinningArrow] Called, phase:', simState ? simState.phase : 'no simState');
+
+        // Only draw if in spinning arrow phase
+        if (!simState || simState.phase !== 'spinning_arrow') {
+            console.log('[drawSpinningArrow] Exiting - wrong phase');
+            return;
+        }
+
+        const currentNode = simState.currentNode;
+        console.log('[drawSpinningArrow] currentNode:', currentNode);
+        if (!currentNode || currentNode.type !== 'action') {
+            console.log('[drawSpinningArrow] Exiting - no current node or not action');
+            return;
+        }
+
+        // Get the actual action node from the graph
+        const actionNode = this.viewModel.graph.getNodeById(currentNode.id);
+        console.log('[drawSpinningArrow] actionNode:', actionNode);
+        if (!actionNode || !actionNode.sas || actionNode.sas.length === 0) {
+            console.log('[drawSpinningArrow] Exiting - no action node or no transitions');
+            return;
+        }
+
+        console.log('[drawSpinningArrow] Drawing arrow! Transitions:', actionNode.sas.length);
+
+        // Calculate current arrow angle with deceleration
+        const currentAngle = simState.calculateArrowAngle();
+        console.log('[drawSpinningArrow] Current angle:', currentAngle);
+
+        // Get which edge the arrow is currently pointing at
+        const highlightedEdgeIndex = simState.getHighlightedEdgeByArrow();
+
+        // Draw the arrow at the center of the action node
+        push();
+
+        // Position at action node center
+        translate(actionNode.x, actionNode.y);
+
+        // Rotate based on calculated angle
+        rotate(currentAngle);
+
+        // Draw arrow pointing upward (will be rotated)
+        const arrowLength = 25;
+        const arrowWidth = 12;
+
+        // Arrow body
+        fill(255, 87, 34);  // Orange/red color #FF5722
+        noStroke();
+        triangle(0, -arrowLength, -arrowWidth / 2, 0, arrowWidth / 2, 0);
+
+        // Arrow outline for better visibility
+        stroke(0);
+        strokeWeight(1.5);
+        noFill();
+        triangle(0, -arrowLength, -arrowWidth / 2, 0, arrowWidth / 2, 0);
+
+        pop();
+
+        // Draw probability labels on each outgoing edge
+        actionNode.sas.forEach((transition, index) => {
+            const targetNode = this.viewModel.graph.getNodeById(transition.nextState);
+            if (!targetNode) return;
+
+            // Calculate midpoint of edge for label
+            const midX = (actionNode.x + targetNode.x) / 2;
+            const midY = (actionNode.y + targetNode.y) / 2;
+
+            // Highlight currently pointed edge
+            const isHighlighted = (index === highlightedEdgeIndex);
+
+            // Display probability as percentage
+            const probText = `p=${transition.probability.toFixed(2)}`;
+
+            push();
+            noStroke();
+
+            if (isHighlighted) {
+                // Highlighted: bright yellow background with larger text
+                fill(255, 235, 59, 220);  // Bright yellow
+                rect(midX - 30, midY - 12, 60, 24, 4);
+                fill(0);
+                textSize(14);
+                textStyle(BOLD);
+            } else {
+                // Normal: light gray background
+                fill(255, 255, 255, 200);  // White with transparency
+                rect(midX - 30, midY - 12, 60, 24, 4);
+                fill(80);
+                textSize(12);
+                textStyle(NORMAL);
+            }
+
+            textAlign(CENTER, CENTER);
+            text(probText, midX, midY);
+            pop();
+        });
+
+        // Keep redrawing for smooth animation
+        if (!simState.isPhaseComplete()) {
+            setTimeout(() => redraw(), 16);  // ~60 FPS
+        }
     }
 
     drawTextLabels() {

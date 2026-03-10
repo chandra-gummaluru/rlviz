@@ -26,6 +26,7 @@ const createTextLabelPresenter = new CreateTextLabelPresenter(canvasViewModel.in
 const resizeNodePresenter = new ResizeNodePresenter(canvasViewModel);
 const renormalizeProbabilitiesPresenter = new RenormalizeProbabilitiesPresenter(canvasViewModel);
 const setImagePresenter = new SetImagePresenter(canvasViewModel);
+const setSpinningArrowPresenter = new SetSpinningArrowPresenter(canvasViewModel);
 
 // Interactors for existing use cases
 const createNodeInteractor = new CreateNodeInteractor(graph, createNodePresenter);
@@ -47,6 +48,7 @@ const selectNodeInteractor = new SelectNodeInteractor(graph, selectNodePresenter
 const createTextLabelInteractor = new CreateTextLabelInteractor(graph, commandHistory, createTextLabelPresenter);
 const renormalizeProbabilitiesInteractor = new RenormalizeProbabilitiesInteractor(graph, commandHistory, renormalizeProbabilitiesPresenter);
 const setImageInteractor = new SetImageInteractor(graph, commandHistory, setImagePresenter);
+const setSpinningArrowInteractor = new SetSpinningArrowInteractor(simulationState, setSpinningArrowPresenter);
 
 // Controller (receives all interactors, delegates to them)
 const canvasController = new CanvasController(canvasViewModel, {
@@ -66,7 +68,8 @@ const canvasController = new CanvasController(canvasViewModel, {
     importGraph: importGraphInteractor,
     serializeGraph: serializeGraphInteractor,
     renormalizeProbabilities: renormalizeProbabilitiesInteractor,
-    setImage: setImageInteractor
+    setImage: setImageInteractor,
+    setSpinningArrow: setSpinningArrowInteractor
 });
 
 // View instances (will be set in setup)

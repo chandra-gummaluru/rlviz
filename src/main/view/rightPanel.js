@@ -9,6 +9,20 @@ class RightPanel {
 
         // Discount factor (gamma) for MDP - editable
         this.discountFactor = 0.9;
+
+        // Callbacks for spinning arrow animation
+        this.callbacks = {
+            onSpinningArrowToggle: (enabled) => {
+                if (this.controller && this.controller.toggleSpinningArrow) {
+                    this.controller.toggleSpinningArrow(enabled);
+                }
+            },
+            onSpinningArrowDurationChange: (duration) => {
+                if (this.controller && this.controller.setSpinningArrowDuration) {
+                    this.controller.setSpinningArrowDuration(duration);
+                }
+            }
+        };
     }
 
     setup(topOffset) {
@@ -773,6 +787,68 @@ class RightPanel {
                 });
             });
         }
+
+        // Animation Settings Section
+        this.createSection('Animation Settings', () => {
+            const settingsDiv = createDiv();
+            settingsDiv.parent(this.contentContainer);
+            settingsDiv.style('margin-top', '10px');
+
+            // Spinning Arrow Checkbox
+            const checkboxContainer = createDiv();
+            checkboxContainer.parent(settingsDiv);
+            checkboxContainer.style('margin-bottom', '15px');
+
+            const checkbox = createCheckbox('Enable Spinning Arrow Selection', simulationState.spinningArrowEnabled);
+            checkbox.parent(checkboxContainer);
+            checkbox.style('font-size', '13px');
+            checkbox.changed(() => {
+                const enabled = checkbox.checked();
+                if (this.callbacks && this.callbacks.onSpinningArrowToggle) {
+                    this.callbacks.onSpinningArrowToggle(enabled);
+                }
+            });
+
+            // Duration Slider
+            const sliderContainer = createDiv();
+            sliderContainer.parent(settingsDiv);
+            sliderContainer.style('margin-top', '10px');
+
+            const sliderLabel = createDiv('Animation Duration:');
+            sliderLabel.parent(sliderContainer);
+            sliderLabel.style('font-size', '12px');
+            sliderLabel.style('color', '#666666');
+            sliderLabel.style('margin-bottom', '5px');
+
+            const sliderValueDiv = createDiv();
+            sliderValueDiv.parent(sliderContainer);
+            sliderValueDiv.style('display', 'flex');
+            sliderValueDiv.style('justify-content', 'space-between');
+            sliderValueDiv.style('align-items', 'center');
+            sliderValueDiv.style('margin-bottom', '8px');
+
+            const valueLabel = createDiv(`${simulationState.spinningArrowDuration}ms`);
+            valueLabel.parent(sliderValueDiv);
+            valueLabel.style('font-size', '14px');
+            valueLabel.style('font-weight', '600');
+            valueLabel.style('color', '#2196F3');
+
+            const rangeLabel = createDiv('(800ms - 3000ms)');
+            rangeLabel.parent(sliderValueDiv);
+            rangeLabel.style('font-size', '11px');
+            rangeLabel.style('color', '#999999');
+
+            const slider = createSlider(800, 3000, simulationState.spinningArrowDuration, 50);
+            slider.parent(sliderContainer);
+            slider.style('width', '100%');
+            slider.input(() => {
+                const duration = slider.value();
+                valueLabel.html(`${duration}ms`);
+                if (this.callbacks && this.callbacks.onSpinningArrowDurationChange) {
+                    this.callbacks.onSpinningArrowDurationChange(duration);
+                }
+            });
+        });
     }
 
     createSection(title, contentCallback) {
