@@ -4,12 +4,14 @@ class SerializeGraphInteractor extends SerializeGraphInputBoundary {
         super();
         this.graph = graph;
         this.outputBoundary = outputBoundary;
+        this.presenter = outputBoundary;
     }
 
     execute(inputData) {
         try {
-            // Serialize graph to object
-            const serialized = this.graph.serialize();
+            // Serialize graph to object (include positions for file export)
+            const includePositions = inputData && inputData.includePositions;
+            const serialized = this.graph.serialize(includePositions);
 
             // Convert to JSON string with formatting
             const jsonString = JSON.stringify(serialized, null, 2);

@@ -55,6 +55,12 @@ class SimulationPresenter extends SimulationOutputBoundary {
                 this.mainView.redrawSimulation();
                 break;
 
+            case 'spinning_arrow':
+                // Start spinning arrow animation - trigger initial redraw
+                console.log('[Presenter] Spinning arrow phase started, triggering redraw');
+                this.mainView.redrawSimulation();
+                break;
+
             case 'edge_highlight':
             case 'decision_pause':
             case 'transition_pause':
@@ -65,7 +71,6 @@ class SimulationPresenter extends SimulationOutputBoundary {
 
             case 'reset':
                 // Reset complete
-                this.mainView.sideBar.updateSimulationStatusLine();
                 this.mainView.redrawSimulation();
                 break;
         }

@@ -1,6 +1,6 @@
-// Input data for serializing graph (empty - no input needed)
+// Input data for serializing graph
 class SerializeGraphInputData {
-    constructor() {
-        // No parameters needed for serialization
+    constructor(includePositions = false) {
+        this.includePositions = includePositions;
     }
 }

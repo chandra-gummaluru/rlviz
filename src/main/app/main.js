@@ -26,6 +26,7 @@ const createTextLabelPresenter = new CreateTextLabelPresenter(canvasViewModel.in
 const resizeNodePresenter = new ResizeNodePresenter(canvasViewModel);
 const renormalizeProbabilitiesPresenter = new RenormalizeProbabilitiesPresenter(canvasViewModel);
 const setImagePresenter = new SetImagePresenter(canvasViewModel);
+const setSpinningArrowPresenter = new SetSpinningArrowPresenter(canvasViewModel);
 
 // Interactors for existing use cases
 const createNodeInteractor = new CreateNodeInteractor(graph, createNodePresenter);
@@ -47,6 +48,7 @@ const selectNodeInteractor = new SelectNodeInteractor(graph, selectNodePresenter
 const createTextLabelInteractor = new CreateTextLabelInteractor(graph, commandHistory, createTextLabelPresenter);
 const renormalizeProbabilitiesInteractor = new RenormalizeProbabilitiesInteractor(graph, commandHistory, renormalizeProbabilitiesPresenter);
 const setImageInteractor = new SetImageInteractor(graph, commandHistory, setImagePresenter);
+const setSpinningArrowInteractor = new SetSpinningArrowInteractor(simulationState, setSpinningArrowPresenter);
 
 // Controller (receives all interactors, delegates to them)
 const canvasController = new CanvasController(canvasViewModel, {
@@ -66,12 +68,12 @@ const canvasController = new CanvasController(canvasViewModel, {
     importGraph: importGraphInteractor,
     serializeGraph: serializeGraphInteractor,
     renormalizeProbabilities: renormalizeProbabilitiesInteractor,
-    setImage: setImageInteractor
+    setImage: setImageInteractor,
+    setSpinningArrow: setSpinningArrowInteractor
 });
 
 // View instances (will be set in setup)
 let mainView;
-let sideBar;
 let menuBar;
 let toolBar;
 let rightPanel;
@@ -129,7 +131,13 @@ const onImportGraph = () => {
 const onExportGraph = () => {
     console.log('Export graph clicked!');
     // Get the serialized graph
-    const json = canvasController.exportGraph();
+    const json = canvasController.exportGraph(true);
+
+    if (!json) {
+        console.error('Export failed: no data returned from exportGraph');
+        alert('Export failed: could not serialize graph');
+        return;
+    }
 
     // Create a blob from the JSON string
     const blob = new Blob([json], { type: 'application/json' });
@@ -171,14 +179,12 @@ const onZoomOut = () => {
 const onUndo = () => {
     console.log('Undo clicked!');
     canvasController.undo();
-    sideBar.updateUndoRedoButtons();
     redraw();
 };
 
 const onRedo = () => {
     console.log('Redo clicked!');
     canvasController.redo();
-    sideBar.updateUndoRedoButtons();
     redraw();
 };
 
@@ -195,6 +201,26 @@ const onResetZoom = () => {
     redraw();
 };
 
+/**
+ * Check for unnormalized action nodes before simulation starts.
+ * If found, prompt user to confirm auto-renormalization.
+ * Returns true if simulation should proceed, false otherwise.
+ */
+function checkAndRenormalizeIfNeeded() {
+    if (simulationState.replayInitialized) return true; // already running
+    const unnormalized = graph.getUnnormalizedActionNodes();
+    if (unnormalized.length === 0) return true; // all good
+    const names = unnormalized.map(n => n.name).join(', ');
+    const proceed = confirm(
+        `Action node(s) [${names}] have probabilities that don't sum to 1.\n\n` +
+        `Continuing will renormalize these probabilities. Proceed?`
+    );
+    if (proceed) {
+        renormalizeProbabilitiesInteractor.execute(new RenormalizeProbabilitiesInputData());
+    }
+    return proceed;
+}
+
 const onPlay = () => {
     console.log('Play clicked!');
     if (!playInteractor) {
@@ -207,6 +233,9 @@ const onPlay = () => {
         alert('Please select a start node first by double-clicking a state node');
         return;
     }
+
+    // Check for unnormalized probabilities before first initialization
+    if (!checkAndRenormalizeIfNeeded()) return;
 
     const inputData = new PlayInputData();
     playInteractor.execute(inputData);
@@ -245,6 +274,9 @@ const onStep = () => {
         alert('Please select a start node first by double-clicking a state node');
         return;
     }
+
+    // Check for unnormalized probabilities before first initialization
+    if (!checkAndRenormalizeIfNeeded()) return;
 
     // Pause if playing
     if (simulationState.isPlaying) {
@@ -299,15 +331,9 @@ const onReset = () => {
     const inputData = new ResetInputData();
     resetInteractor.execute(inputData);
 
-    // Reset button states
+    // Reset button states - keep buttons enabled so user can start a new simulation
     if (toolBar) {
-        toolBar.updateButtonStates(false, simulationState.canAdvance());
-    }
-};
-
-const onToggleSidebar = () => {
-    if (mainView) {
-        mainView.toggleSidebar();
+        toolBar.updateButtonStates(false, true);
     }
 };
 
@@ -350,10 +376,6 @@ function setup() {
 
     // Set right panel reference in setModePresenter so it can update when mode changes
     setModePresenter.setRightPanel(rightPanel);
-
-    // Sidebar removed - functionality now in menuBar and toolBar
-    // sideBar = new SideBar(onStateClick, onActionClick, onToggleSidebar, onTextBoxClick, onImportGraph, onExportGraph, onModeChange, onZoomIn, onZoomOut, onUndo, onRedo, onPlay, onSkip, onReset, onRenormalize, canvasViewModel);
-    // console.log('SideBar created:', sideBar);
 
     mainView = new MainView(canvasViewModel, canvasController, null, menuBar, toolBar, rightPanel);
     console.log('MainView created:', mainView);

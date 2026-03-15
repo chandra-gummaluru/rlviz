@@ -369,13 +369,18 @@ class CanvasController {
         }
     }
 
-    exportGraph() {
+    exportGraph(includePositions = false) {
         if (this.interactors.serializeGraph) {
-            const inputData = new SerializeGraphInputData();
+            const inputData = new SerializeGraphInputData(includePositions);
             this.interactors.serializeGraph.execute(inputData);
             // Get serialized data from presenter
-            if (this.interactors.serializeGraph.presenter) {
-                return this.interactors.serializeGraph.presenter.getSerializedData();
+            const presenter = this.interactors.serializeGraph.presenter;
+            if (presenter) {
+                const data = presenter.getSerializedData();
+                if (data) {
+                    return data;
+                }
+                console.error('Export failed: serialized data is null');
             }
         }
         return null;
@@ -548,6 +553,24 @@ class CanvasController {
         if (this.interactors.setImage) {
             const inputData = new SetImageInputData(nodeId, imageData);
             this.interactors.setImage.execute(inputData);
+        }
+    }
+
+    // ===== Spinning Arrow Animation =====
+
+    toggleSpinningArrow(enabled) {
+        if (this.interactors.setSpinningArrow) {
+            const duration = this.viewModel.simulationState.spinningArrowDuration;
+            const inputData = new SetSpinningArrowInputData(enabled, duration);
+            this.interactors.setSpinningArrow.execute(inputData);
+        }
+    }
+
+    setSpinningArrowDuration(duration) {
+        if (this.interactors.setSpinningArrow) {
+            const enabled = this.viewModel.simulationState.spinningArrowEnabled;
+            const inputData = new SetSpinningArrowInputData(enabled, duration);
+            this.interactors.setSpinningArrow.execute(inputData);
         }
     }
 }

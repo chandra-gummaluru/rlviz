@@ -4,13 +4,14 @@ class CreateNodeInteractor extends CreateNodeInputBoundary {
         super();
         this.graph = graph;
         this.outputBoundary = outputBoundary;
-        this.nextNodeId = 0;
     }
 
     execute(inputData) {
         try {
-            // Generate ID and name
-            const id = this.nextNodeId++;
+            // Compute next available ID from current graph state
+            const id = this.graph.nodes.length > 0
+                ? Math.max(...this.graph.nodes.map(n => n.id)) + 1
+                : 0;
             const name = inputData.type === 'state' ? `S${id}` : `A${id}`;
             const size = 30;
 

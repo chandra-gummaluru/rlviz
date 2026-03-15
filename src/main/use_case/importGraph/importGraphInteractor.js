@@ -45,9 +45,6 @@ class ImportGraphInteractor extends ImportGraphInputBoundary {
             if (!data.nodes || !Array.isArray(data.nodes)) {
                 throw new Error("Invalid graph format: nodes array is required");
             }
-            if (!data.edges || !Array.isArray(data.edges)) {
-                throw new Error("Invalid graph format: edges array is required");
-            }
 
             // Clear existing graph
             this.graph.nodes = [];
@@ -57,40 +54,63 @@ class ImportGraphInteractor extends ImportGraphInputBoundary {
             // Import nodes
             const nodeMap = new Map(); // Track nodes by ID for edge creation
             for (const nodeData of data.nodes) {
-                if (!nodeData.id || !nodeData.type || !nodeData.name) {
+                if (nodeData.id === undefined || nodeData.id === null || !nodeData.type || !nodeData.name) {
                     throw new Error("Invalid node format: id, type, and name are required");
                 }
-                if (!nodeData.x || !nodeData.y) {
-                    throw new Error("Invalid node format: x and y coordinates are required");
+
+                const x = nodeData.x !== undefined ? nodeData.x : Math.random() * 600 + 100;
+                const y = nodeData.y !== undefined ? nodeData.y : Math.random() * 400 + 100;
+                const size = nodeData.size !== undefined ? nodeData.size : 30;
+
+                let node;
+                if (nodeData.type === 'state') {
+                    node = new StateNode(nodeData.name, x, y, size);
+                    node.id = nodeData.id;
+                    node.actions = nodeData.actions || [];
+                } else {
+                    node = new ActionNode(nodeData.name, x, y, size);
+                    node.id = nodeData.id;
+                    if (nodeData.transitions) {
+                        nodeData.transitions.forEach(t => {
+                            node.addSAS(
+                                nodeData.id + '->' + t.stateId,
+                                t.probability,
+                                t.stateId,
+                                t.reward || 0
+                            );
+                        });
+                    }
                 }
 
-                const node = this.graph.addNode(
-                    nodeData.type,
-                    nodeData.name,
-                    nodeData.x,
-                    nodeData.y
-                );
+                this.graph.addNode(node);
                 nodeMap.set(nodeData.id, node);
             }
 
-            // Import edges
-            for (const edgeData of data.edges) {
-                if (!edgeData.from || !edgeData.to) {
-                    throw new Error("Invalid edge format: from and to are required");
+            // Import edges if present
+            if (data.edges && Array.isArray(data.edges)) {
+                for (const edgeData of data.edges) {
+                    if (edgeData.from === undefined || edgeData.from === null ||
+                        edgeData.to === undefined || edgeData.to === null) {
+                        throw new Error("Invalid edge format: from and to are required");
+                    }
+
+                    const fromNode = nodeMap.get(edgeData.from);
+                    const toNode = nodeMap.get(edgeData.to);
+
+                    if (!fromNode || !toNode) {
+                        const msg = "Invalid edge: references non-existent nodes " + edgeData.from + " -> " + edgeData.to;
+                        throw new Error(msg);
+                    }
+
+                    const probability = edgeData.probability !== undefined ? edgeData.probability : 1.0;
+                    const reward = edgeData.reward !== undefined ? edgeData.reward : 0;
+
+                    const edge = new EdgeObj(fromNode, toNode, probability, reward);
+                    if (edgeData.labelOffset) {
+                        edge.setLabelOffset(edgeData.labelOffset.x, edgeData.labelOffset.y);
+                    }
+                    this.graph.addEdge(edge);
                 }
-
-                const fromNode = nodeMap.get(edgeData.from);
-                const toNode = nodeMap.get(edgeData.to);
-
-                if (!fromNode || !toNode) {
-                    const msg = "Invalid edge: references non-existent nodes " + edgeData.from + " -> " + edgeData.to;
-                    throw new Error(msg);
-                }
-
-                const probability = edgeData.probability !== undefined ? edgeData.probability : 1.0;
-                const reward = edgeData.reward !== undefined ? edgeData.reward : 0;
-
-                this.graph.addEdge(fromNode, toNode, probability, reward);
             }
 
             // Import text labels if present
@@ -100,7 +120,6 @@ class ImportGraphInteractor extends ImportGraphInputBoundary {
                         continue; // Skip invalid labels
                     }
 
-                    // Create TextLabel manually
                     const randomId = 'label_' + new Date().getTime() + '_' + Math.random();
                     const textLabel = {
                         id: labelData.id || randomId,
