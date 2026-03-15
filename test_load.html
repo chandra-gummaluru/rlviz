@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>Load Test</title>
+</head>
+<body>
+    <h1>Testing Script Loading</h1>
+    <div id="status">Loading...</div>
+
+    <script>
+        window.addEventListener('error', function(e) {
+            const status = document.getElementById('status');
+            status.innerHTML += '<br><span style="color:red">ERROR: ' + e.message + ' in ' + e.filename + '</span>';
+            console.error('Script error:', e);
+        });
+    </script>
+
+    <!-- Test loading key files -->
+    <script src="src/main/adapter/viewmodel/SelectionViewModel.js"></script>
+    <script src="src/main/adapter/viewmodel/ViewportViewModel.js"></script>
+    <script src="src/main/adapter/viewmodel/InteractionViewModel.js"></script>
+    <script src="src/main/adapter/viewmodel/NodeViewModel.js"></script>
+    <script src="src/main/adapter/viewmodel/EdgeViewModel.js"></script>
+    <script src="src/main/adapter/viewmodel/CanvasViewModel.js"></script>
+
+    <script>
+        document.getElementById('status').innerHTML = 'All ViewModels loaded successfully!';
+        console.log('SelectionViewModel:', typeof SelectionViewModel);
+        console.log('ViewportViewModel:', typeof ViewportViewModel);
+        console.log('InteractionViewModel:', typeof InteractionViewModel);
+        console.log('NodeViewModel:', typeof NodeViewModel);
+        console.log('EdgeViewModel:', typeof EdgeViewModel);
+        console.log('CanvasViewModel:', typeof CanvasViewModel);
+    </script>
+</body>
+</html>
