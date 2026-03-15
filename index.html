@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Sketch</title>
+
+    <link rel="stylesheet" type="text/css" href="style.css">
+
+    <!-- MathJax for LaTeX rendering -->
+    <script>
+      MathJax = {
+        tex: {
+          inlineMath: [['$', '$'], ['\\(', '\\)']],
+          displayMath: [['$$', '$$'], ['\\[', '\\]']]
+        },
+        svg: {
+          fontCache: 'global'
+        }
+      };
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+
+    <script src="libraries/p5.min.js"></script>
+    <script src="libraries/p5.sound.min.js"></script>
+  </head>
+
+  <body>
+    <!-- Domain Layer -->
+    <script src="src/main/domain/nodesObj.js"></script>
+    <script src="src/main/domain/stateNodes.js"></script>
+    <script src="src/main/domain/actionNodes.js"></script>
+    <script src="src/main/domain/textLabel.js"></script>
+    <script src="src/main/domain/edgeObj.js"></script>
+    <script src="src/main/domain/graphObj.js"></script>
+    <script src="src/main/domain/command.js"></script>
+    <script src="src/main/domain/commandHistory.js"></script>
+    <script src="src/main/domain/simulationState.js"></script>
+    <script src="src/main/domain/traceGenerator.js"></script>
+
+    <!-- Use Case Layer - CreateNode -->
+    <script src="src/main/use_case/createNode/createNodeInputBoundary.js"></script>
+    <script src="src/main/use_case/createNode/createNodeInputData.js"></script>
+    <script src="src/main/use_case/createNode/createNodeInteractor.js"></script>
+    <script src="src/main/use_case/createNode/createNodeOutputBoundary.js"></script>
+    <script src="src/main/use_case/createNode/createNodePresenter.js"></script>
+
+    <!-- Use Case Layer - CreateEdge -->
+    <script src="src/main/use_case/createEdge/createEdgeInputBoundary.js"></script>
+    <script src="src/main/use_case/createEdge/createEdgeInputData.js"></script>
+    <script src="src/main/use_case/createEdge/createEdgeInteractor.js"></script>
+    <script src="src/main/use_case/createEdge/createEdgeOutputBoundary.js"></script>
+    <script src="src/main/use_case/createEdge/createEdgePresenter.js"></script>
+
+    <!-- Use Case Layer - NodeInteraction -->
+    <script src="src/main/use_case/nodeInteraction/nodeInteractionInputBoundary.js"></script>
+    <script src="src/main/use_case/nodeInteraction/nodeInteractionInputData.js"></script>
+    <script src="src/main/use_case/nodeInteraction/nodeInteractionInteractor.js"></script>
+    <script src="src/main/use_case/nodeInteraction/nodeInteractionOutputBoundary.js"></script>
+    <script src="src/main/use_case/nodeInteraction/nodeInteractionPresenter.js"></script>
+
+    <!-- Use Case Layer - SerializeGraph -->
+    <script src="src/main/use_case/serializeGraph/serializeGraphInputBoundary.js"></script>
+    <script src="src/main/use_case/serializeGraph/serializeGraphInputData.js"></script>
+    <script src="src/main/use_case/serializeGraph/serializeGraphInteractor.js"></script>
+    <script src="src/main/use_case/serializeGraph/serializeGraphOutputBoundary.js"></script>
+    <script src="src/main/use_case/serializeGraph/serializeGraphPresenter.js"></script>
+
+    <!-- Use Case Layer - Undo -->
+    <script src="src/main/use_case/undo/undoInteractor.js"></script>
+    <script src="src/main/use_case/undo/undoOutputBoundary.js"></script>
+    <script src="src/main/use_case/undo/undoPresenter.js"></script>
+
+    <!-- Use Case Layer (new - Redo) -->
+    <script src="src/main/use_case/redo/redoInteractor.js"></script>
+    <script src="src/main/use_case/redo/redoOutputBoundary.js"></script>
+    <script src="src/main/use_case/redo/redoPresenter.js"></script>
+
+    <!-- Use Case Layer (new - SetMode) -->
+    <script src="src/main/use_case/setMode/setModeInputBoundary.js"></script>
+    <script src="src/main/use_case/setMode/setModeInputData.js"></script>
+    <script src="src/main/use_case/setMode/setModeInteractor.js"></script>
+    <script src="src/main/use_case/setMode/setModeOutputBoundary.js"></script>
+    <script src="src/main/use_case/setMode/setModePresenter.js"></script>
+
+    <!-- Use Case Layer (new - Zoom) -->
+    <script src="src/main/use_case/zoom/zoomInputBoundary.js"></script>
+    <script src="src/main/use_case/zoom/zoomInputData.js"></script>
+    <script src="src/main/use_case/zoom/zoomInInteractor.js"></script>
+    <script src="src/main/use_case/zoom/zoomOutInteractor.js"></script>
+    <script src="src/main/use_case/zoom/zoomOutputBoundary.js"></script>
+    <script src="src/main/use_case/zoom/zoomPresenter.js"></script>
+
+    <!-- Use Case Layer (new - ImportGraph) -->
+    <script src="src/main/use_case/importGraph/importGraphInputBoundary.js"></script>
+    <script src="src/main/use_case/importGraph/importGraphInputData.js"></script>
+    <script src="src/main/use_case/importGraph/importGraphInteractor.js"></script>
+    <script src="src/main/use_case/importGraph/importGraphOutputBoundary.js"></script>
+    <script src="src/main/use_case/importGraph/importGraphPresenter.js"></script>
+
+    <!-- Use Case Layer (new - Simulation) -->
+    <script src="src/main/use_case/simulation/simulationOutputBoundary.js"></script>
+    <script src="src/main/use_case/simulation/playInputBoundary.js"></script>
+    <script src="src/main/use_case/simulation/playInputData.js"></script>
+    <script src="src/main/use_case/simulation/playInteractor.js"></script>
+    <script src="src/main/use_case/simulation/pauseInputBoundary.js"></script>
+    <script src="src/main/use_case/simulation/pauseInputData.js"></script>
+    <script src="src/main/use_case/simulation/pauseInteractor.js"></script>
+    <script src="src/main/use_case/simulation/stepInputBoundary.js"></script>
+    <script src="src/main/use_case/simulation/stepInputData.js"></script>
+    <script src="src/main/use_case/simulation/stepInteractor.js"></script>
+    <script src="src/main/use_case/simulation/skipInputBoundary.js"></script>
+    <script src="src/main/use_case/simulation/skipInputData.js"></script>
+    <script src="src/main/use_case/simulation/skipInteractor.js"></script>
+    <script src="src/main/use_case/simulation/resetInputBoundary.js"></script>
+    <script src="src/main/use_case/simulation/resetInputData.js"></script>
+    <script src="src/main/use_case/simulation/resetInteractor.js"></script>
+    <script src="src/main/use_case/simulation/simulationPresenter.js"></script>
+
+    <!-- Use Case Layer (new - ResizeNode) -->
+    <script src="src/main/use_case/resizeNode/resizeNodeInputBoundary.js"></script>
+    <script src="src/main/use_case/resizeNode/resizeNodeInputData.js"></script>
+    <script src="src/main/use_case/resizeNode/resizeNodeInteractor.js"></script>
+    <script src="src/main/use_case/resizeNode/resizeNodeOutputBoundary.js"></script>
+    <script src="src/main/use_case/resizeNode/resizeNodePresenter.js"></script>
+
+    <!-- Use Case Layer (refactored - DeleteNode) -->
+    <script src="src/main/use_case/deleteNode/deleteNodeInputBoundary.js"></script>
+    <script src="src/main/use_case/deleteNode/deleteNodeInputData.js"></script>
+    <script src="src/main/use_case/deleteNode/deleteNodeInteractor.js"></script>
+    <script src="src/main/use_case/deleteNode/deleteNodeOutputBoundary.js"></script>
+    <script src="src/main/use_case/deleteNode/deleteNodePresenter.js"></script>
+
+    <!-- Use Case Layer (refactored - MoveNode) -->
+    <script src="src/main/use_case/moveNode/moveNodeInputBoundary.js"></script>
+    <script src="src/main/use_case/moveNode/moveNodeInputData.js"></script>
+    <script src="src/main/use_case/moveNode/moveNodeInteractor.js"></script>
+    <script src="src/main/use_case/moveNode/moveNodeOutputBoundary.js"></script>
+    <script src="src/main/use_case/moveNode/moveNodePresenter.js"></script>
+
+    <!-- Use Case Layer (refactored - RenameNode) -->
+    <script src="src/main/use_case/renameNode/renameNodeInputBoundary.js"></script>
+    <script src="src/main/use_case/renameNode/renameNodeInputData.js"></script>
+    <script src="src/main/use_case/renameNode/renameNodeInteractor.js"></script>
+    <script src="src/main/use_case/renameNode/renameNodeOutputBoundary.js"></script>
+    <script src="src/main/use_case/renameNode/renameNodePresenter.js"></script>
+
+    <!-- Use Case Layer (refactored - SelectNode) -->
+    <script src="src/main/use_case/selectNode/selectNodeInputBoundary.js"></script>
+    <script src="src/main/use_case/selectNode/selectNodeInputData.js"></script>
+    <script src="src/main/use_case/selectNode/selectNodeInteractor.js"></script>
+    <script src="src/main/use_case/selectNode/selectNodeOutputBoundary.js"></script>
+    <script src="src/main/use_case/selectNode/selectNodePresenter.js"></script>
+
+    <!-- Use Case Layer (refactored - CreateTextLabel) -->
+    <script src="src/main/use_case/createTextLabel/createTextLabelInputBoundary.js"></script>
+    <script src="src/main/use_case/createTextLabel/createTextLabelInputData.js"></script>
+    <script src="src/main/use_case/createTextLabel/createTextLabelInteractor.js"></script>
+    <script src="src/main/use_case/createTextLabel/createTextLabelOutputBoundary.js"></script>
+    <script src="src/main/use_case/createTextLabel/createTextLabelPresenter.js"></script>
+
+    <!-- Use Case Layer - RenormalizeProbabilities -->
+    <script src="src/main/use_case/renormalizeProbabilities/renormalizeProbabilitiesInputBoundary.js"></script>
+    <script src="src/main/use_case/renormalizeProbabilities/renormalizeProbabilitiesInputData.js"></script>
+    <script src="src/main/use_case/renormalizeProbabilities/renormalizeProbabilitiesInteractor.js"></script>
+    <script src="src/main/use_case/renormalizeProbabilities/renormalizeProbabilitiesOutputBoundary.js"></script>
+    <script src="src/main/use_case/renormalizeProbabilities/renormalizeProbabilitiesPresenter.js"></script>
+
+    <!-- Use Case Layer - SetImage -->
+    <script src="src/main/use_case/setImage/setImageInputBoundary.js"></script>
+    <script src="src/main/use_case/setImage/setImageInputData.js"></script>
+    <script src="src/main/use_case/setImage/setImageInteractor.js"></script>
+    <script src="src/main/use_case/setImage/setImageOutputBoundary.js"></script>
+    <script src="src/main/use_case/setImage/setImagePresenter.js"></script>
+
+    <!-- Adapter Layer - ViewModels -->
+    <script src="src/main/adapter/viewmodel/SelectionViewModel.js"></script>
+    <script src="src/main/adapter/viewmodel/ViewportViewModel.js"></script>
+    <script src="src/main/adapter/viewmodel/InteractionViewModel.js"></script>
+    <script src="src/main/adapter/viewmodel/NodeViewModel.js"></script>
+    <script src="src/main/adapter/viewmodel/EdgeViewModel.js"></script>
+    <script src="src/main/adapter/viewmodel/CanvasViewModel.js"></script>
+
+    <!-- Adapter Layer - Controller -->
+    <script src="src/main/adapter/controller/CanvasController.js"></script>
+
+    <!-- View Layer - Helpers -->
+    <script src="src/main/view/helpers/GeometricHelper.js"></script>
+
+    <!-- View Layer - UI Components -->
+    <script src="src/main/view/buttons/stateButton.js"></script>
+    <script src="src/main/view/buttons/actionButton.js"></script>
+    <script src="src/main/view/buttons/importButton.js"></script>
+    <script src="src/main/view/buttons/exportButton.js"></script>
+    <script src="src/main/view/buttons/textButton.js"></script>
+    <script src="src/main/view/buttons/renormalizeButton.js"></script>
+    <script src="src/main/view/buttons/zoomInButton.js"></script>
+    <script src="src/main/view/buttons/zoomOutButton.js"></script>
+    <script src="src/main/view/buttons/undoButton.js"></script>
+    <script src="src/main/view/buttons/redoButton.js"></script>
+    <script src="src/main/view/buttons/playButton.js"></script>
+    <script src="src/main/view/buttons/skipButton.js"></script>
+    <script src="src/main/view/buttons/resetButton.js"></script>
+    <script src="src/main/view/buttons/modeSelect.js"></script>
+    <script src="src/main/view/menuBar.js"></script>
+    <script src="src/main/view/toolBar.js"></script>
+    <script src="src/main/view/rightPanel.js"></script>
+    <script src="src/main/view/sideBar.js"></script>
+    <script src="src/main/view/mainView.js"></script>
+
+    <!-- App Bootstrap -->
+    <script src="src/main/app/main.js"></script>
+  </body>
+</html>
