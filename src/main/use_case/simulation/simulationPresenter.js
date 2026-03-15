@@ -71,7 +71,6 @@ class SimulationPresenter extends SimulationOutputBoundary {
 
             case 'reset':
                 // Reset complete
-                this.mainView.sideBar.updateSimulationStatusLine();
                 this.mainView.redrawSimulation();
                 break;
         }

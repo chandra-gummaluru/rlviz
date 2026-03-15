@@ -69,6 +69,14 @@ class Graph {
         return this.textLabels.find(l => l.id === id);
     }
 
+    getUnnormalizedActionNodes(tolerance = 0.001) {
+        return this.nodes.filter(n => {
+            if (n.type !== 'action' || n.sas.length === 0) return false;
+            const total = n.getTotalProbability();
+            return Math.abs(total - 1.0) > tolerance;
+        });
+    }
+
     buildTransitionMatrix() {
         // Get all state nodes sorted by ID
         const states = this.nodes.filter(n => n.type === 'state').sort((a, b) => a.id - b.id);
@@ -128,14 +136,16 @@ class Graph {
         };
     }
 
-    serialize() {
+    serialize(includePositions = false) {
+        console.log('Graph.serialize() called, includePositions:', includePositions, 'nodes:', this.nodes.length, 'edges:', this.edges.length);
         const matrices = this.buildTransitionMatrix();
 
-        return {
+        const serialized = {
             nodes: this.nodes.map(node => ({
                 id: node.id,
                 type: node.type,
                 name: node.name,
+                ...(includePositions ? { x: node.x, y: node.y, size: node.size } : {}),
                 ...(node.type === 'state'
                     ? { actions: node.actions }
                     : { transitions: node.sas.map(s => ({
@@ -155,6 +165,30 @@ class Graph {
                 description: "P[s][a][s'] = probability of transitioning from state s to state s' via action a. R[s][a][s'] = reward for that transition."
             }
         };
+
+        // Include edges and text labels for full export (re-importable)
+        if (includePositions) {
+            serialized.edges = this.edges.map(edge => ({
+                from: edge.getFromNode().id,
+                to: edge.getToNode().id,
+                probability: edge.getProbability(),
+                reward: edge.getReward(),
+                labelOffset: edge.labelOffset
+            }));
+
+            if (this.textLabels && this.textLabels.length > 0) {
+                serialized.textLabels = this.textLabels.map(label => ({
+                    id: label.id,
+                    text: label.text,
+                    x: label.x,
+                    y: label.y,
+                    fontSize: label.fontSize || 16
+                }));
+            }
+        }
+
+        console.log('Graph.serialize() completed, result keys:', Object.keys(serialized));
+        return serialized;
     }
 
     deserialize(data) {
