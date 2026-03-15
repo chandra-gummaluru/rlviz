@@ -10,10 +10,7 @@ rlviz is an interactive browser-based tool for creating and simulating Markov De
 
 ### Local Development Server (Recommended)
 ```bash
-# Navigate to project folder
-cd "/Users/oscaryasunaga/Desktop/proj/rlviz ai"
-
-# Start HTTP server (Python 3)
+# Start HTTP server from the project root (Python 3)
 python -m http.server 8000
 
 # Open browser to http://localhost:8000
@@ -130,19 +127,43 @@ All dependencies are manually wired in `src/main/app/main.js`:
 - Automatic bidirectional curve rendering when edges exist in both directions
 - Reward-based color gradients (green for positive, red for negative, gray for zero)
 
+**Color Format Gotcha**
+- `EdgeViewModel.color` returns hex strings (`#RRGGBB`) or `rgb()` strings
+- `edge.getLabelColor()` (domain layer) returns p5.js `color()` objects (have `.levels` property)
+- When applying alpha, handle both formats — use `red(c)`, `green(c)`, `blue(c)` to extract from p5 color objects
+- Dashed lines in p5.js: use `drawingContext.setLineDash([dash, gap])` and reset with `drawingContext.setLineDash([])`
+
 ### Export Format
 
-The `serializeGraph` use case generates **dual representation** JSON:
+The `serializeGraph` use case has two modes controlled by `includePositions` flag:
+
+**File → Export** (`includePositions = true`): Full export with positions, edges, and text labels — re-importable.
 
 ```javascript
 {
   "nodes": [
-    // Adjacency list format for visualization/editing
-    { "id": 0, "type": "state", "name": "S0", "actions": [0, 1], "size": 30 },
+    { "id": 0, "type": "state", "name": "S0", "x": 300, "y": 200, "size": 30, "actions": [0, 1] },
+    { "id": 0, "type": "action", "name": "A0", "x": 500, "y": 200, "size": 30, "transitions": [{...}] }
+  ],
+  "edges": [
+    { "from": 0, "to": 0, "probability": 0.8, "reward": 10, "labelOffset": { "x": 0, "y": 0 } }
+  ],
+  "textLabels": [
+    { "id": "label_123", "text": "Start", "x": 100, "y": 50, "fontSize": 16 }
+  ],
+  "transitionMatrix": { ... }
+}
+```
+
+**S key / Console** (`includePositions = false`): Minimal export with only node IDs and transition matrix — for RL algorithms.
+
+```javascript
+{
+  "nodes": [
+    { "id": 0, "type": "state", "name": "S0", "actions": [0, 1] },
     { "id": 0, "type": "action", "name": "A0", "transitions": [{...}] }
   ],
   "transitionMatrix": {
-    // Standard MDP format for RL algorithms
     "states": [0, 1, 2],
     "stateNames": ["S0", "S1", "S2"],
     "actions": [0, 1],
@@ -152,6 +173,8 @@ The `serializeGraph` use case generates **dual representation** JSON:
   }
 }
 ```
+
+**Import** (`importGraphInteractor.js`): Accepts both formats. If `x`/`y` are missing, assigns random positions. If `edges` array is missing, only nodes and their adjacency lists are restored.
 
 Matrix dimensions: `P` and `R` are both `[#states][#actions][#states]` 3D arrays following Sutton & Barto notation.
 
@@ -248,6 +271,22 @@ The application follows a three-section layout:
 - Controls MainView camera and rendering during playback
 - Phase-specific animations and highlights
 
+**Spinning Arrow Phase** (visual feedback at action nodes)
+- `getSpinningArrowRenderInfo(from, to)` in `mainView.js` controls edge dashing + alpha during spinning
+- `getNodeSpinningArrowAlpha(node)` controls destination node transparency
+- `applyAlphaToColor(c, alpha)` handles p5 color objects, `rgb()`, `rgba()`, and hex strings
+- `simState.getHighlightedEdgeByArrow()` returns index into `actionNode.sas` (transitions array)
+- Highlighted edge + target node render solid/bright; others render dashed/faded (alpha 80)
+- `getSpinningArrowRenderInfo()` returns `{ dashed, alpha, colorOverride }` — `colorOverride` tints edges to match ring segment colors
+
+**Probability Ring** (annular ring around action nodes during spinning arrow)
+- `drawProbabilityRing(actionNode, simState)` renders arc segments from `simState.spinningArrowEdges`
+- Uses `drawingContext` (Canvas 2D API) directly — p5.js `arc()` only draws pie slices, not annular arcs
+- Arc angles offset by `-PI/2` to align with arrow (points UP at angle 0, arcs start at 3 o'clock)
+- Blue color mapping: HSB(220, 80, brightness) where darker = higher probability
+- `hsbToRgb()` helper avoids p5.js `colorMode()` side effects on subsequent draw calls
+- Highlighted segment pops out with extra radius and white stroke
+
 ## Key Features
 
 ### Node Resizing
@@ -329,6 +368,8 @@ When changing `Graph`, `StateNodes`, or `ActionNodes`:
 
 - Global p5 functions: `setup()`, `draw()`, `mousePressed()`, etc. are in `main.js`
 - All delegated to `MainView` methods
+- For shapes p5.js doesn't support (annular arcs, complex paths), use `drawingContext` (Canvas 2D API) directly
+- Avoid `colorMode()` for one-off color conversions — use manual conversion helpers to prevent global side effects
 - `noLoop()` mode by default - call `redraw()` after state changes
 - Use `push()`/`pop()` for transformation matrix isolation
 - Canvas coordinates transformed by viewport (pan/zoom) in `MainView.applyViewportTransform()`
@@ -354,8 +395,9 @@ console.log(canvasViewModel);
 
 ### Test Serialization
 ```javascript
-// Press S key to log JSON to console
-// Or click Export Graph button to download
+// Press S key to log minimal JSON (no positions) to console
+// Click File → Export to download full JSON (with positions, edges, text labels)
+// Import via File → Import — accepts both formats
 ```
 
 ### Trace Simulation Issues
@@ -370,6 +412,11 @@ console.log(canvasViewModel.startNode);
 console.log(commandHistory.undoStack);
 console.log(commandHistory.redoStack);
 ```
+
+## Environment Notes
+
+- No Node.js installed — use `python3 -c` for syntax checking (e.g., brace balance)
+- Use `python -m http.server 8000` for local dev server
 
 ## Browser Compatibility
 
@@ -436,6 +483,7 @@ if (viewModel.interaction.renameRequested) {
    - `viewModel.placingMode` → `viewModel.interaction.placingMode`
 3. **Controller Order Matters**: In `handleMousePress`, check for edge creation BEFORE starting node drag
 4. **State Cleanup**: Always clear interaction states when clicking empty canvas
+5. **Interactor→Presenter Data Retrieval**: When the controller needs return data from an interactor (e.g., `exportGraph`), it accesses `interactor.presenter.getSerializedData()`. Interactors should expose `this.presenter = outputBoundary` as a public alias. The interactor's try/catch can silently swallow errors and leave presenter data as `null` — always null-check the result.
 
 See `REFACTOR_COMPLETE.md` and `DEBUGGING.md` for detailed information.
 - memorize

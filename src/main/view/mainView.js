@@ -1,8 +1,7 @@
 class MainView {
-    constructor(canvasViewModel, canvasController, sideBar, menuBar, toolBar, rightPanel) {
+    constructor(canvasViewModel, canvasController, _unused, menuBar, toolBar, rightPanel) {
         this.viewModel = canvasViewModel;
         this.controller = canvasController;
-        this.sideBar = sideBar;
         this.menuBar = menuBar;
         this.toolBar = toolBar;
         this.rightPanel = rightPanel;
@@ -168,10 +167,26 @@ class MainView {
             const nodeVM = this.viewModel.createNodeViewModel(node);
             const color = nodeVM.color;
 
-            fill(color);
-            stroke(0);
+            // Get spinning arrow alpha for this node
+            const nodeAlpha = this.getNodeSpinningArrowAlpha(node);
+            const isNodeFaded = nodeAlpha < 255;
+
+            // Apply alpha to node fill color
+            const nodeColor = this.applyAlphaToColor(color, nodeAlpha);
+            fill(nodeColor);
+            stroke(this.applyAlphaToColor('rgb(0,0,0)', nodeAlpha));
             strokeWeight(2);
+
+            // Apply dashed stroke for faded destination nodes
+            if (isNodeFaded) {
+                drawingContext.setLineDash([6, 3]);
+            }
+
             circle(node.x, node.y, node.size * 2);
+
+            if (isNodeFaded) {
+                drawingContext.setLineDash([]);
+            }
 
             // Draw image inside node if available
             if (node.image) {
@@ -200,7 +215,7 @@ class MainView {
                 pop();
             } else {
                 // Only draw text if no image
-                fill(255);
+                fill(255, 255, 255, nodeAlpha);
                 noStroke();
                 textAlign(CENTER, CENTER);
                 textSize(14);
@@ -236,7 +251,7 @@ class MainView {
             if (from.type === 'state' && to.type === 'action') {
                 weight = 2; // Consistent weight for State → Action edges
             } else {
-                weight = 1 + 8 * edge.getProbability(); // Probability-based for Action → State
+                weight = 1 + 4 * edge.getProbability(); // Probability-based for Action → State
             }
 
             const edgeColor = edgeVM.color;
@@ -267,7 +282,7 @@ class MainView {
         const normalizedDx = dx / distance;
         const normalizedDy = dy / distance;
 
-        const arrowSize = 8 + weight * 0.5;
+        const arrowSize = 8 + weight * 1.5;
 
         // Calculate the point on the circumference of the 'to' node
         const toRadius = to.size;
@@ -278,25 +293,29 @@ class MainView {
         const lineEndX = arrowTipX - normalizedDx * arrowSize;
         const lineEndY = arrowTipY - normalizedDy * arrowSize;
 
-        // Check if this edge should be dashed (during spinning arrow phase)
-        const shouldBeDashed = this.shouldEdgeBeDashed(from, to);
+        // Get spinning arrow render info (dashed + alpha + optional color override)
+        const renderInfo = this.getSpinningArrowRenderInfo(from, to);
+
+        // Use color override (blue tint from ring) if available, otherwise default edge color
+        const baseColor = renderInfo.colorOverride || edgeColor;
+        const alphaEdgeColor = this.applyAlphaToColor(baseColor, renderInfo.alpha);
 
         // Draw the edge line (stops before the arrowhead)
         strokeWeight(weight);
-        stroke(edgeColor);
+        stroke(alphaEdgeColor);
 
-        if (shouldBeDashed) {
+        if (renderInfo.dashed) {
             drawingContext.setLineDash([8, 4]);
         }
 
         line(from.x, from.y, lineEndX, lineEndY);
 
-        if (shouldBeDashed) {
+        if (renderInfo.dashed) {
             drawingContext.setLineDash([]);  // Reset to solid
         }
 
         // Draw arrowhead at the circumference
-        this.drawArrowhead(arrowTipX, arrowTipY, normalizedDx, normalizedDy, edgeColor, weight);
+        this.drawArrowhead(arrowTipX, arrowTipY, normalizedDx, normalizedDy, alphaEdgeColor, weight);
 
         // Only show probability and reward labels for Action → State edges
         if (from.type === 'action' && to.type === 'state') {
@@ -308,7 +327,8 @@ class MainView {
             const labelText = `(${prob}, ${reward})`;
 
             noStroke();
-            fill(edge.getLabelColor());
+            const labelColor = renderInfo.colorOverride || edge.getLabelColor();
+            fill(this.applyAlphaToColor(labelColor, renderInfo.alpha));
             textSize(edge.labelSize);
             textAlign(CENTER, CENTER);
             text(labelText, midX, midY);
@@ -351,7 +371,7 @@ class MainView {
 
         // Find where the center-to-center curve intersects the 'to' node's circumference
         const toRadius = to.size;
-        const arrowSize = 8 + weight * 0.5;
+        const arrowSize = 8 + weight * 1.5;
 
         // Binary search for intersection point at node circumference
         let tMin = 0.5;
@@ -402,14 +422,17 @@ class MainView {
         }
         const tLineEnd = (tLineMin + tLineMax) / 2;
 
+        // Get spinning arrow render info (dashed + alpha + optional color override)
+        const renderInfo = this.getSpinningArrowRenderInfo(from, to);
+        const baseColor = renderInfo.colorOverride || edgeColor;
+        const alphaEdgeColor = this.applyAlphaToColor(baseColor, renderInfo.alpha);
+
         // Draw the curved line from tStart (edge of from node) to tLineEnd (arrowhead base)
         strokeWeight(weight);
-        stroke(edgeColor);
+        stroke(alphaEdgeColor);
         noFill();
 
-        // Check if this edge should be dashed (during spinning arrow phase)
-        const shouldBeDashed = this.shouldEdgeBeDashed(from, to);
-        if (shouldBeDashed) {
+        if (renderInfo.dashed) {
             drawingContext.setLineDash([8, 4]);
         }
 
@@ -434,12 +457,12 @@ class MainView {
         vertex(finalX, finalY);
         endShape();
 
-        if (shouldBeDashed) {
+        if (renderInfo.dashed) {
             drawingContext.setLineDash([]);  // Reset to solid
         }
 
         // Draw arrowhead at the intersection point
-        this.drawArrowhead(arrowX, arrowY, normalizedTangentDx, normalizedTangentDy, edgeColor, weight);
+        this.drawArrowhead(arrowX, arrowY, normalizedTangentDx, normalizedTangentDy, alphaEdgeColor, weight);
 
         // Only show probability and reward labels for Action → State edges
         if (from.type === 'action' && to.type === 'state') {
@@ -453,7 +476,8 @@ class MainView {
             const labelText = `(${prob}, ${reward})`;
 
             noStroke();
-            fill(edge.getLabelColor());
+            const labelColor = renderInfo.colorOverride || edge.getLabelColor();
+            fill(this.applyAlphaToColor(labelColor, renderInfo.alpha));
             textSize(edge.labelSize);
             textAlign(CENTER, CENTER);
             text(labelText, labelX, labelY);
@@ -462,7 +486,7 @@ class MainView {
 
     drawArrowhead(x, y, dirX, dirY, color, lineWeight) {
         // Arrow size proportional to line weight
-        const arrowSize = 8 + lineWeight * 0.5;
+        const arrowSize = 8 + lineWeight * 1.5;
         const arrowAngle = Math.PI / 6; // 30 degrees
 
         // Calculate the two points of the arrowhead
@@ -483,19 +507,210 @@ class MainView {
         triangle(x, y, x1, y1, x2, y2);
     }
 
-    // Check if an edge should be rendered as dashed during spinning arrow phase
-    shouldEdgeBeDashed(from, to) {
+    // Apply alpha to a color (supports p5 color objects, rgb(), hex strings)
+    applyAlphaToColor(c, alpha) {
+        if (alpha >= 255) return c;
+
+        // Handle p5.js color objects (from color() function)
+        if (typeof c === 'object' && c !== null && typeof c.levels !== 'undefined') {
+            const r = red(c);
+            const g = green(c);
+            const b = blue(c);
+            return `rgba(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)}, ${(alpha / 255).toFixed(2)})`;
+        }
+
+        if (typeof c !== 'string') return c;
+
+        // Handle rgb(r,g,b) format
+        const rgbMatch = c.match(/^rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$/);
+        if (rgbMatch) {
+            return `rgba(${rgbMatch[1]}, ${rgbMatch[2]}, ${rgbMatch[3]}, ${(alpha / 255).toFixed(2)})`;
+        }
+
+        // Handle rgba format (update alpha)
+        const rgbaMatch = c.match(/^rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*[\d.]+\s*\)$/);
+        if (rgbaMatch) {
+            return `rgba(${rgbaMatch[1]}, ${rgbaMatch[2]}, ${rgbaMatch[3]}, ${(alpha / 255).toFixed(2)})`;
+        }
+
+        // Handle hex colors (#RRGGBB or #RGB)
+        const hexMatch = c.match(/^#([0-9a-fA-F]{3,6})$/);
+        if (hexMatch) {
+            let hex = hexMatch[1];
+            if (hex.length === 3) {
+                hex = hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2];
+            }
+            const r = parseInt(hex.substring(0, 2), 16);
+            const g = parseInt(hex.substring(2, 4), 16);
+            const b = parseInt(hex.substring(4, 6), 16);
+            return `rgba(${r}, ${g}, ${b}, ${(alpha / 255).toFixed(2)})`;
+        }
+
+        // Fallback: return as-is
+        return c;
+    }
+
+    // Get rendering info for an edge during spinning arrow phase
+    // Returns { dashed: bool, alpha: number, colorOverride: string|null }
+    getSpinningArrowRenderInfo(from, to) {
+        const defaultInfo = { dashed: false, alpha: 255, colorOverride: null };
+
         // Only during spinning arrow phase in simulate mode
-        if (this.viewModel.interaction.mode !== 'simulate') return false;
-        if (!this.viewModel.simulationState) return false;
-        if (this.viewModel.simulationState.phase !== 'spinning_arrow') return false;
+        if (this.viewModel.interaction.mode !== 'simulate') return defaultInfo;
+        if (!this.viewModel.simulationState) return defaultInfo;
+        if (this.viewModel.simulationState.phase !== 'spinning_arrow') return defaultInfo;
 
-        // Get the current node in simulation
-        const currentNode = this.viewModel.simulationState.currentNode;
-        if (!currentNode || currentNode.type !== 'action') return false;
+        const simState = this.viewModel.simulationState;
+        const currentNode = simState.currentNode;
+        if (!currentNode || currentNode.type !== 'action') return defaultInfo;
 
-        // Dash edges that originate from the current action node
-        return from.id === currentNode.id && from.type === 'action' && to.type === 'state';
+        // Only affect edges outgoing from the current action node to state nodes
+        if (from.id !== currentNode.id || from.type !== 'action' || to.type !== 'state') return defaultInfo;
+
+        // Check if this edge is the one the arrow is currently pointing at
+        const highlightedEdgeIndex = simState.getHighlightedEdgeByArrow();
+        const actionNode = this.viewModel.graph.getNodeById(currentNode.id);
+        if (!actionNode || !actionNode.sas) return { dashed: true, alpha: 80, colorOverride: null };
+
+        // Compute blue color matching the ring segment for this edge's transition
+        const segments = simState.spinningArrowEdges;
+        let blueColor = null;
+        if (segments && segments.length > 0) {
+            const probs = segments.map(s => s.probability);
+            const minProb = Math.min(...probs);
+            const maxProb = Math.max(...probs);
+            // Find the segment matching this edge's target
+            const matchingSegment = segments.find(s => s.targetId === to.id);
+            if (matchingSegment) {
+                blueColor = this.getRingSegmentColor(matchingSegment.probability, minProb, maxProb);
+            }
+        }
+
+        // Find if this edge's target matches the highlighted transition's target
+        const highlightedTransition = actionNode.sas[highlightedEdgeIndex];
+        if (highlightedTransition && to.id === highlightedTransition.nextState) {
+            return { dashed: false, alpha: 255, colorOverride: blueColor }; // Highlighted: solid, bright
+        }
+
+        return { dashed: true, alpha: 80, colorOverride: blueColor }; // Non-highlighted: dashed, faded
+    }
+
+    // Get alpha for a node during spinning arrow phase
+    getNodeSpinningArrowAlpha(node) {
+        if (this.viewModel.interaction.mode !== 'simulate') return 255;
+        if (!this.viewModel.simulationState) return 255;
+        if (this.viewModel.simulationState.phase !== 'spinning_arrow') return 255;
+
+        const simState = this.viewModel.simulationState;
+        const currentNode = simState.currentNode;
+        if (!currentNode || currentNode.type !== 'action') return 255;
+
+        const actionNode = this.viewModel.graph.getNodeById(currentNode.id);
+        if (!actionNode || !actionNode.sas) return 255;
+
+        // Check if this node is a destination of the current action node
+        const isDestination = actionNode.sas.some(t => t.nextState === node.id);
+        if (!isDestination) return 255;
+
+        // Check if this node is the highlighted destination
+        const highlightedEdgeIndex = simState.getHighlightedEdgeByArrow();
+        const highlightedTransition = actionNode.sas[highlightedEdgeIndex];
+        if (highlightedTransition && node.id === highlightedTransition.nextState) {
+            return 255; // Highlighted destination: full brightness
+        }
+
+        return 80; // Non-highlighted destination: faded
+    }
+
+    // Convert HSB (h: 0-360, s: 0-100, b: 0-100) to rgb() string
+    hsbToRgb(h, s, b) {
+        s /= 100;
+        b /= 100;
+        const c = b * s;
+        const x = c * (1 - Math.abs((h / 60) % 2 - 1));
+        const m = b - c;
+        let r, g, bl;
+        if (h < 60) { r = c; g = x; bl = 0; }
+        else if (h < 120) { r = x; g = c; bl = 0; }
+        else if (h < 180) { r = 0; g = c; bl = x; }
+        else if (h < 240) { r = 0; g = x; bl = c; }
+        else if (h < 300) { r = x; g = 0; bl = c; }
+        else { r = c; g = 0; bl = x; }
+        return `rgb(${Math.round((r + m) * 255)}, ${Math.round((g + m) * 255)}, ${Math.round((bl + m) * 255)})`;
+    }
+
+    // Get the blue color for a ring segment based on probability
+    getRingSegmentColor(probability, minProb, maxProb) {
+        // Brightness: highest probability → 35 (dark), lowest → 85 (light)
+        let brightness;
+        if (maxProb === minProb) {
+            brightness = 60; // Equal probabilities → uniform medium blue
+        } else {
+            const t = (probability - minProb) / (maxProb - minProb);
+            brightness = 85 - t * 50; // 85 (low prob) to 35 (high prob)
+        }
+        return this.hsbToRgb(220, 80, brightness);
+    }
+
+    // Draw probability ring around action node during spinning arrow phase
+    drawProbabilityRing(actionNode, simState) {
+        const segments = simState.spinningArrowEdges;
+        if (!segments || segments.length === 0) return;
+
+        const highlightedEdgeIndex = simState.getHighlightedEdgeByArrow();
+        const innerRadius = actionNode.size;
+        const baseOuterRadius = actionNode.size + 10;
+        const highlightOuterRadius = actionNode.size + 13;
+        const angleOffset = -Math.PI / 2; // Align with arrow (points UP at angle 0)
+        const gap = 0.02; // 0.02 rad gap on each side
+
+        // Find min/max probability for color mapping
+        const probs = segments.map(s => s.probability);
+        const minProb = Math.min(...probs);
+        const maxProb = Math.max(...probs);
+
+        const ctx = drawingContext;
+
+        segments.forEach((segment, index) => {
+            const isHighlighted = (index === highlightedEdgeIndex);
+            const outerRadius = isHighlighted ? highlightOuterRadius : baseOuterRadius;
+
+            // Inset arc by gap for visual separation
+            let startAngle = segment.startAngle + gap + angleOffset;
+            let endAngle = segment.endAngle - gap + angleOffset;
+            if (endAngle <= startAngle) return; // Skip if gap eats the segment
+
+            // Color based on probability
+            let brightness;
+            if (maxProb === minProb) {
+                brightness = 60;
+            } else {
+                const t = (segment.probability - minProb) / (maxProb - minProb);
+                brightness = 85 - t * 50;
+            }
+            if (isHighlighted) {
+                brightness = Math.min(brightness, 30); // Slightly brighter for highlighted
+            }
+            const fillColor = this.hsbToRgb(220, 80, brightness);
+
+            // Draw annular arc using Canvas 2D API
+            ctx.beginPath();
+            ctx.arc(actionNode.x, actionNode.y, outerRadius, startAngle, endAngle);
+            ctx.arc(actionNode.x, actionNode.y, innerRadius, endAngle, startAngle, true);
+            ctx.closePath();
+
+            ctx.fillStyle = fillColor;
+            ctx.fill();
+
+            if (isHighlighted) {
+                ctx.strokeStyle = 'rgba(255,255,255,1)';
+                ctx.lineWidth = 2;
+            } else {
+                ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+                ctx.lineWidth = 1;
+            }
+            ctx.stroke();
+        });
     }
 
     // Draw spinning arrow animation at action node during selection phase
@@ -533,6 +748,9 @@ class MainView {
 
         // Get which edge the arrow is currently pointing at
         const highlightedEdgeIndex = simState.getHighlightedEdgeByArrow();
+
+        // Draw probability ring behind the arrow
+        this.drawProbabilityRing(actionNode, simState);
 
         // Draw the arrow at the center of the action node
         push();
@@ -586,10 +804,10 @@ class MainView {
                 textSize(14);
                 textStyle(BOLD);
             } else {
-                // Normal: light gray background
-                fill(255, 255, 255, 200);  // White with transparency
+                // Non-highlighted: faded to match dashed/transparent edges
+                fill(255, 255, 255, 60);  // Very faded white background
                 rect(midX - 30, midY - 12, 60, 24, 4);
-                fill(80);
+                fill(80, 80, 80, 80);  // Faded text
                 textSize(12);
                 textStyle(NORMAL);
             }
@@ -668,7 +886,6 @@ class MainView {
             // Skip camera centering - just update UI elements
             this.viewModel.interaction.shouldCenterOnNode = false;
             this.viewModel.interaction.nodeToCenterOn = null;
-            this.sideBar.updateStartNodeStatus();
             this.rightPanel.updateContent(); // Update right panel to show new initial state
         }
 
@@ -759,9 +976,6 @@ class MainView {
         if (this.viewModel.interaction.resizingNode) {
             cursor(ARROW);
         }
-
-        // Update button states
-        this.sideBar.updateUndoRedoButtons();
 
         redraw();
     }
@@ -893,8 +1107,6 @@ class MainView {
         // Delegate to controller
         const shouldPreventDefault = this.controller.handleKeyPress(key);
 
-        // Update button states if undo/redo happened
-        this.sideBar.updateUndoRedoButtons();
         redraw();
 
         return shouldPreventDefault;

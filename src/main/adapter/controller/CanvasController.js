@@ -369,13 +369,18 @@ class CanvasController {
         }
     }
 
-    exportGraph() {
+    exportGraph(includePositions = false) {
         if (this.interactors.serializeGraph) {
-            const inputData = new SerializeGraphInputData();
+            const inputData = new SerializeGraphInputData(includePositions);
             this.interactors.serializeGraph.execute(inputData);
             // Get serialized data from presenter
-            if (this.interactors.serializeGraph.presenter) {
-                return this.interactors.serializeGraph.presenter.getSerializedData();
+            const presenter = this.interactors.serializeGraph.presenter;
+            if (presenter) {
+                const data = presenter.getSerializedData();
+                if (data) {
+                    return data;
+                }
+                console.error('Export failed: serialized data is null');
             }
         }
         return null;

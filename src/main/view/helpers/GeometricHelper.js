@@ -16,18 +16,18 @@ class GeometricHelper {
             return { type: 'textLabel', entity: textLabel };
         }
 
-        // Check edges (before nodes, so edges between nodes are selectable)
-        const edge = this.findEdgeAtPosition(graph, x, y);
-        if (edge) {
-            return { type: 'edge', entity: edge };
-        }
-
-        // Check nodes (bottom layer)
+        // Check nodes (higher priority than edges — visually on top)
         for (let i = graph.nodes.length - 1; i >= 0; i--) {
             const node = graph.nodes[i];
             if (node.contains(x, y)) {
                 return { type: 'node', entity: node };
             }
+        }
+
+        // Check edges
+        const edge = this.findEdgeAtPosition(graph, x, y);
+        if (edge) {
+            return { type: 'edge', entity: edge };
         }
 
         return { type: 'none', entity: null };
