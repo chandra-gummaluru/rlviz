@@ -26,12 +26,6 @@ class ImportGraphPresenter extends ImportGraphOutputBoundary {
             this.viewModel.clearSelection();
             
             // The graph has already been updated by the interactor
-            // Just notify success
-            console.log('Graph imported successfully:',
-                responseModel.nodeCount, 'nodes,',
-                responseModel.edgeCount, 'edges,',
-                responseModel.textLabelCount, 'text labels');
-                
             // Could trigger a UI notification here if needed
             // this.viewModel.setNotification("Graph imported successfully");
         } else {

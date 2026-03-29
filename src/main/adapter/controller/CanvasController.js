@@ -3,18 +3,6 @@ class CanvasController {
     constructor(viewModel, interactors) {
         this.viewModel = viewModel;
         this.interactors = interactors;
-
-        // Debug: verify classes are loaded
-        console.log('CanvasController created');
-        console.log('MoveNodeInputData:', typeof MoveNodeInputData);
-        console.log('MoveNodeInputData.forNodeStart:', typeof MoveNodeInputData.forNodeStart);
-        console.log('SelectNodeInputData:', typeof SelectNodeInputData);
-        console.log('RenameNodeInputData:', typeof RenameNodeInputData);
-        console.log('CreateTextLabelInputData:', typeof CreateTextLabelInputData);
-
-        // Verify graph references
-        console.log('ViewModel graph:', this.viewModel.graph);
-        console.log('Number of nodes in graph:', this.viewModel.graph.nodes.length);
     }
 
     // ===== Mouse Input Handling =====
@@ -24,8 +12,6 @@ class CanvasController {
         const x = world.x;
         const y = world.y;
 
-        console.log('handleMousePress:', screenX, screenY, '-> world:', x, y);
-
         // Handle node placement
         if (this.viewModel.interaction.placingMode) {
             this._finishPlacement();
@@ -34,7 +20,6 @@ class CanvasController {
 
         // Find what was clicked
         const target = GeometricHelper.findEntityAtPosition(this.viewModel.graph, x, y);
-        console.log('Found target:', target.type, target.entity);
 
         // Check for double-click
         const isDoubleClick = GeometricHelper.isDoubleClick(
@@ -71,12 +56,37 @@ class CanvasController {
         }
     }
 
+    handleMouseMove(screenX, screenY) {
+        const world = this.viewModel.screenToWorld(screenX, screenY);
+        const edge = GeometricHelper.findEdgeAtPosition(this.viewModel.graph, world.x, world.y);
+
+        // Only action→state edges get hover effect
+        const isActionToState = edge &&
+            edge.getFromNode().type === 'action' &&
+            edge.getToNode().type === 'state';
+        const targetEdge = isActionToState ? edge : null;
+        const interaction = this.viewModel.interaction;
+
+        if (targetEdge !== interaction.hoveredEdge) {
+            if (targetEdge) {
+                // Start opening animation
+                interaction.hoveredEdge = targetEdge;
+                interaction.hoverDirection = 1;
+                interaction.hoverStartTime = Date.now();
+                interaction.hoverAnimating = true;
+            } else if (interaction.hoveredEdge) {
+                // Start closing animation (keep hoveredEdge until animation finishes)
+                interaction.hoverDirection = -1;
+                interaction.hoverStartTime = Date.now();
+                interaction.hoverAnimating = true;
+            }
+        }
+    }
+
     handleMouseDrag(screenX, screenY) {
         const world = this.viewModel.screenToWorld(screenX, screenY);
         const x = world.x;
         const y = world.y;
-
-        console.log('handleMouseDrag - draggingNode:', this.viewModel.interaction.draggingNode ? this.viewModel.interaction.draggingNode.name : null);
 
         // Update node placement
         if (this.viewModel.interaction.heldNode) {
@@ -118,7 +128,6 @@ class CanvasController {
 
         // Handle node drag
         if (this.viewModel.interaction.draggingNode) {
-            console.log('Moving node to:', x, y);
             this.viewModel.interaction.updateDragDistance(x, y);
             if (this.interactors.moveNode) {
                 const inputData = MoveNodeInputData.forNodeUpdate(
@@ -453,16 +462,12 @@ class CanvasController {
     }
 
     _handleNodeClick(node, x, y) {
-        console.log('_handleNodeClick called:', node.name, 'ID:', node.id, 'type:', node.type, 'mode:', this.viewModel.mode);
-        console.log('Node object:', node);
-
         // Check if clicking on edge of node (for resizing) in editor mode
         if (this.viewModel.mode === 'editor' &&
             GeometricHelper.isClickOnNodeEdge(node, x, y)) {
             this.viewModel.interaction.resizingNode = node;
             this.viewModel.interaction.resizeStartSize = node.getSize();
             this.viewModel.interaction.resizeStartDistance = node.distanceTo(x, y);
-            console.log('Starting resize');
             return;
         }
 
@@ -479,22 +484,16 @@ class CanvasController {
 
         // Select node
         if (this.interactors.selectNode) {
-            console.log('Calling selectNode.select for node:', node.id);
             const inputData = SelectNodeInputData.forNode(node.id);
             this.interactors.selectNode.select(inputData);
-            console.log('After select, selectedNode:', this.viewModel.selection.selectedNode);
         }
 
         // Start dragging (in editor mode)
         if (this.viewModel.mode === 'editor') {
-            console.log('Starting drag for node:', node.name, 'with ID:', node.id);
             this.viewModel.interaction.startDrag(node, x, y);
-            console.log('After startDrag, draggingNode:', this.viewModel.interaction.draggingNode ? this.viewModel.interaction.draggingNode.name : null);
 
             if (this.interactors.moveNode) {
-                console.log('Creating MoveNodeInputData with node.id:', node.id);
                 const inputData = MoveNodeInputData.forNodeStart(node.id);
-                console.log('InputData created:', inputData);
                 this.interactors.moveNode.startMove(inputData);
             }
         }
@@ -573,4 +572,5 @@ class CanvasController {
             this.interactors.setSpinningArrow.execute(inputData);
         }
     }
+
 }

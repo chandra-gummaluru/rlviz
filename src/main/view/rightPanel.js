@@ -72,7 +72,7 @@ class RightPanel {
         latex.addClass('panel-latex');
 
         if (window.MathJax) {
-            MathJax.typesetPromise([latex.elt]).catch((err) => console.log('MathJax error:', err));
+            MathJax.typesetPromise([latex.elt]).catch(() => {});
         }
 
         // State Space Section
@@ -103,7 +103,7 @@ class RightPanel {
             }
 
             if (window.MathJax) {
-                MathJax.typesetPromise([stateList.elt]).catch((err) => console.log('MathJax error:', err));
+                MathJax.typesetPromise([stateList.elt]).catch(() => {});
             }
         });
 
@@ -135,7 +135,7 @@ class RightPanel {
             }
 
             if (window.MathJax) {
-                MathJax.typesetPromise([actionList.elt]).catch((err) => console.log('MathJax error:', err));
+                MathJax.typesetPromise([actionList.elt]).catch(() => {});
             }
         });
 
@@ -163,7 +163,7 @@ class RightPanel {
                 descDiv.addClass('panel-description');
 
                 if (window.MathJax) {
-                    MathJax.typesetPromise([descDiv.elt]).catch((err) => console.log('MathJax error:', err));
+                    MathJax.typesetPromise([descDiv.elt]).catch(() => {});
                 }
             }
         });
@@ -192,7 +192,7 @@ class RightPanel {
                 descDiv.addClass('panel-description');
 
                 if (window.MathJax) {
-                    MathJax.typesetPromise([descDiv.elt]).catch((err) => console.log('MathJax error:', err));
+                    MathJax.typesetPromise([descDiv.elt]).catch(() => {});
                 }
             }
         });
@@ -342,7 +342,7 @@ class RightPanel {
                 latexDiv.addClass('panel-latex-content');
 
                 if (window.MathJax) {
-                    MathJax.typesetPromise([latexDiv.elt]).catch((err) => console.log('MathJax error:', err));
+                    MathJax.typesetPromise([latexDiv.elt]).catch(() => {});
                 }
             } else {
                 const actions = this.viewModel.graph.nodes.filter(n => n.type === 'action');
@@ -358,7 +358,7 @@ class RightPanel {
                 latexDiv.addClass('panel-latex-content');
 
                 if (window.MathJax) {
-                    MathJax.typesetPromise([latexDiv.elt]).catch((err) => console.log('MathJax error:', err));
+                    MathJax.typesetPromise([latexDiv.elt]).catch(() => {});
                 }
             }
         });
@@ -436,24 +436,13 @@ class RightPanel {
                     rewardValue.addClass('panel-slider-value');
                     rewardValue.addClass('panel-slider-value--reward');
 
-                    // Reward color must stay inline (dynamic value)
-                    const updateRewardColor = (reward) => {
-                        if (reward > 0) {
-                            rewardValue.style('color', 'var(--reward-positive)');
-                        } else if (reward < 0) {
-                            rewardValue.style('color', 'var(--reward-negative)');
-                        } else {
-                            rewardValue.style('color', 'var(--reward-zero)');
-                        }
-                    };
-
-                    updateRewardColor(transition.reward);
+                    this._applyRewardColor(rewardValue, transition.reward);
 
                     rewardSlider.input(() => {
                         const newReward = parseFloat(rewardSlider.value());
                         transition.reward = newReward;
                         rewardValue.html(newReward.toFixed(2));
-                        updateRewardColor(newReward);
+                        this._applyRewardColor(rewardValue, newReward);
                         redraw();
                     });
 
@@ -519,14 +508,39 @@ class RightPanel {
             const rewardValue = createDiv(stats.totalReward.toFixed(2));
             rewardValue.parent(rewardDiv);
             rewardValue.addClass('panel-stat-value--large');
-            // Reward color stays inline (dynamic)
+            this._applyRewardColor(rewardValue, stats.totalReward);
+
+            // Horizontal reward bar
+            const barContainer = createDiv();
+            barContainer.parent(rewardDiv);
+            barContainer.addClass('reward-bar-container');
+
+            const barFill = createDiv();
+            barFill.parent(barContainer);
+            barFill.addClass('reward-bar-fill');
+
+            // Scale: map reward to 0-100% of half-width
+            // Clamp so the bar doesn't overflow
+            const maxReward = 100;
+            const clampedReward = Math.max(-maxReward, Math.min(maxReward, stats.totalReward));
+            const pct = Math.abs(clampedReward) / maxReward * 50; // 50% = full half
+
             if (stats.totalReward > 0) {
-                rewardValue.style('color', 'var(--reward-positive)');
+                barFill.style('left', '50%');
+                barFill.style('width', pct + '%');
+                barFill.style('background', '#4CAF50');
             } else if (stats.totalReward < 0) {
-                rewardValue.style('color', 'var(--reward-negative)');
+                barFill.style('left', (50 - pct) + '%');
+                barFill.style('width', pct + '%');
+                barFill.style('background', 'var(--reward-negative)');
             } else {
-                rewardValue.style('color', 'var(--reward-zero)');
+                barFill.style('width', '0%');
             }
+
+            // Center line
+            const centerLine = createDiv();
+            centerLine.parent(barContainer);
+            centerLine.addClass('reward-bar-center');
         });
 
         // Steps
@@ -599,71 +613,17 @@ class RightPanel {
                     const reward = createDiv(outcome.reward.toFixed(2));
                     reward.parent(rewardRow);
                     reward.addClass('panel-outcome-value');
-                    // Reward color stays inline (dynamic)
-                    if (outcome.reward > 0) {
-                        reward.style('color', 'var(--reward-positive)');
-                    } else if (outcome.reward < 0) {
-                        reward.style('color', 'var(--reward-negative)');
-                    } else {
-                        reward.style('color', 'var(--reward-zero)');
-                    }
+                    this._applyRewardColor(reward, outcome.reward);
                 });
             });
         }
 
-        // Animation Settings Section
-        this.createSection('Animation Settings', () => {
-            const settingsDiv = createDiv();
-            settingsDiv.parent(this.contentContainer);
-            settingsDiv.addClass('panel-settings');
+    }
 
-            // Spinning Arrow Checkbox
-            const checkboxContainer = createDiv();
-            checkboxContainer.parent(settingsDiv);
-            checkboxContainer.addClass('panel-checkbox-container');
-
-            const checkbox = createCheckbox('Enable Spinning Arrow Selection', simulationState.spinningArrowEnabled);
-            checkbox.parent(checkboxContainer);
-            checkbox.addClass('panel-checkbox');
-            checkbox.changed(() => {
-                const enabled = checkbox.checked();
-                if (this.callbacks && this.callbacks.onSpinningArrowToggle) {
-                    this.callbacks.onSpinningArrowToggle(enabled);
-                }
-            });
-
-            // Duration Slider
-            const sliderContainer = createDiv();
-            sliderContainer.parent(settingsDiv);
-            sliderContainer.addClass('panel-slider-label');
-
-            const sliderLabel = createDiv('Animation Duration:');
-            sliderLabel.parent(sliderContainer);
-            sliderLabel.addClass('panel-label');
-
-            const sliderValueDiv = createDiv();
-            sliderValueDiv.parent(sliderContainer);
-            sliderValueDiv.addClass('panel-duration-header');
-
-            const valueLabel = createDiv(`${simulationState.spinningArrowDuration}ms`);
-            valueLabel.parent(sliderValueDiv);
-            valueLabel.addClass('panel-duration-value');
-
-            const rangeLabel = createDiv('(800ms - 3000ms)');
-            rangeLabel.parent(sliderValueDiv);
-            rangeLabel.addClass('panel-duration-range');
-
-            const slider = createSlider(800, 3000, simulationState.spinningArrowDuration, 50);
-            slider.parent(sliderContainer);
-            slider.addClass('panel-full-width-slider');
-            slider.input(() => {
-                const duration = slider.value();
-                valueLabel.html(`${duration}ms`);
-                if (this.callbacks && this.callbacks.onSpinningArrowDurationChange) {
-                    this.callbacks.onSpinningArrowDurationChange(duration);
-                }
-            });
-        });
+    _applyRewardColor(element, reward) {
+        if (reward > 0) element.style('color', 'var(--reward-positive)');
+        else if (reward < 0) element.style('color', 'var(--reward-negative)');
+        else element.style('color', 'var(--reward-zero)');
     }
 
     createSection(title, contentCallback) {

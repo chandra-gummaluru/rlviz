@@ -7,13 +7,11 @@ class SimulationPresenter extends SimulationOutputBoundary {
     }
 
     presentInitializationStart() {
-        console.log('[Presenter] Initialization starting');
         // ViewModel state will be updated by interactor
         this.mainView.redrawSimulation();
     }
 
     presentInitializationComplete() {
-        console.log('[Presenter] Initialization complete');
         // Update button states based on simulation state
         const isPlaying = this.viewModel.simulationState.isPlaying;
         const canAdvance = this.viewModel.simulationState.canAdvance();
@@ -22,12 +20,10 @@ class SimulationPresenter extends SimulationOutputBoundary {
     }
 
     presentRoundStart(currentNode, nextNode) {
-        console.log(`[Presenter] Round starting: ${currentNode.name} -> ${nextNode.name}`);
         // State updated by interactor, just trigger redraw
     }
 
     presentRoundComplete(currentNode) {
-        console.log(`[Presenter] Round complete at: ${currentNode.name}`);
         // Update button states based on simulation state
         const isPlaying = this.viewModel.simulationState.isPlaying;
         const canAdvance = this.viewModel.simulationState.canAdvance();
@@ -36,8 +32,6 @@ class SimulationPresenter extends SimulationOutputBoundary {
     }
 
     presentPhaseChange(phase, duration) {
-        console.log(`[Presenter] Phase changed to: ${phase} (${duration}ms)`);
-
         // Trigger appropriate visual updates based on phase
         switch (phase) {
             case 'center_camera':
@@ -55,9 +49,20 @@ class SimulationPresenter extends SimulationOutputBoundary {
                 this.mainView.redrawSimulation();
                 break;
 
+            case 'reward_collect':
+                // Launch reward particles after spinning arrow determines outcome
+                this.mainView.redrawSimulation();
+                if (this.viewModel.simulationState.hasPendingReward()) {
+                    const simState = this.viewModel.simulationState;
+                    this.mainView.launchRewardParticles(
+                        simState.pendingReward,
+                        simState.pendingRewardActionNodeId
+                    );
+                }
+                break;
+
             case 'spinning_arrow':
                 // Start spinning arrow animation - trigger initial redraw
-                console.log('[Presenter] Spinning arrow phase started, triggering redraw');
                 this.mainView.redrawSimulation();
                 break;
 
@@ -70,7 +75,10 @@ class SimulationPresenter extends SimulationOutputBoundary {
                 break;
 
             case 'reset':
-                // Reset complete
+                // Reset complete - clean up any active particle animations
+                if (this.mainView.rewardParticleSystem) {
+                    this.mainView.rewardParticleSystem.destroy();
+                }
                 this.mainView.redrawSimulation();
                 break;
         }
@@ -82,14 +90,12 @@ class SimulationPresenter extends SimulationOutputBoundary {
     }
 
     presentTraceEnd() {
-        console.log('[Presenter] Reached end of trace');
         // Update button states (can't advance anymore)
         this.mainView.toolBar.updateButtonStates(false, false);
         alert('Simulation complete! Reached end of trace.');
     }
 
     presentPaused() {
-        console.log('[Presenter] Simulation paused');
         // Update button states (paused, can still advance)
         const canAdvance = this.viewModel.simulationState.canAdvance();
         this.mainView.toolBar.updateButtonStates(false, canAdvance);

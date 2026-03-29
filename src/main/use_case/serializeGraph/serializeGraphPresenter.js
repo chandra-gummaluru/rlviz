@@ -9,7 +9,6 @@ class SerializeGraphPresenter extends SerializeGraphOutputBoundary {
     presentSerializedGraph(jsonString) {
         // Store serialized data for retrieval
         this.serializedData = jsonString;
-        console.log('Graph serialized successfully');
     }
 
     presentError(message) {

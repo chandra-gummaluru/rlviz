@@ -55,6 +55,13 @@ class InteractionViewModel {
 
         // Simulation state
         this.startNode = null;
+
+        // Hover state
+        this.hoveredEdge = null;       // EdgeObj reference being hovered
+        this.hoverProgress = 0;        // 0.0 (closed) → 1.0 (fully open)
+        this.hoverAnimating = false;   // true during animation (drives continuous redraw)
+        this.hoverStartTime = null;    // Date.now() when animation began
+        this.hoverDirection = 0;       // +1 opening, -1 closing
     }
 
     reset() {
@@ -68,6 +75,9 @@ class InteractionViewModel {
         this.isPanning = false;
         this.renameRequested = false;
         this.textLabelRequested = false;
+        this.hoveredEdge = null;
+        this.hoverProgress = 0;
+        this.hoverAnimating = false;
     }
 
     isInteracting() {

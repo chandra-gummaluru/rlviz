@@ -8,7 +8,6 @@ class CreateNodePresenter extends CreateNodeOutputBoundary {
     presentNodeCreated(node) {
         // Node is already added to graph, no additional view model updates needed
         // The node will be rendered in the next draw cycle
-        console.log(`Node created: ${node.type} ${node.name} at (${node.x}, ${node.y})`);
     }
 
     presentError(message) {

@@ -41,6 +41,5 @@ class SkipInteractor extends SkipInputBoundary {
         this.simulationState.setPhase('idle', 0);
 
         this.outputBoundary.presentTraceEnd();
-        console.log('Skipped to end of trace');
     }
 }
