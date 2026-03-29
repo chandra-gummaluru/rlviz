@@ -226,9 +226,35 @@ canvas {
   border-radius: 4px 0 0 4px;
 }
 
+.toolbar-toggle--middle {
+  border-radius: 0;
+  border-left: none;
+}
+
 .toolbar-toggle--last {
   border-radius: 0 4px 4px 0;
   border-left: none;
+}
+
+/* Value Iteration T input */
+.toolbar-t-label {
+  font-family: var(--font-family);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-dark);
+  margin-left: 16px;
+  margin-right: 4px;
+  line-height: 36px;
+}
+
+.toolbar-t-input {
+  font-family: var(--font-family);
+  font-size: 14px;
+  padding: 6px 8px;
+  border: 1px solid var(--border-medium);
+  border-radius: 4px;
+  width: 50px;
+  text-align: center;
 }
 
 /* ============================================================

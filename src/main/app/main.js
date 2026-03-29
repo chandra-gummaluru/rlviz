@@ -3,9 +3,13 @@ const graph = new Graph();
 const commandHistory = new CommandHistory(50);
 const simulationState = new SimulationState();
 const traceGenerator = new TraceGenerator(graph);
+const valueIterationState = new ValueIterationState();
 
 // Adapter - Create ViewModel (no interactors in constructor anymore)
 const canvasViewModel = new CanvasViewModel(graph, simulationState);
+const valueIterationViewModel = new ValueIterationViewModel();
+canvasViewModel.valueIterationState = valueIterationState;
+canvasViewModel.valueIterationViewModel = valueIterationViewModel;
 
 // Presenters for existing use cases
 const createNodePresenter = new CreateNodePresenter(canvasViewModel.interaction);
@@ -86,6 +90,14 @@ let stepInteractor;
 let skipInteractor;
 let resetInteractor;
 
+// Value Iteration (created in setup)
+let viPresenter;
+let runVIInteractor;
+let viPlayInteractor;
+let viPauseInteractor;
+let viStepInteractor;
+let viResetInteractor;
+
 // Callbacks
 const onStateClick = () => {
     canvasController.startNodePlacement('state');
@@ -150,6 +162,12 @@ const onExportGraph = () => {
 };
 
 const onModeChange = (mode) => {
+    // Reset VI state when leaving value_iteration mode
+    if (mode !== 'value_iteration' && valueIterationState.initialized) {
+        valueIterationState.pause();
+        valueIterationState.reset();
+        valueIterationViewModel.reset();
+    }
     canvasController.setMode(mode);
     redraw();
 };
@@ -252,6 +270,66 @@ function checkAndRenormalizeIfNeeded() {
     }
     return proceed;
 }
+
+// Value Iteration callbacks
+const onVIPlay = () => {
+    if (!runVIInteractor || !viPlayInteractor) return;
+
+    const T = toolBar ? toolBar.getVIT() : 5;
+    const gamma = rightPanel ? rightPanel.discountFactor : 0.9;
+
+    // Initialize if not already done
+    if (!valueIterationState.initialized) {
+        const inputData = new RunVIInputData(T, gamma);
+        runVIInteractor.execute(inputData);
+    }
+
+    viPlayInteractor.execute(new VIPlayInputData());
+
+    if (toolBar) {
+        toolBar.updateVIButtonStates(valueIterationState.isPlaying, valueIterationState.canAdvance());
+    }
+};
+
+const onVIPause = () => {
+    if (!viPauseInteractor) return;
+    viPauseInteractor.execute(new VIPauseInputData());
+    if (toolBar) {
+        toolBar.updateVIButtonStates(valueIterationState.isPlaying, valueIterationState.canAdvance());
+    }
+};
+
+const onVIStep = () => {
+    if (!viStepInteractor) return;
+
+    const T = toolBar ? toolBar.getVIT() : 5;
+    const gamma = rightPanel ? rightPanel.discountFactor : 0.9;
+
+    // Initialize if not already done
+    if (!valueIterationState.initialized) {
+        const inputData = new RunVIInputData(T, gamma);
+        runVIInteractor.execute(inputData);
+    }
+
+    // Pause if playing
+    if (valueIterationState.isPlaying) {
+        valueIterationState.pause();
+    }
+
+    viStepInteractor.execute(new VIStepInputData());
+
+    if (toolBar) {
+        toolBar.updateVIButtonStates(valueIterationState.isPlaying, valueIterationState.canAdvance());
+    }
+};
+
+const onVIReset = () => {
+    if (!viResetInteractor) return;
+    viResetInteractor.execute(new VIResetInputData());
+    if (toolBar) {
+        toolBar.updateVIButtonStates(false, true);
+    }
+};
 
 const onPlay = () => {
     if (!playInteractor) return;
@@ -370,9 +448,13 @@ function setup() {
         onRenormalize: onRenormalize,
         onPlay: onPlay,
         onPause: onPause,
-        onStep: onStep, // Step through animation one transition at a time
+        onStep: onStep,
         onRerun: onReset,
-        onModeChange: onModeChange
+        onModeChange: onModeChange,
+        onVIPlay: onVIPlay,
+        onVIPause: onVIPause,
+        onVIStep: onVIStep,
+        onVIReset: onVIReset
     }, canvasViewModel);
     toolBar.setup(menuBar.getHeight());
 
@@ -396,6 +478,20 @@ function setup() {
     stepInteractor = new StepInteractor(simulationState, traceGenerator, simulationPresenter, startNodeProvider);
     skipInteractor = new SkipInteractor(simulationState, simulationPresenter);
     resetInteractor = new ResetInteractor(simulationState, simulationPresenter);
+
+    // Create Value Iteration presenter and interactors
+    viPresenter = new VIPresenter(canvasViewModel, mainView);
+    viPresenter.setToolBar(toolBar);
+
+    runVIInteractor = new RunVIInteractor(graph, valueIterationState, valueIterationViewModel, viPresenter);
+    viPlayInteractor = new VIPlayInteractor(valueIterationState, valueIterationViewModel, viPresenter);
+    viPauseInteractor = new VIPauseInteractor(valueIterationState, viPresenter);
+    viStepInteractor = new VIStepInteractor(valueIterationState, valueIterationViewModel, viPresenter);
+    viResetInteractor = new VIResetInteractor(valueIterationState, valueIterationViewModel, viPresenter);
+
+    // Create Value Iteration view
+    const valueIterationView = new ValueIterationView(canvasViewModel);
+    mainView.valueIterationView = valueIterationView;
 
     // Initialize
     mainView.setup();

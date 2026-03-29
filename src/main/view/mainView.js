@@ -23,6 +23,9 @@ class MainView {
 
         // Reward particle system
         this.rewardParticleSystem = new RewardParticleSystem();
+
+        // Value Iteration view (set after construction)
+        this.valueIterationView = null;
     }
 
     setup() {
@@ -41,6 +44,17 @@ class MainView {
 
     draw() {
         background(240);
+
+        // Value Iteration mode: delegate to VI view
+        if (this.viewModel.interaction.mode === 'value_iteration' && this.valueIterationView) {
+            push();
+            translate(this.viewModel.viewport.panX, this.viewModel.viewport.panY);
+            scale(this.viewModel.viewport.zoom);
+            this.valueIterationView.draw();
+            pop();
+            this.drawZoomIndicator();
+            return;
+        }
 
         // Apply zoom and pan transformations
         push();

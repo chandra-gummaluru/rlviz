@@ -48,7 +48,7 @@ Domain → Use Case → Adapter → View → App
   - `*Interactor.js`: Business logic orchestration
   - `*OutputBoundary.js`: Response interface
   - `*Presenter.js`: Formats output for ViewModel
-- Use cases: `createNode`, `createEdge`, `deleteNode`, `moveNode`, `renameNode`, `selectNode`, `createTextLabel`, `renormalizeProbabilities`, `nodeInteraction`, `serializeGraph`, `importGraph`, `simulation` (play/skip/reset), `resizeNode`, `undo`, `redo`, `zoom`, `setMode`
+- Use cases: `createNode`, `createEdge`, `deleteNode`, `moveNode`, `renameNode`, `selectNode`, `createTextLabel`, `renormalizeProbabilities`, `nodeInteraction`, `serializeGraph`, `importGraph`, `simulation` (play/skip/reset), `resizeNode`, `undo`, `redo`, `zoom`, `setMode`, `valueIteration` (run/play/pause/step/reset)
 
 **Adapter Layer** (`src/main/adapter/`)
 - **Controller** (`controller/CanvasController.js`):
@@ -97,12 +97,12 @@ All dependencies are manually wired in `src/main/app/main.js`:
 ### Script Loading Order
 
 `index.html` loads scripts in strict dependency order:
-1. Domain layer (nodesObj → stateNodes/actionNodes/textLabel → edgeObj → graphObj → command → commandHistory → simulationState → traceGenerator)
-2. Use Case folders (each folder's 5 files in order: InputBoundary → InputData → Interactor → OutputBoundary → Presenter)
-3. Adapter layer ViewModels (SelectionViewModel → ViewportViewModel → InteractionViewModel → NodeViewModel → EdgeViewModel → CanvasViewModel)
+1. Domain layer (nodesObj → stateNodes/actionNodes/textLabel → edgeObj → graphObj → command → commandHistory → simulationState → traceGenerator → valueIterationState)
+2. Use Case folders (each folder's 5 files in order: InputBoundary → InputData → Interactor → OutputBoundary → Presenter), including `valueIteration/` (18 files)
+3. Adapter layer ViewModels (SelectionViewModel → ViewportViewModel → InteractionViewModel → NodeViewModel → EdgeViewModel → CanvasViewModel → ValueIterationViewModel)
 4. Adapter layer Controller (CanvasController)
 5. View layer helpers (GeometricHelper)
-6. View layer (buttons → sideBar → mainView)
+6. View layer (menuBar → toolBar → rightPanel → rewardParticleSystem → valueIterationView → mainView)
 7. App bootstrap (main.js)
 
 **Never reorder scripts** - breaks dependencies. The order ensures inner layers load before outer layers.
@@ -126,6 +126,7 @@ All dependencies are manually wired in `src/main/app/main.js`:
 - Connect nodes via references (not IDs)
 - Automatic bidirectional curve rendering when edges exist in both directions
 - Reward-based color gradients (green for positive, red for negative, gray for zero)
+- No static labels on edges — probability and reward are revealed only on hover via flap/squiggly animations
 
 **Color Format Gotcha**
 - `EdgeViewModel.color` returns hex strings (`#RRGGBB`) or `rgb()` strings
@@ -191,7 +192,7 @@ Commands stored in `CommandHistory` with 50-item limit. Executing a new command 
 
 ## Application Modes
 
-The app has two modes managed by `SetModeInteractor`:
+The app has three modes managed by `SetModeInteractor`:
 
 **Editor Mode** (default)
 - Create/delete/move/resize nodes
@@ -213,6 +214,17 @@ The app has two modes managed by `SetModeInteractor`:
   - Outcome probabilities p(s'|a,s) when at an action
 - No graph editing allowed
 
+**Value Iteration Mode**
+- Visualizes finite-horizon DP by unrolling MDP into timestep columns (t=T → t=0)
+- Play/Pause/Step/Reset controls + T input for horizon length
+- Precomputes all V-tables upfront; animation replays the results
+- Focus+fade: active node full opacity, others faded; action color coding (green=best, red=worst)
+- Right panel shows Bellman equation, parameters, and V(s) table updated during animation
+- Domain: `ValueIterationState` — computation + state machine (`src/main/domain/valueIterationState.js`)
+- View: `ValueIterationView` — separate p5.js renderer (`src/main/view/valueIterationView.js`)
+- Animator: `VIAnimator` — async/await animation orchestration (`src/main/use_case/valueIteration/viAnimator.js`)
+- No graph editing allowed
+
 ## UI Layout
 
 The application follows a three-section layout:
@@ -230,7 +242,8 @@ The application follows a three-section layout:
 - **Left side**: Mode-specific buttons
   - Edit Mode: Add State (green), Add Action (blue), Add Text (gray), Renormalize (orange)
   - Simulate Mode: Play (green), Step (blue), Rerun (orange)
-- **Right side**: Edit/Simulate mode toggle (segmented control)
+  - Value Iter Mode: Play (green), Step (blue), Reset (purple), T input (number)
+- **Right side**: Edit/Simulate/Value Iter mode toggle (3-segment control)
 - Implemented in `toolBar.js`
 
 **Main Workspace** (canvas + right panel)
@@ -245,7 +258,7 @@ The application follows a three-section layout:
     - Action space: A = {a₀, a₁, a₂, ...} (shows first 5, then ellipsis)
     - Probability: P[s][a][s'] with dimensions
     - Reward: R[s][a][s'] with dimensions
-    - Discount factor (γ) with editable input (0.0 - 1.0)
+    - Discount factor (γ) with editable input (0.0 - 1.0), stored in `rightPanel.discountFactor` (default 0.9)
   - When node selected: Displays node editor
     - Name editing with save button (integrates with double-click rename)
     - Image upload/remove functionality (base64 data URLs)
@@ -484,6 +497,7 @@ if (viewModel.interaction.renameRequested) {
 3. **Controller Order Matters**: In `handleMousePress`, check for edge creation BEFORE starting node drag
 4. **State Cleanup**: Always clear interaction states when clicking empty canvas
 5. **Interactor→Presenter Data Retrieval**: When the controller needs return data from an interactor (e.g., `exportGraph`), it accesses `interactor.presenter.getSerializedData()`. Interactors should expose `this.presenter = outputBoundary` as a public alias. The interactor's try/catch can silently swallow errors and leave presenter data as `null` — always null-check the result.
+6. **SetModePresenter bypasses CanvasViewModel setter**: `SetModePresenter` receives `canvasViewModel.interaction` directly, so setting `this.viewModel.mode` sets `interaction.mode` without triggering `CanvasViewModel.mode`'s setter logic. Any cleanup when leaving a mode must be done in the `onModeChange` callback in `main.js`, not in the CanvasViewModel setter.
 
 See `REFACTOR_COMPLETE.md` and `DEBUGGING.md` for detailed information.
 - memorize

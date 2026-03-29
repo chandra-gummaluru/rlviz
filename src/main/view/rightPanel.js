@@ -45,8 +45,11 @@ class RightPanel {
 
         const selectedNode = this.viewModel.selection.selectedNode;
         const isSimulateMode = this.viewModel.interaction.mode === 'simulate';
+        const isVIMode = this.viewModel.interaction.mode === 'value_iteration';
 
-        if (isSimulateMode && !selectedNode) {
+        if (isVIMode) {
+            this.renderValueIterationPanel();
+        } else if (isSimulateMode && !selectedNode) {
             this.renderSimulationPanel();
         } else if (selectedNode) {
             this.renderNodePanel(selectedNode);
@@ -458,6 +461,101 @@ class RightPanel {
                 totalDiv.addClass(totalProb === 1.0 ? 'panel-total-prob--valid' : 'panel-total-prob--invalid');
             }
         });
+    }
+
+    renderValueIterationPanel() {
+        const viState = this.viewModel.valueIterationState;
+        const viViewModel = this.viewModel.valueIterationViewModel;
+
+        // Title
+        const title = createDiv('Value Iteration');
+        title.parent(this.contentContainer);
+        title.addClass('panel-title');
+
+        // Bellman equation
+        const eqDiv = createDiv();
+        eqDiv.parent(this.contentContainer);
+        eqDiv.addClass('panel-section-content');
+        eqDiv.html('$$V_t(s) = \\max_a \\sum_{s\'} P(s\'|s,a)[R + \\gamma V_{t+1}(s\')]$$');
+
+        // Parameters
+        const paramsDiv = createDiv();
+        paramsDiv.parent(this.contentContainer);
+        paramsDiv.addClass('panel-section-content');
+        paramsDiv.style('margin-top', '10px');
+
+        const gammaLine = createDiv(`<strong>Discount (γ):</strong> ${this.discountFactor}`);
+        gammaLine.parent(paramsDiv);
+        gammaLine.style('margin-bottom', '4px');
+
+        if (viState && viState.initialized) {
+            const tLine = createDiv(`<strong>Horizon (T):</strong> ${viState.T}`);
+            tLine.parent(paramsDiv);
+            tLine.style('margin-bottom', '4px');
+
+            const progressLine = createDiv(`<strong>Column:</strong> ${viState.currentColumnIndex + 1} / ${viState.totalColumns}`);
+            progressLine.parent(paramsDiv);
+            progressLine.style('margin-bottom', '4px');
+        }
+
+        // V(s) table
+        if (viState && viState.initialized && viViewModel) {
+            const tableTitle = createDiv('State Values');
+            tableTitle.parent(this.contentContainer);
+            tableTitle.addClass('panel-section-title');
+            tableTitle.style('margin-top', '15px');
+
+            const tableContainer = createDiv();
+            tableContainer.parent(this.contentContainer);
+            tableContainer.addClass('panel-section-content');
+            tableContainer.style('max-height', '400px');
+            tableContainer.style('overflow-y', 'auto');
+
+            // Show values for the most recently completed column
+            const lastRevealedCol = Math.max(0, viState.currentColumnIndex - (viState.isColumnComplete() ? 0 : 1));
+
+            for (let colIdx = Math.min(lastRevealedCol, viState.totalColumns - 1); colIdx >= 0; colIdx--) {
+                const timestep = viState.getTimestep(colIdx);
+                const values = viState.getValues(colIdx);
+
+                const colHeader = createDiv(`<strong>t = ${timestep}</strong>`);
+                colHeader.parent(tableContainer);
+                colHeader.style('margin-top', '8px');
+                colHeader.style('margin-bottom', '4px');
+                colHeader.style('color', '#333');
+
+                viState.stateIds.forEach(stateId => {
+                    const isRevealed = viViewModel.isValueRevealed(colIdx, stateId);
+                    const val = isRevealed ? (values[stateId] ?? 0).toFixed(3) : '?';
+                    const name = viState.stateNames[stateId] || `S${stateId}`;
+
+                    const row = createDiv();
+                    row.parent(tableContainer);
+                    row.style('display', 'flex');
+                    row.style('justify-content', 'space-between');
+                    row.style('padding', '2px 8px');
+                    row.style('font-size', '13px');
+
+                    const nameSpan = createSpan(name);
+                    nameSpan.parent(row);
+
+                    const valSpan = createSpan(`V = ${val}`);
+                    valSpan.parent(row);
+                    if (isRevealed) {
+                        const numVal = values[stateId] ?? 0;
+                        valSpan.style('color', numVal > 0 ? '#2e7d32' : numVal < 0 ? '#c62828' : '#666');
+                        valSpan.style('font-weight', 'bold');
+                    } else {
+                        valSpan.style('color', '#999');
+                    }
+                });
+            }
+        }
+
+        // Re-typeset MathJax
+        if (typeof MathJax !== 'undefined' && MathJax.typeset) {
+            try { MathJax.typeset(); } catch (e) { /* ignore */ }
+        }
     }
 
     renderSimulationPanel() {

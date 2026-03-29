@@ -15,6 +15,10 @@ class CanvasViewModel {
         this.undoDescription = '';
         this.redoDescription = '';
 
+        // Value Iteration (set after construction)
+        this.valueIterationState = null;
+        this.valueIterationViewModel = null;
+
         // Messages (set by presenters)
         this.errorMessage = null;
         this.infoMessage = null;
@@ -40,6 +44,12 @@ class CanvasViewModel {
         this.interaction.mode = value;
         if (value === 'editor') {
             this.interaction.startNode = null;
+        }
+        if (value !== 'value_iteration' && this.valueIterationState) {
+            this.valueIterationState.reset();
+        }
+        if (value !== 'value_iteration' && this.valueIterationViewModel) {
+            this.valueIterationViewModel.reset();
         }
     }
 
