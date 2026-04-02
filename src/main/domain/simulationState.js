@@ -24,15 +24,18 @@ class SimulationState {
         this.initialState = null;  // Starting state node
         this.totalReward = 0;  // Accumulated reward
         this.stepCount = 0;  // Number of state-action-state transitions completed
+        this.pendingReward = 0;  // Reward awaiting particle animation completion
+        this.pendingRewardActionNodeId = null;  // Action node that generated pending reward
         this.currentDecisionProbs = [];  // Available actions with uniform probability
         this.currentOutcomeProbs = [];  // Possible next states with their probabilities
 
         // Spinning arrow animation settings
-        this.spinningArrowEnabled = false;  // Toggle for spinning arrow animation
-        this.spinningArrowDuration = 1500;  // Duration in milliseconds (default 1500ms)
-        this.spinningArrowAngle = 0;  // Current rotation angle in radians
+        this.spinningArrowEnabled = true;  // Toggle for spinning arrow animation (on by default)
+        this.spinningArrowDuration = 1500;  // Duration in milliseconds (computed dynamically)
         this.spinningArrowTargetIndex = -1;  // Pre-selected edge index to stop at
-        this.spinningArrowEdges = [];  // Array of {startAngle, endAngle, edgeIndex, probability, targetId}
+        this.spinningArrowEdges = [];  // Array of {edgeIndex, probability, targetId}
+        this.spinningArrowSequence = [];  // Array of edge indices — the tick order
+        this.spinningArrowTickTimestamps = [];  // Cumulative ms timestamps for each tick
     }
 
     // Initialize with a generated trace
@@ -53,6 +56,8 @@ class SimulationState {
         this.initialState = visited[0];
         this.totalReward = 0;
         this.stepCount = 0;
+        this.pendingReward = 0;
+        this.pendingRewardActionNodeId = null;
         this.currentDecisionProbs = [];
         this.currentOutcomeProbs = [];
     }
@@ -223,6 +228,8 @@ class SimulationState {
         this.initialState = null;
         this.totalReward = 0;
         this.stepCount = 0;
+        this.pendingReward = 0;
+        this.pendingRewardActionNodeId = null;
         this.currentDecisionProbs = [];
         this.currentOutcomeProbs = [];
     }
@@ -287,9 +294,23 @@ class SimulationState {
     }
 
     // Add reward from a transition and increment step count
-    addReward(reward) {
-        this.totalReward += reward;
+    // Reward is stored as pending until particle animation completes
+    addReward(reward, actionNodeId) {
+        this.pendingReward = reward;
+        this.pendingRewardActionNodeId = actionNodeId;
         this.stepCount++;
+    }
+
+    // Commit pending reward to total (called when particles arrive)
+    commitReward() {
+        this.totalReward += this.pendingReward;
+        this.pendingReward = 0;
+        this.pendingRewardActionNodeId = null;
+    }
+
+    // Check if there is a pending reward awaiting animation
+    hasPendingReward() {
+        return this.pendingReward !== 0;
     }
 
     // Get current state (for display)
@@ -322,72 +343,70 @@ class SimulationState {
         this.spinningArrowDuration = Math.max(800, Math.min(3000, duration));
     }
 
-    // Initialize spinning arrow with edges and target selection
+    // Initialize spinning arrow with edges and target selection (discrete tick sequence)
     initSpinningArrow(edges, targetIndex) {
         this.spinningArrowTargetIndex = targetIndex;
-        this.spinningArrowAngle = 0;
 
-        // Calculate angle segments for each edge based on probability
-        const segments = [];
-        let cumulativeAngle = 0;
+        // Store edges (no angle data needed)
+        this.spinningArrowEdges = edges.map((edge, index) => ({
+            edgeIndex: index,
+            probability: edge.probability,
+            targetId: edge.targetId
+        }));
 
-        edges.forEach((edge, index) => {
-            const segmentSize = Math.PI * 2 * edge.probability;
-            segments.push({
-                startAngle: cumulativeAngle,
-                endAngle: cumulativeAngle + segmentSize,
-                edgeIndex: index,
-                probability: edge.probability,
-                targetId: edge.targetId
-            });
-            cumulativeAngle += segmentSize;
-        });
-
-        this.spinningArrowEdges = segments;
-    }
-
-    // Calculate arrow angle with easing (ease-out cubic for deceleration)
-    calculateArrowAngle() {
-        if (this.spinningArrowEdges.length === 0 || this.spinningArrowTargetIndex < 0) {
-            return 0;
+        // Build tick sequence: cycle through all edge indices 3 times, end on targetIndex
+        const numEdges = edges.length;
+        const sequence = [];
+        for (let cycle = 0; cycle < 3; cycle++) {
+            for (let i = 0; i < numEdges; i++) {
+                sequence.push(i);
+            }
+        }
+        // Ensure the last element is the target index
+        if (sequence.length === 0 || sequence[sequence.length - 1] !== targetIndex) {
+            sequence.push(targetIndex);
         }
 
-        const elapsed = Date.now() - this.phaseStartTime;
-        const t = Math.min(elapsed / this.spinningArrowDuration, 1);
+        this.spinningArrowSequence = sequence;
 
-        // Ease-out cubic: starts fast, slows down dramatically at end
-        const eased = 1 - Math.pow(1 - t, 3);
+        // Compute tick durations with quadratic deceleration: 50ms (fast) → 350ms (slow)
+        const totalTicks = sequence.length;
+        const timestamps = [];
+        let cumulative = 0;
+        for (let i = 0; i < totalTicks; i++) {
+            const t = totalTicks > 1 ? i / (totalTicks - 1) : 1;
+            const duration = 50 + (350 - 50) * t * t;  // Quadratic ease: starts fast, slows down
+            cumulative += duration;
+            timestamps.push(cumulative);
+        }
 
-        // Calculate target angle (middle of the target segment)
-        const targetSegment = this.spinningArrowEdges[this.spinningArrowTargetIndex];
-        const targetAngle = (targetSegment.startAngle + targetSegment.endAngle) / 2;
+        this.spinningArrowTickTimestamps = timestamps;
+        this.spinningArrowDuration = cumulative;
 
-        // Total rotation: 3 full spins + land on target angle
-        const totalRotation = Math.PI * 6 + targetAngle;
-        this.spinningArrowAngle = eased * totalRotation;
-
-        return this.spinningArrowAngle;
     }
 
-    // Get which edge the arrow is currently pointing at
+    // Get which edge the arrow is currently pointing at (tick-based)
     getHighlightedEdgeByArrow() {
-        if (this.spinningArrowEdges.length === 0) return -1;
+        if (this.spinningArrowSequence.length === 0) return -1;
 
-        const normalizedAngle = this.spinningArrowAngle % (Math.PI * 2);
+        const elapsed = Date.now() - this.phaseStartTime;
 
-        for (const segment of this.spinningArrowEdges) {
-            if (normalizedAngle >= segment.startAngle && normalizedAngle < segment.endAngle) {
-                return segment.edgeIndex;
+        // Find current tick index based on elapsed time vs cumulative timestamps
+        for (let i = 0; i < this.spinningArrowTickTimestamps.length; i++) {
+            if (elapsed < this.spinningArrowTickTimestamps[i]) {
+                return this.spinningArrowSequence[i];
             }
         }
 
-        return -1;
+        // Past the end → return final element (the target)
+        return this.spinningArrowSequence[this.spinningArrowSequence.length - 1];
     }
 
     // Clear spinning arrow state
     clearSpinningArrow() {
-        this.spinningArrowAngle = 0;
         this.spinningArrowTargetIndex = -1;
         this.spinningArrowEdges = [];
+        this.spinningArrowSequence = [];
+        this.spinningArrowTickTimestamps = [];
     }
 }

@@ -1,4 +1,4 @@
-// Top menu bar with File, Edit, View menus
+// Top menu bar with File, Edit, View, Settings menus
 class MenuBar {
     constructor(callbacks) {
         this.callbacks = callbacks;
@@ -7,7 +7,16 @@ class MenuBar {
         this.menus = {
             file: null,
             edit: null,
-            view: null
+            view: null,
+            settings: null
+        };
+
+        // Settings menu item references for updating checkmarks
+        this.settingsItems = {
+            fast: null,
+            medium: null,
+            slow: null,
+            spinningArrow: null
         };
     }
 
@@ -36,6 +45,15 @@ class MenuBar {
             { label: 'Zoom Out', action: () => this.callbacks.onZoomOut() },
             { label: 'Reset Zoom', action: () => this.callbacks.onResetZoom() }
         ]);
+
+        // Create Animations menu
+        this.createMenu('settings', 'Animations', [
+            { label: 'Fast', action: () => this.callbacks.onSetAnimationSpeed('fast'), key: 'fast', check: false },
+            { label: 'Medium', action: () => this.callbacks.onSetAnimationSpeed('medium'), key: 'medium', check: true },
+            { label: 'Slow', action: () => this.callbacks.onSetAnimationSpeed('slow'), key: 'slow', check: false },
+            { type: 'separator' },
+            { label: 'Spinning Arrow', action: () => this.callbacks.onToggleSpinningArrow(), key: 'spinningArrow', check: true }
+        ]);
     }
 
     createMenu(menuKey, menuLabel, items) {
@@ -51,9 +69,24 @@ class MenuBar {
 
         // Add menu items
         items.forEach(item => {
+            if (item.type === 'separator') {
+                const sep = createDiv();
+                sep.parent(dropdown);
+                sep.addClass('menubar-separator');
+                return;
+            }
+
             const menuItem = createDiv();
             menuItem.parent(dropdown);
             menuItem.addClass('menubar-item');
+
+            // Check mark (for settings items)
+            if (item.key !== undefined) {
+                const check = createSpan(item.check ? '\u2713' : '');
+                check.parent(menuItem);
+                check.addClass('menubar-check');
+                this.settingsItems[item.key] = check;
+            }
 
             // Label
             const label = createSpan(item.label);
@@ -93,6 +126,18 @@ class MenuBar {
             button: menuButton,
             dropdown: dropdown
         };
+    }
+
+    // Update checkmarks in the Settings menu
+    updateSettingsChecks(activeSpeed, spinningArrowEnabled) {
+        ['fast', 'medium', 'slow'].forEach(speed => {
+            if (this.settingsItems[speed]) {
+                this.settingsItems[speed].html(speed === activeSpeed ? '\u2713' : '');
+            }
+        });
+        if (this.settingsItems.spinningArrow) {
+            this.settingsItems.spinningArrow.html(spinningArrowEnabled ? '\u2713' : '');
+        }
     }
 
     // Close all dropdowns when clicking outside

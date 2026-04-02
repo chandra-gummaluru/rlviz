@@ -7,7 +7,6 @@ class SetImagePresenter extends SetImageOutputBoundary {
 
     presentImageSet(node) {
         // Trigger redraw to show updated image
-        console.log('Image set for node:', node.name);
     }
 
     presentError(message) {

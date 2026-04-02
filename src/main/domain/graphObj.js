@@ -137,7 +137,6 @@ class Graph {
     }
 
     serialize(includePositions = false) {
-        console.log('Graph.serialize() called, includePositions:', includePositions, 'nodes:', this.nodes.length, 'edges:', this.edges.length);
         const matrices = this.buildTransitionMatrix();
 
         const serialized = {
@@ -187,7 +186,6 @@ class Graph {
             }
         }
 
-        console.log('Graph.serialize() completed, result keys:', Object.keys(serialized));
         return serialized;
     }
 

@@ -7,12 +7,9 @@ class SelectNodeInteractor extends SelectNodeInputBoundary {
     }
 
     select(inputData) {
-        console.log('SelectNodeInteractor.select called with inputData:', inputData);
         const entity = this._findEntity(inputData);
-        console.log('Found entity:', entity);
 
         if (!entity) {
-            console.log('Entity not found! Clearing selection.');
             this.presenter.presentSelectionCleared();
             return;
         }

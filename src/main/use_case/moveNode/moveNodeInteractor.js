@@ -7,12 +7,8 @@ class MoveNodeInteractor extends MoveNodeInputBoundary {
     }
 
     startMove(inputData) {
-        console.log('MoveNodeInteractor.startMove called with inputData:', inputData);
         const entity = this._findEntity(inputData);
-        console.log('Found entity:', entity);
         if (!entity) {
-            console.log('Entity not found! inputData.nodeId:', inputData.nodeId);
-            console.log('Available nodes:', this.graph.nodes.map(n => ({ id: n.id, name: n.name })));
             this.presenter.presentError('Entity not found');
             return;
         }

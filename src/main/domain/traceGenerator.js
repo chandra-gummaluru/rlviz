@@ -33,7 +33,6 @@ class TraceGenerator {
                 // From state: pick random action
                 const nextAction = this.selectRandomAction(current);
                 if (!nextAction) {
-                    console.log('Terminal state reached (no outgoing actions)');
                     break;  // Terminal state
                 }
                 visited.push(this.createVisitedEntry(nextAction));
@@ -43,7 +42,6 @@ class TraceGenerator {
                 // From action: pick random next state (weighted by probability)
                 const nextState = this.selectRandomNextState(current);
                 if (!nextState) {
-                    console.log('Terminal action reached (no outgoing transitions)');
                     break;  // Terminal action
                 }
                 visited.push(this.createVisitedEntry(nextState));
@@ -51,7 +49,6 @@ class TraceGenerator {
             }
         }
 
-        console.log(`Generated trace with ${visited.length} nodes`);
         return visited;
     }
 
