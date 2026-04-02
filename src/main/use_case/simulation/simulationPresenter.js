@@ -86,13 +86,13 @@ class SimulationPresenter extends SimulationOutputBoundary {
 
     presentError(message) {
         console.error('[Presenter] Error:', message);
-        alert(message);
+        this.viewModel.lastOperationError = message;
     }
 
     presentTraceEnd() {
         // Update button states (can't advance anymore)
         this.mainView.toolBar.updateButtonStates(false, false);
-        alert('Simulation complete! Reached end of trace.');
+        this.viewModel.lastOperationMessage = 'Simulation complete! Reached end of trace.';
     }
 
     presentPaused() {

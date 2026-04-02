@@ -17,7 +17,7 @@ const createEdgePresenter = new CreateEdgePresenter(canvasViewModel);
 const serializeGraphPresenter = new SerializeGraphPresenter(canvasViewModel);
 const undoPresenter = new UndoPresenter(canvasViewModel);
 const redoPresenter = new RedoPresenter(canvasViewModel);
-const setModePresenter = new SetModePresenter(canvasViewModel.interaction);
+const setModePresenter = new SetModePresenter(canvasViewModel);
 const zoomPresenter = new ZoomPresenter(canvasViewModel.viewport);
 const importGraphPresenter = new ImportGraphPresenter(canvasViewModel);
 
@@ -162,12 +162,6 @@ const onExportGraph = () => {
 };
 
 const onModeChange = (mode) => {
-    // Reset VI state when leaving value_iteration mode
-    if (mode !== 'value_iteration' && valueIterationState.initialized) {
-        valueIterationState.pause();
-        valueIterationState.reset();
-        valueIterationViewModel.reset();
-    }
     canvasController.setMode(mode);
     redraw();
 };
@@ -257,31 +251,34 @@ const onToggleSpinningArrow = () => {
  * Returns true if simulation should proceed, false otherwise.
  */
 function checkAndRenormalizeIfNeeded() {
-    if (simulationState.replayInitialized) return true; // already running
-    const unnormalized = graph.getUnnormalizedActionNodes();
-    if (unnormalized.length === 0) return true; // all good
-    const names = unnormalized.map(n => n.name).join(', ');
+    if (simulationState.replayInitialized) return true;
+    const names = canvasController.getUnnormalizedActionNames();
+    if (names.length === 0) return true;
     const proceed = confirm(
-        `Action node(s) [${names}] have probabilities that don't sum to 1.\n\n` +
+        `Action node(s) [${names.join(', ')}] have probabilities that don't sum to 1.\n\n` +
         `Continuing will renormalize these probabilities. Proceed?`
     );
     if (proceed) {
-        renormalizeProbabilitiesInteractor.execute(new RenormalizeProbabilitiesInputData());
+        canvasController.renormalizeProbabilities();
     }
     return proceed;
 }
 
 // Value Iteration callbacks
+const getVICanvasDimensions = () => ({
+    width: windowWidth - 300,
+    height: windowHeight - 90
+});
+
 const onVIPlay = () => {
     if (!runVIInteractor || !viPlayInteractor) return;
 
     const T = toolBar ? toolBar.getVIT() : 5;
     const gamma = rightPanel ? rightPanel.discountFactor : 0.9;
 
-    // Initialize if not already done
     if (!valueIterationState.initialized) {
-        const inputData = new RunVIInputData(T, gamma);
-        runVIInteractor.execute(inputData);
+        const dims = getVICanvasDimensions();
+        runVIInteractor.execute(new RunVIInputData(T, gamma, dims.width, dims.height));
     }
 
     viPlayInteractor.execute(new VIPlayInputData());
@@ -305,15 +302,9 @@ const onVIStep = () => {
     const T = toolBar ? toolBar.getVIT() : 5;
     const gamma = rightPanel ? rightPanel.discountFactor : 0.9;
 
-    // Initialize if not already done
     if (!valueIterationState.initialized) {
-        const inputData = new RunVIInputData(T, gamma);
-        runVIInteractor.execute(inputData);
-    }
-
-    // Pause if playing
-    if (valueIterationState.isPlaying) {
-        valueIterationState.pause();
+        const dims = getVICanvasDimensions();
+        runVIInteractor.execute(new RunVIInputData(T, gamma, dims.width, dims.height));
     }
 
     viStepInteractor.execute(new VIStepInputData());
@@ -480,14 +471,14 @@ function setup() {
     resetInteractor = new ResetInteractor(simulationState, simulationPresenter);
 
     // Create Value Iteration presenter and interactors
-    viPresenter = new VIPresenter(canvasViewModel, mainView);
+    viPresenter = new VIPresenter(canvasViewModel);
     viPresenter.setToolBar(toolBar);
 
-    runVIInteractor = new RunVIInteractor(graph, valueIterationState, valueIterationViewModel, viPresenter);
-    viPlayInteractor = new VIPlayInteractor(valueIterationState, valueIterationViewModel, viPresenter);
+    runVIInteractor = new RunVIInteractor(graph, valueIterationState, viPresenter);
+    viPlayInteractor = new VIPlayInteractor(valueIterationState, viPresenter);
     viPauseInteractor = new VIPauseInteractor(valueIterationState, viPresenter);
-    viStepInteractor = new VIStepInteractor(valueIterationState, valueIterationViewModel, viPresenter);
-    viResetInteractor = new VIResetInteractor(valueIterationState, valueIterationViewModel, viPresenter);
+    viStepInteractor = new VIStepInteractor(valueIterationState, viPresenter);
+    viResetInteractor = new VIResetInteractor(valueIterationState, viPresenter);
 
     // Create Value Iteration view
     const valueIterationView = new ValueIterationView(canvasViewModel);

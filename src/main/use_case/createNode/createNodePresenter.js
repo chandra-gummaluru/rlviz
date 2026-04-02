@@ -12,6 +12,6 @@ class CreateNodePresenter extends CreateNodeOutputBoundary {
 
     presentError(message) {
         console.error(`Create node error: ${message}`);
-        alert(`Error creating node: ${message}`);
+        this.viewModel.errorMessage = `Error creating node: ${message}`;
     }
 }

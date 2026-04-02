@@ -1,11 +1,10 @@
 // Interactor for VI Step — advances one state backup
 class VIStepInteractor extends VIStepInputBoundary {
-    constructor(viState, viViewModel, outputBoundary) {
+    constructor(viState, outputBoundary) {
         super();
         this.viState = viState;
-        this.viViewModel = viViewModel;
         this.outputBoundary = outputBoundary;
-        this.animator = new VIAnimator(viState, viViewModel, outputBoundary);
+        this.animator = new VIAnimator(viState, outputBoundary);
     }
 
     execute(inputData) {
@@ -19,12 +18,10 @@ class VIStepInteractor extends VIStepInputBoundary {
             return;
         }
 
-        // Pause continuous playback if running
         if (this.viState.isPlaying) {
             this.viState.pause();
         }
 
-        // Use stepping flag so animator knows to complete one step
         this.viState.phase = 'stepping';
         this.animator.animateOneState();
     }

@@ -298,7 +298,7 @@ class RightPanel {
                     if (file) {
                         const reader = new FileReader();
                         reader.onload = (event) => {
-                            node.image = event.target.result;
+                            this.controller.setNodeImage(node.id, event.target.result);
                             this.updateContent();
                             redraw();
                         };
@@ -315,7 +315,7 @@ class RightPanel {
                 removeBtn.addClass('panel-btn--danger');
 
                 removeBtn.mousePressed(() => {
-                    delete node.image;
+                    this.controller.setNodeImage(node.id, null);
                     this.updateContent();
                     redraw();
                 });
@@ -413,7 +413,7 @@ class RightPanel {
 
                     probSlider.input(() => {
                         const newProb = parseFloat(probSlider.value());
-                        transition.probability = newProb;
+                        this.controller.setTransitionProbability(actionNode.id, transition.nextState, newProb);
                         probValue.html(newProb.toFixed(3));
                         redraw();
                     });
@@ -443,7 +443,7 @@ class RightPanel {
 
                     rewardSlider.input(() => {
                         const newReward = parseFloat(rewardSlider.value());
-                        transition.reward = newReward;
+                        this.controller.setTransitionReward(actionNode.id, transition.nextState, newReward);
                         rewardValue.html(newReward.toFixed(2));
                         this._applyRewardColor(rewardValue, newReward);
                         redraw();

@@ -1,12 +1,10 @@
 // Interactor for initializing and running Value Iteration computation
 class RunVIInteractor extends RunVIInputBoundary {
-    constructor(graph, viState, viViewModel, outputBoundary) {
+    constructor(graph, viState, outputBoundary) {
         super();
         this.graph = graph;
         this.viState = viState;
-        this.viViewModel = viViewModel;
         this.outputBoundary = outputBoundary;
-        this.animator = new VIAnimator(viState, viViewModel, outputBoundary);
     }
 
     execute(inputData) {
@@ -25,10 +23,7 @@ class RunVIInteractor extends RunVIInputBoundary {
         this.viState.reset();
         this.viState.computeHistory(this.graph, inputData.T, inputData.gamma);
 
-        // Compute layout
-        const canvasWidth = windowWidth - 300; // right panel width
-        const canvasHeight = windowHeight - 90; // menu + toolbar
-        this.viViewModel.reset();
-        this.viViewModel.computeLayout(this.viState, canvasWidth, canvasHeight);
+        // Signal presenter to compute layout (presenter has ViewModel access)
+        this.outputBoundary.presentLayoutNeeded(inputData.canvasWidth, inputData.canvasHeight);
     }
 }

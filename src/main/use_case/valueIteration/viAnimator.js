@@ -1,8 +1,8 @@
 // Animation orchestrator for Value Iteration visualization
+// Only depends on domain (viState) and output boundary — no ViewModel references
 class VIAnimator {
-    constructor(viState, viViewModel, outputBoundary) {
+    constructor(viState, outputBoundary) {
         this.viState = viState;
-        this.viViewModel = viViewModel;
         this.outputBoundary = outputBoundary;
 
         this.TIMING = {
@@ -14,61 +14,38 @@ class VIAnimator {
         };
     }
 
-    /**
-     * Animate the terminal column initialization (all V=0).
-     */
     async animateInitialization() {
         this.outputBoundary.presentInitialized();
-
-        // Animate terminal column (index 0) — reveal each state's V=0 one at a time
         await this.animateColumn(0);
     }
 
-    /**
-     * Animate a single column: reveal each state's value top-to-bottom.
-     */
     async animateColumn(columnIndex) {
-        // Make this column visible (shifts existing columns right, adds new one on left)
-        if (this.viViewModel.visibleColumnCount <= columnIndex) {
-            this.viViewModel.showNextColumn();
-        }
-
-        this.viViewModel.activeColumnIndex = columnIndex;
         this.outputBoundary.presentColumnStart(columnIndex);
 
         for (let si = 0; si < this.viState.stateCount; si++) {
             if (!this.viState.isPlaying && this.viState.phase !== 'stepping') break;
 
             const stateId = this.viState.stateIds[si];
-            this.viViewModel.activeStateId = stateId;
             this.viState.currentColumnIndex = columnIndex;
             this.viState.currentStateIndex = si;
 
             this.outputBoundary.presentStateBackupStart(columnIndex, stateId);
 
-            // Highlight phase
             this.viState.setPhase('computing', this.TIMING.STATE_HIGHLIGHT);
             this.outputBoundary.presentPhaseChange('computing', this.TIMING.STATE_HIGHLIGHT);
             await this.waitForPhase();
             if (!this.viState.isPlaying && this.viState.phase !== 'stepping') break;
 
-            // Reveal value
-            this.viViewModel.revealValue(columnIndex, stateId);
             this.viState.setPhase('revealing_value', this.TIMING.VALUE_REVEAL);
-            this.outputBoundary.presentPhaseChange('revealing_value', this.TIMING.VALUE_REVEAL);
+            this.outputBoundary.presentStateBackupComplete(columnIndex, stateId);
             await this.waitForPhase();
             if (!this.viState.isPlaying && this.viState.phase !== 'stepping') break;
-
-            this.outputBoundary.presentStateBackupComplete(columnIndex, stateId);
         }
 
-        // Mark column complete
-        this.viViewModel.revealColumn(columnIndex);
         this.viState.currentStateIndex = this.viState.stateCount;
         this.viState.setPhase('idle', 0);
         this.outputBoundary.presentColumnComplete(columnIndex);
 
-        // Pause between columns
         if (this.viState.isPlaying) {
             this.viState.setPhase('pause', this.TIMING.COLUMN_PAUSE);
             this.outputBoundary.presentPhaseChange('pause', this.TIMING.COLUMN_PAUSE);
@@ -76,9 +53,6 @@ class VIAnimator {
         }
     }
 
-    /**
-     * Animate a single state backup (used by Step).
-     */
     async animateOneState() {
         const colIdx = this.viState.currentColumnIndex;
         const stateIdx = this.viState.currentStateIndex;
@@ -87,36 +61,24 @@ class VIAnimator {
         if (stateIdx >= this.viState.stateCount) return;
 
         const stateId = this.viState.stateIds[stateIdx];
-        this.viViewModel.activeColumnIndex = colIdx;
-        this.viViewModel.activeStateId = stateId;
 
         if (stateIdx === 0) {
-            // Make this column visible
-            if (this.viViewModel.visibleColumnCount <= colIdx) {
-                this.viViewModel.showNextColumn();
-            }
             this.outputBoundary.presentColumnStart(colIdx);
         }
 
         this.outputBoundary.presentStateBackupStart(colIdx, stateId);
 
-        // Highlight phase
         this.viState.setPhase('computing', this.TIMING.STATE_HIGHLIGHT);
         this.outputBoundary.presentPhaseChange('computing', this.TIMING.STATE_HIGHLIGHT);
         await this.waitForPhase();
 
-        // Reveal value
-        this.viViewModel.revealValue(colIdx, stateId);
         this.viState.setPhase('revealing_value', this.TIMING.VALUE_REVEAL);
-        this.outputBoundary.presentPhaseChange('revealing_value', this.TIMING.VALUE_REVEAL);
-        await this.waitForPhase();
-
         this.outputBoundary.presentStateBackupComplete(colIdx, stateId);
+        await this.waitForPhase();
 
         // Advance cursor
         this.viState.currentStateIndex++;
         if (this.viState.currentStateIndex >= this.viState.stateCount) {
-            this.viViewModel.revealColumn(colIdx);
             this.outputBoundary.presentColumnComplete(colIdx);
             this.viState.currentStateIndex = 0;
             this.viState.currentColumnIndex++;
@@ -125,19 +87,14 @@ class VIAnimator {
         this.viState.setPhase('idle', 0);
     }
 
-    /**
-     * Run continuous playback through all remaining columns/states.
-     */
     async continuousPlay() {
         while (this.viState.isPlaying && this.viState.canAdvance()) {
             const colIdx = this.viState.currentColumnIndex;
             const stateIdx = this.viState.currentStateIndex;
 
-            // If starting a new column
             if (stateIdx === 0) {
                 await this.animateColumn(colIdx);
             } else {
-                // Mid-column resume: animate remaining states
                 await this._animateRemainingStates(colIdx, stateIdx);
             }
 
@@ -151,13 +108,10 @@ class VIAnimator {
     }
 
     async _animateRemainingStates(columnIndex, startStateIdx) {
-        this.viViewModel.activeColumnIndex = columnIndex;
-
         for (let si = startStateIdx; si < this.viState.stateCount; si++) {
             if (!this.viState.isPlaying) break;
 
             const stateId = this.viState.stateIds[si];
-            this.viViewModel.activeStateId = stateId;
             this.viState.currentStateIndex = si;
 
             this.outputBoundary.presentStateBackupStart(columnIndex, stateId);
@@ -167,17 +121,13 @@ class VIAnimator {
             await this.waitForPhase();
             if (!this.viState.isPlaying) break;
 
-            this.viViewModel.revealValue(columnIndex, stateId);
             this.viState.setPhase('revealing_value', this.TIMING.VALUE_REVEAL);
-            this.outputBoundary.presentPhaseChange('revealing_value', this.TIMING.VALUE_REVEAL);
+            this.outputBoundary.presentStateBackupComplete(columnIndex, stateId);
             await this.waitForPhase();
             if (!this.viState.isPlaying) break;
-
-            this.outputBoundary.presentStateBackupComplete(columnIndex, stateId);
         }
 
         if (this.viState.isPlaying) {
-            this.viViewModel.revealColumn(columnIndex);
             this.viState.currentStateIndex = 0;
             this.viState.currentColumnIndex++;
             this.outputBoundary.presentColumnComplete(columnIndex);

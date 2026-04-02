@@ -1,11 +1,10 @@
 // Interactor for VI Play — starts or resumes continuous playback
 class VIPlayInteractor extends VIPlayInputBoundary {
-    constructor(viState, viViewModel, outputBoundary) {
+    constructor(viState, outputBoundary) {
         super();
         this.viState = viState;
-        this.viViewModel = viViewModel;
         this.outputBoundary = outputBoundary;
-        this.animator = new VIAnimator(viState, viViewModel, outputBoundary);
+        this.animator = new VIAnimator(viState, outputBoundary);
     }
 
     execute(inputData) {

@@ -97,11 +97,11 @@ class EdgeObj {
     getLabelColor() {
         const reward = this.getReward();
         if (reward > 0) {
-            return color(0, 100, 0); // Dark green for positive
+            return 'rgb(0, 100, 0)'; // Dark green for positive
         } else if (reward < 0) {
-            return color(139, 0, 0); // Dark red for negative
+            return 'rgb(139, 0, 0)'; // Dark red for negative
         } else {
-            return color(0, 0, 0); // Black for zero
+            return 'rgb(0, 0, 0)'; // Black for zero
         }
     }
 }

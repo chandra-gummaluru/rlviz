@@ -345,6 +345,23 @@ class CanvasController {
         this.viewModel.interaction.startNode = null;
     }
 
+    /**
+     * Check for unnormalized action nodes. Returns array of names, or empty if all OK.
+     */
+    getUnnormalizedActionNames() {
+        const unnormalized = this.viewModel.graph.getUnnormalizedActionNodes();
+        return unnormalized.map(n => n.name);
+    }
+
+    /**
+     * Renormalize all action node probabilities.
+     */
+    renormalizeProbabilities() {
+        if (this.interactors.renormalizeProbabilities) {
+            this.interactors.renormalizeProbabilities.execute(new RenormalizeProbabilitiesInputData());
+        }
+    }
+
     zoomIn(centerX, centerY) {
         if (this.interactors.zoomIn) {
             const inputData = new ZoomInputData(
@@ -552,6 +569,26 @@ class CanvasController {
         if (this.interactors.setImage) {
             const inputData = new SetImageInputData(nodeId, imageData);
             this.interactors.setImage.execute(inputData);
+        }
+    }
+
+    // ===== Transition Editing =====
+
+    setTransitionProbability(actionNodeId, nextStateId, probability) {
+        const actionNode = this.viewModel.graph.getNodeById(actionNodeId);
+        if (!actionNode) return;
+        const transition = actionNode.sas.find(t => t.nextState === nextStateId);
+        if (transition) {
+            transition.probability = probability;
+        }
+    }
+
+    setTransitionReward(actionNodeId, nextStateId, reward) {
+        const actionNode = this.viewModel.graph.getNodeById(actionNodeId);
+        if (!actionNode) return;
+        const transition = actionNode.sas.find(t => t.nextState === nextStateId);
+        if (transition) {
+            transition.reward = reward;
         }
     }
 

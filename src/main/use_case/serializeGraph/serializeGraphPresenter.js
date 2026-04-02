@@ -13,7 +13,7 @@ class SerializeGraphPresenter extends SerializeGraphOutputBoundary {
 
     presentError(message) {
         console.error(`Serialize graph error: ${message}`);
-        alert(`Error serializing graph: ${message}`);
+        this.viewModel.lastOperationError = `Error serializing graph: ${message}`;
         this.serializedData = null;
     }
 

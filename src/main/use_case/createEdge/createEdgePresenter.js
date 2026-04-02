@@ -12,6 +12,6 @@ class CreateEdgePresenter extends CreateEdgeOutputBoundary {
 
     presentError(message) {
         console.error(`Create edge error: ${message}`);
-        alert(`Error creating edge: ${message}`);
+        this.viewModel.lastOperationError = `Error creating edge: ${message}`;
     }
 }

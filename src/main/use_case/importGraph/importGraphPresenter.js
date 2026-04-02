@@ -31,7 +31,7 @@ class ImportGraphPresenter extends ImportGraphOutputBoundary {
         } else {
             // Handle error case
             console.error('Import graph failed:', responseModel.error);
-            alert('Failed to import graph: ' + responseModel.error);
+            this.viewModel.lastOperationError = 'Failed to import graph: ' + responseModel.error;
         }
     }
 }
