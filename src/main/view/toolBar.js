@@ -76,26 +76,26 @@ class ToolBar {
     }
 
     createSimulateModeButtons() {
-        this.playPauseBtn = this.createButton('▶ Play', () => this.handlePlayPauseClick(), 'toolbar-btn--play');
+        this.playPauseBtn = this.createButton('Play', () => this.handlePlayPauseClick(), 'toolbar-btn--play');
         this.playPauseBtn.elt.dataset.mode = 'play';
 
-        this.stepBtn = this.createButton('⏭ Step', () => this.callbacks.onStep(), 'toolbar-btn--step');
-        this.rerunBtn = this.createButton('⟲ Rerun', () => this.callbacks.onRerun(), 'toolbar-btn--rerun');
+        this.stepBtn = this.createButton('Step', () => this.callbacks.onStep(), 'toolbar-btn--step');
+        this.rerunBtn = this.createButton('Rerun', () => this.callbacks.onRerun(), 'toolbar-btn--rerun');
     }
 
     createValueIterModeButtons() {
-        this.viPlayPauseBtn = this.createButton('▶ Play', () => this.handleVIPlayPauseClick(), 'toolbar-btn--play');
+        this.viPlayPauseBtn = this.createButton('Play', () => this.handleVIPlayPauseClick(), 'toolbar-btn--play');
         this.viPlayPauseBtn.elt.dataset.mode = 'play';
 
-        this.viStepBtn = this.createButton('⏭ Step', () => {
+        this.viStepBtn = this.createButton('Step', () => {
             if (this.callbacks.onVIStep) this.callbacks.onVIStep();
         }, 'toolbar-btn--step');
 
-        this.viSkipBtn = this.createButton('⏩ Skip', () => {
+        this.viSkipBtn = this.createButton('Skip', () => {
             if (this.callbacks.onVISkip) this.callbacks.onVISkip();
         }, 'toolbar-btn--action');
 
-        this.viResetBtn = this.createButton('⟲ Reset', () => {
+        this.viResetBtn = this.createButton('Reset', () => {
             if (this.callbacks.onVIReset) this.callbacks.onVIReset();
         }, 'toolbar-btn--rerun');
 
@@ -275,11 +275,11 @@ class ToolBar {
         this.playPauseBtn.elt.dataset.mode = mode;
 
         if (mode === 'play') {
-            this.playPauseBtn.html('▶ Play');
+            this.playPauseBtn.html('Play');
             this.playPauseBtn.removeClass('toolbar-btn--pause');
             this.playPauseBtn.addClass('toolbar-btn--play');
         } else {
-            this.playPauseBtn.html('⏸ Pause');
+            this.playPauseBtn.html('Pause');
             this.playPauseBtn.removeClass('toolbar-btn--play');
             this.playPauseBtn.addClass('toolbar-btn--pause');
         }
@@ -325,11 +325,11 @@ class ToolBar {
         this.viPlayPauseBtn.elt.dataset.mode = mode;
 
         if (mode === 'play') {
-            this.viPlayPauseBtn.html('▶ Play');
+            this.viPlayPauseBtn.html('Play');
             this.viPlayPauseBtn.removeClass('toolbar-btn--pause');
             this.viPlayPauseBtn.addClass('toolbar-btn--play');
         } else {
-            this.viPlayPauseBtn.html('⏸ Pause');
+            this.viPlayPauseBtn.html('Pause');
             this.viPlayPauseBtn.removeClass('toolbar-btn--play');
             this.viPlayPauseBtn.addClass('toolbar-btn--pause');
         }
