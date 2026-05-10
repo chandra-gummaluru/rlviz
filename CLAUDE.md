@@ -130,7 +130,7 @@ All dependencies are manually wired in `src/main/app/main.js`:
 
 **Color Format Gotcha**
 - `EdgeViewModel.color` returns hex strings (`#RRGGBB`) or `rgb()` strings
-- `edge.getLabelColor()` (domain layer) returns p5.js `color()` objects (have `.levels` property)
+- `edge.getLabelColor()` (domain layer) returns `rgb()` strings (framework-agnostic)
 - When applying alpha, handle both formats — use `red(c)`, `green(c)`, `blue(c)` to extract from p5 color objects
 - Dashed lines in p5.js: use `drawingContext.setLineDash([dash, gap])` and reset with `drawingContext.setLineDash([])`
 
@@ -216,14 +216,62 @@ The app has three modes managed by `SetModeInteractor`:
 
 **Value Iteration Mode**
 - Visualizes finite-horizon DP by unrolling MDP into timestep columns (t=T → t=0)
-- Play/Pause/Step/Reset controls + T input for horizon length
-- Precomputes all V-tables upfront; animation replays the results
-- Focus+fade: active node full opacity, others faded; action color coding (green=best, red=worst)
-- Right panel shows Bellman equation, parameters, and V(s) table updated during animation
-- Domain: `ValueIterationState` — computation + state machine (`src/main/domain/valueIterationState.js`)
-- View: `ValueIterationView` — separate p5.js renderer (`src/main/view/valueIterationView.js`)
-- Animator: `VIAnimator` — async/await animation orchestration (`src/main/use_case/valueIteration/viAnimator.js`)
+- Bellman backup: `V_t(s) = max_a Σ P(s'|s,a) · [R(s,a,s') + γ · V_{t+1}(s')]`, with `V_T(s) = 0`
+- Precomputes all V-tables, Q-values, and best actions upfront; animation replays the results
+- Play/Pause/Step/Reset controls + T input (integer ≥ 1) for horizon length
+- Discount factor γ read from right panel input
 - No graph editing allowed
+
+**Value Iteration Visual Layout**
+- Each timestep is a **vertical column** of state nodes; columns progress left-to-right (t=0 leftmost, t=T rightmost)
+- **Progressive column reveal**: columns appear one at a time (t=T first, centered), shifting right as earlier columns appear on the left
+- **Focus+fade**: active node full opacity (255), next-column nodes ~200, completed columns ~90, inactive same-column ~50
+- **Action color coding**: best action edges green (`rgb(46,160,67)`), worst red (`rgb(210,60,50)`), single action blue (`rgb(100,149,237)`)
+- **Detailed action nodes**: first 2 backup columns show diamond-shaped action nodes between columns with Q-value labels; further columns use simplified direct edges
+- **Edge labels**: show `p=P(s'|s,a)` and `r=R(s,a,s')` on action→state edges
+- Right panel shows Bellman equation, parameters (T, γ), and V(s) table updated live during animation
+
+**Value Iteration Architecture**
+- Domain: `ValueIterationState` (`src/main/domain/valueIterationState.js`)
+  - Stores precomputed `history[]` (V-tables), `qValues[]`, `bestActions[]`
+  - Animation cursor: `currentColumnIndex`, `currentStateIndex`
+  - Phase state machine: `idle → computing → revealing_value → pause`
+  - `computeHistory(graph, T, gamma)` runs full backup and stores results
+  - `advance()` moves cursor through states/columns sequentially
+- ViewModel: `ValueIterationViewModel` (`src/main/adapter/viewmodel/ValueIterationViewModel.js`)
+  - `computeLayout()` creates all column data with node positions (x deferred)
+  - `showNextColumn()` increments `visibleColumnCount` and calls `_recomputeXPositions()` to center visible columns
+  - `revealValue(columnIndex, stateId)` / `revealColumn(columnIndex)` track which V-values are shown
+  - Layout constants: `COLUMN_GAP=250`, `NODE_RADIUS=30`, `VERTICAL_PADDING=80`, `TOP_PADDING=60`
+- Animator: `VIAnimator` (`src/main/use_case/valueIteration/viAnimator.js`)
+  - Async/await orchestration with `waitForPhase()` polling pattern (same as SimulationAnimator)
+  - `animateColumn(colIdx)` loops through states: computing phase (300ms) → revealing_value phase (500ms)
+  - `animateOneState()` for Step mode — advances one state backup at a time
+  - `continuousPlay()` for Play mode — loops through all remaining columns/states
+  - Timing constants: `COLUMN_SLIDE=400`, `STATE_HIGHLIGHT=300`, `VALUE_REVEAL=500`, `COLUMN_PAUSE=300`
+- Presenter: `VIPresenter` (`src/main/use_case/valueIteration/viPresenter.js`)
+  - Translates animator callbacks to ViewModel updates and `redraw()` calls
+  - `presentColumnStart()` calls `viViewModel.showNextColumn()` for progressive reveal
+  - `presentStateBackupComplete()` calls `viViewModel.revealValue()` and updates right panel
+  - Holds optional `toolBar` reference for updating Play/Pause button states
+- View: `ValueIterationView` (`src/main/view/valueIterationView.js`)
+  - Separate p5.js renderer; `MainView.draw()` delegates here in value_iteration mode
+  - Draws edges between columns first (behind), then state nodes, then timestep labels
+  - `_drawDetailedActions()` renders diamond action nodes with Q-values for first 2 backup columns
+  - `_drawSimpleEdges()` renders direct state-to-state edges for later columns
+- Use Cases (18 files in `src/main/use_case/valueIteration/`):
+  - `RunVIInteractor`: computes history via `viState.computeHistory()`, signals presenter for layout
+  - `VIPlayInteractor`: starts continuous playback via `viAnimator.continuousPlay()`
+  - `VIPauseInteractor`: pauses mid-animation by setting `viState.isPlaying = false`
+  - `VIStepInteractor`: advances one state via `viAnimator.animateOneState()`
+  - `VIResetInteractor`: resets viState and viViewModel, updates presenter
+
+**Value Iteration Wiring** (in `main.js`)
+- `ValueIterationState` and `ValueIterationViewModel` created at top level (before `setup()`)
+- `VIPresenter` and all VI interactors created inside `setup()` after `mainView` (presenter needs `canvasViewModel`)
+- `VIPresenter.setToolBar(toolBar)` called to wire button state updates
+- `ValueIterationView` created inside `setup()` and attached to `mainView.valueIterationView`
+- Mode cleanup on leaving value_iteration handled in `onModeChange` callback in `main.js`
 
 ## UI Layout
 

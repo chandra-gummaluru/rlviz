@@ -91,20 +91,16 @@ class EdgeViewModel {
     }
 
     _interpolateToGreen(intensity) {
-        // Interpolate from black (#000000) to dark green (#006400)
-        // Dark green RGB: (0, 100, 0)
-        const r = 0;
-        const g = Math.round(100 * intensity); // 0 to 100
-        const b = 0;
-        return `rgb(${r}, ${g}, ${b})`;
+        // Saturation-based: low intensity = desaturated gray-green, high = vivid green
+        // HSL: hue=140, saturation scales 10%→90%, lightness=38%
+        const saturation = Math.round(10 + 80 * intensity); // 10% to 90%
+        return `hsl(140, ${saturation}%, 38%)`;
     }
 
     _interpolateToRed(intensity) {
-        // Interpolate from black (#000000) to dark red (#8B0000)
-        // Dark red RGB: (139, 0, 0)
-        const r = Math.round(139 * intensity); // 0 to 139
-        const g = 0;
-        const b = 0;
-        return `rgb(${r}, ${g}, ${b})`;
+        // Saturation-based: low intensity = desaturated gray-red, high = vivid red
+        // HSL: hue=0, saturation scales 10%→90%, lightness=40%
+        const saturation = Math.round(10 + 80 * intensity); // 10% to 90%
+        return `hsl(0, ${saturation}%, 40%)`;
     }
 }

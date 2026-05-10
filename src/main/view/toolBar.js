@@ -22,6 +22,7 @@ class ToolBar {
         // Value Iteration mode buttons
         this.viPlayPauseBtn = null;
         this.viStepBtn = null;
+        this.viSkipBtn = null;
         this.viResetBtn = null;
         this.viTInput = null;
         this.viTLabel = null;
@@ -90,6 +91,10 @@ class ToolBar {
             if (this.callbacks.onVIStep) this.callbacks.onVIStep();
         }, 'toolbar-btn--step');
 
+        this.viSkipBtn = this.createButton('⏩ Skip', () => {
+            if (this.callbacks.onVISkip) this.callbacks.onVISkip();
+        }, 'toolbar-btn--action');
+
         this.viResetBtn = this.createButton('⟲ Reset', () => {
             if (this.callbacks.onVIReset) this.callbacks.onVIReset();
         }, 'toolbar-btn--rerun');
@@ -105,6 +110,20 @@ class ToolBar {
         this.viTInput.attribute('min', '0');
         this.viTInput.attribute('max', '100');
         this.viTInput.size(50);
+
+        // Per-action toggle
+        this.viPerActionLabel = createSpan('Per-action');
+        this.viPerActionLabel.parent(this.leftButtonsContainer);
+        this.viPerActionLabel.addClass('toolbar-t-label');
+
+        this.viPerActionToggle = createCheckbox('', false);
+        this.viPerActionToggle.parent(this.leftButtonsContainer);
+        this.viPerActionToggle.addClass('toolbar-checkbox');
+        this.viPerActionToggle.changed(() => {
+            if (this.callbacks.onVIPerActionToggle) {
+                this.callbacks.onVIPerActionToggle(this.viPerActionToggle.checked());
+            }
+        });
     }
 
     handleVIPlayPauseClick() {
@@ -190,9 +209,12 @@ class ToolBar {
         this.rerunBtn.hide();
         this.viPlayPauseBtn.hide();
         this.viStepBtn.hide();
+        this.viSkipBtn.hide();
         this.viResetBtn.hide();
         this.viTLabel.hide();
         this.viTInput.hide();
+        this.viPerActionLabel.hide();
+        this.viPerActionToggle.hide();
 
         // Clear all toggle active states
         this.editToggleBtn.removeClass('toolbar-toggle--active');
@@ -216,9 +238,12 @@ class ToolBar {
         } else if (mode === 'value_iteration') {
             this.viPlayPauseBtn.show();
             this.viStepBtn.show();
+            this.viSkipBtn.show();
             this.viResetBtn.show();
             this.viTLabel.show();
             this.viTInput.show();
+            this.viPerActionLabel.show();
+            this.viPerActionToggle.show();
             this.setVIPlayPauseMode('play');
             this.viToggleBtn.addClass('toolbar-toggle--active');
         }
@@ -330,6 +355,14 @@ class ToolBar {
                 this.viStepBtn.removeAttribute('disabled');
             } else {
                 this.viStepBtn.attribute('disabled', '');
+            }
+        }
+
+        if (this.viSkipBtn) {
+            if (!isPlaying && canAdvance) {
+                this.viSkipBtn.removeAttribute('disabled');
+            } else {
+                this.viSkipBtn.attribute('disabled', '');
             }
         }
     }
