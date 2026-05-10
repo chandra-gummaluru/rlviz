@@ -245,25 +245,36 @@ The app has three modes managed by `SetModeInteractor`:
   - Layout constants: `COLUMN_GAP=250`, `NODE_RADIUS=30`, `VERTICAL_PADDING=80`, `TOP_PADDING=60`
 - Animator: `VIAnimator` (`src/main/use_case/valueIteration/viAnimator.js`)
   - Async/await orchestration with `waitForPhase()` polling pattern (same as SimulationAnimator)
-  - `animateColumn(colIdx)` loops through states: computing phase (300ms) → revealing_value phase (500ms)
-  - `animateOneState()` for Step mode — advances one state backup at a time
+  - `animateColumn(colIdx)` loops through states with 6 sub-phases per state
+  - **Bundled mode**: `show_equation → show_actions → show_transitions → compute_q_values → select_max → revealing_value`
+  - **Per-action mode**: `show_equation → [show_action → [show_transition → compute_transition]×N → show_q_result]×A → select_max → revealing_value`
+  - `animateOneSubPhase()` for Step — advances one sub-phase (or one transition in per-action mode)
+  - `animateOneState()` for Skip — completes full state backup instantly
   - `continuousPlay()` for Play mode — loops through all remaining columns/states
-  - Timing constants: `COLUMN_SLIDE=400`, `STATE_HIGHLIGHT=300`, `VALUE_REVEAL=500`, `COLUMN_PAUSE=300`
+  - Constructor takes `(viState, outputBoundary, viViewModel)` — needs viViewModel to check `perActionMode`
+  - Reads `viState.subPhase` directly, does NOT hardcode phase names in presenter calls
 - Presenter: `VIPresenter` (`src/main/use_case/valueIteration/viPresenter.js`)
-  - Translates animator callbacks to ViewModel updates and `redraw()` calls
+  - All presenter methods read `this.viState.subPhase` (not hardcoded) to pass correct phase to `_buildBackupDetail`
+  - `_buildBackupDetail` passes `currentActionIndex`, `visibleTransitionCount` for per-action rendering
   - `presentColumnStart()` calls `viViewModel.showNextColumn()` for progressive reveal
   - `presentStateBackupComplete()` calls `viViewModel.revealValue()` and updates right panel
   - Holds optional `toolBar` reference for updating Play/Pause button states
 - View: `ValueIterationView` (`src/main/view/valueIterationView.js`)
   - Separate p5.js renderer; `MainView.draw()` delegates here in value_iteration mode
-  - Draws edges between columns first (behind), then state nodes, then timestep labels
-  - `_drawDetailedActions()` renders diamond action nodes with Q-values for first 2 backup columns
-  - `_drawSimpleEdges()` renders direct state-to-state edges for later columns
-- Use Cases (18 files in `src/main/use_case/valueIteration/`):
+  - Draws completed-column edges (behind), then state nodes, then timestep labels, then backup animation overlay
+  - Active column edges skipped in `_drawColumnEdges` — drawn by backup animation instead
+  - **Per-action drawing**: `_drawSingleAction`, `_drawPartialTransitions`, `_drawSingleActionQValue` show only current action
+  - **Q-value table** (`_drawQTable`): progressive table showing actions as rows, transitions as columns, Q(s,a) as final column
+    - Populates as transitions are computed; running Q sum in italic; completed actions in bold
+    - `select_max` adds `V(s) = max = X.XX` row; best action highlighted green
+    - Replaces equation overlay in per-action mode
+  - `_drawSimpleEdges()` renders direct state-to-state edges for completed columns
+- Use Cases (21 files in `src/main/use_case/valueIteration/`):
   - `RunVIInteractor`: computes history via `viState.computeHistory()`, signals presenter for layout
   - `VIPlayInteractor`: starts continuous playback via `viAnimator.continuousPlay()`
   - `VIPauseInteractor`: pauses mid-animation by setting `viState.isPlaying = false`
-  - `VIStepInteractor`: advances one state via `viAnimator.animateOneState()`
+  - `VIStepInteractor`: advances one sub-phase via `viAnimator.animateOneSubPhase()`
+  - `VISkipInteractor`: completes one full state via `viAnimator.animateOneState()`
   - `VIResetInteractor`: resets viState and viViewModel, updates presenter
 
 **Value Iteration Wiring** (in `main.js`)
