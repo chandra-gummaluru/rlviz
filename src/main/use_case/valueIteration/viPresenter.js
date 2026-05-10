@@ -103,27 +103,27 @@ class VIPresenter extends VIOutputBoundary {
     // --- Detailed Bellman backup sub-phase presenters ---
 
     presentEquationStart(columnIndex, stateId) {
-        this._buildBackupDetail(columnIndex, stateId, 'show_equation');
+        this._buildBackupDetail(columnIndex, stateId, this.viState.subPhase);
         this._redraw();
     }
 
     presentActionsRevealed(columnIndex, stateId) {
-        this._buildBackupDetail(columnIndex, stateId, 'show_actions');
+        this._buildBackupDetail(columnIndex, stateId, this.viState.subPhase);
         this._redraw();
     }
 
     presentTransitionsRevealed(columnIndex, stateId) {
-        this._buildBackupDetail(columnIndex, stateId, 'show_transitions');
+        this._buildBackupDetail(columnIndex, stateId, this.viState.subPhase);
         this._redraw();
     }
 
     presentQValuesComputed(columnIndex, stateId) {
-        this._buildBackupDetail(columnIndex, stateId, 'compute_q_values');
+        this._buildBackupDetail(columnIndex, stateId, this.viState.subPhase);
         this._redraw();
     }
 
     presentMaxSelected(columnIndex, stateId) {
-        this._buildBackupDetail(columnIndex, stateId, 'select_max');
+        this._buildBackupDetail(columnIndex, stateId, this.viState.subPhase);
         this._redraw();
     }
 

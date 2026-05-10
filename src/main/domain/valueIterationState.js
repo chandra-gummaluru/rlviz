@@ -45,6 +45,8 @@ class ValueIterationState {
         this.gamma = gamma;
 
         const states = graph.nodes.filter(n => n.type === 'state');
+        // Sort states by y-position so VI animates top-to-bottom visually
+        states.sort((a, b) => (a.y || 0) - (b.y || 0));
         this.stateIds = states.map(s => s.id);
         states.forEach(s => { this.stateNames[s.id] = s.name; });
 
