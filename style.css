@@ -35,9 +35,9 @@
   --border-card: #E0E0E0;
   --border-row: #EEEEEE;
 
-  /* Reward colors */
-  --reward-positive: #006400;
-  --reward-negative: #8B0000;
+  /* Reward colors (saturation-based) */
+  --reward-positive: hsl(140, 90%, 38%);
+  --reward-negative: hsl(0, 90%, 40%);
   --reward-zero: #000000;
 
   /* Z-index layers */
@@ -255,6 +255,17 @@ canvas {
   border-radius: 4px;
   width: 50px;
   text-align: center;
+}
+
+.toolbar-checkbox {
+  margin-left: 4px;
+  line-height: 36px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.toolbar-checkbox label {
+  cursor: pointer;
 }
 
 /* ============================================================

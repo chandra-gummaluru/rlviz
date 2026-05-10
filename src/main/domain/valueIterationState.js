@@ -9,6 +9,7 @@ class ValueIterationState {
         this.history = [];        // history[0] = V_T (all zeros), history[i] = V_{T-i}
         this.qValues = [];        // qValues[i][stateId] = [{actionId, actionName, qValue}]
         this.bestActions = [];    // bestActions[i][stateId] = actionId
+        this.backupDetails = [];  // backupDetails[i][stateId] = { actions: [...], bestActionId, value }
         this.stateIds = [];       // ordered list of state IDs
         this.stateNames = {};     // stateId -> name
         this.T = 0;
@@ -24,6 +25,13 @@ class ValueIterationState {
         this.phaseStartTime = 0;
         this.phaseDuration = 0;
 
+        // Sub-phase for detailed Bellman backup animation
+        // idle | show_equation | show_actions | show_transitions | compute_q_values | select_max | revealing_value
+        // Per-action mode adds: show_action | compute_action (one action at a time)
+        this.subPhase = 'idle';
+        this.currentActionIndex = 0;      // which action within per-action mode
+        this.currentTransitionIndex = 0;  // which transition within current action
+
         // Playback control
         this.isPlaying = false;
     }
@@ -37,6 +45,8 @@ class ValueIterationState {
         this.gamma = gamma;
 
         const states = graph.nodes.filter(n => n.type === 'state');
+        // Sort states by y-position so VI animates top-to-bottom visually
+        states.sort((a, b) => (a.y || 0) - (b.y || 0));
         this.stateIds = states.map(s => s.id);
         states.forEach(s => { this.stateNames[s.id] = s.name; });
 
@@ -46,6 +56,7 @@ class ValueIterationState {
         this.history = [V_T];
         this.qValues = [{}]; // no Q-values at terminal
         this.bestActions = [{}];
+        this.backupDetails = [{}]; // no backup details at terminal
 
         // Backup T steps
         for (let step = 0; step < T; step++) {
@@ -53,6 +64,7 @@ class ValueIterationState {
             const V_curr = {};
             const Q_curr = {};
             const best_curr = {};
+            const detail_curr = {};
 
             this.stateIds.forEach(stateId => {
                 const stateNode = graph.getNodeById(stateId);
@@ -60,25 +72,45 @@ class ValueIterationState {
                     V_curr[stateId] = 0;
                     Q_curr[stateId] = [];
                     best_curr[stateId] = null;
+                    detail_curr[stateId] = { actions: [], bestActionId: null, value: 0 };
                     return;
                 }
 
                 let maxQ = -Infinity;
                 let bestActionId = null;
                 const actionQs = [];
+                const actionDetails = [];
 
                 stateNode.actions.forEach(actionId => {
                     const actionNode = graph.getNodeById(actionId);
                     if (!actionNode || !actionNode.sas) return;
 
                     let Q = 0;
+                    const transitions = [];
                     actionNode.sas.forEach(({ nextState, probability, reward }) => {
-                        Q += probability * (reward + gamma * (V_prev[nextState] ?? 0));
+                        const nextValue = V_prev[nextState] ?? 0;
+                        const term = probability * (reward + gamma * nextValue);
+                        Q += term;
+                        transitions.push({
+                            nextState,
+                            nextStateName: this.stateNames[nextState] || `S${nextState}`,
+                            probability,
+                            reward,
+                            nextValue,
+                            term
+                        });
                     });
 
                     actionQs.push({
                         actionId: actionId,
                         actionName: actionNode.name,
+                        qValue: Q
+                    });
+
+                    actionDetails.push({
+                        actionId,
+                        actionName: actionNode.name,
+                        transitions,
                         qValue: Q
                     });
 
@@ -88,14 +120,21 @@ class ValueIterationState {
                     }
                 });
 
-                V_curr[stateId] = maxQ === -Infinity ? 0 : maxQ;
+                const value = maxQ === -Infinity ? 0 : maxQ;
+                V_curr[stateId] = value;
                 Q_curr[stateId] = actionQs;
                 best_curr[stateId] = bestActionId;
+                detail_curr[stateId] = {
+                    actions: actionDetails,
+                    bestActionId,
+                    value
+                };
             });
 
             this.history.push(V_curr);
             this.qValues.push(Q_curr);
             this.bestActions.push(best_curr);
+            this.backupDetails.push(detail_curr);
         }
 
         this.initialized = true;
@@ -184,5 +223,11 @@ class ValueIterationState {
     /** Get the timestep label for a column index (column 0 = t=T, column i = t=T-i) */
     getTimestep(columnIndex) {
         return this.T - columnIndex;
+    }
+
+    /** Get full backup detail for a given column and state (transitions, Q-values, terms) */
+    getBackupDetail(columnIndex, stateId) {
+        if (columnIndex < 0 || columnIndex >= this.backupDetails.length) return null;
+        return this.backupDetails[columnIndex][stateId] || null;
     }
 }

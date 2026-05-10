@@ -97,6 +97,7 @@ let viPlayInteractor;
 let viPauseInteractor;
 let viStepInteractor;
 let viResetInteractor;
+let viSkipInteractor;
 
 // Callbacks
 const onStateClick = () => {
@@ -314,6 +315,24 @@ const onVIStep = () => {
     }
 };
 
+const onVISkip = () => {
+    if (!viSkipInteractor) return;
+
+    const T = toolBar ? toolBar.getVIT() : 5;
+    const gamma = rightPanel ? rightPanel.discountFactor : 0.9;
+
+    if (!valueIterationState.initialized) {
+        const dims = getVICanvasDimensions();
+        runVIInteractor.execute(new RunVIInputData(T, gamma, dims.width, dims.height));
+    }
+
+    viSkipInteractor.execute(new VISkipInputData());
+
+    if (toolBar) {
+        toolBar.updateVIButtonStates(valueIterationState.isPlaying, valueIterationState.canAdvance());
+    }
+};
+
 const onVIReset = () => {
     if (!viResetInteractor) return;
     viResetInteractor.execute(new VIResetInputData());
@@ -445,7 +464,13 @@ function setup() {
         onVIPlay: onVIPlay,
         onVIPause: onVIPause,
         onVIStep: onVIStep,
-        onVIReset: onVIReset
+        onVISkip: onVISkip,
+        onVIReset: onVIReset,
+        onVIPerActionToggle: (enabled) => {
+            if (valueIterationViewModel) {
+                valueIterationViewModel.perActionMode = enabled;
+            }
+        }
     }, canvasViewModel);
     toolBar.setup(menuBar.getHeight());
 
@@ -475,10 +500,11 @@ function setup() {
     viPresenter.setToolBar(toolBar);
 
     runVIInteractor = new RunVIInteractor(graph, valueIterationState, viPresenter);
-    viPlayInteractor = new VIPlayInteractor(valueIterationState, viPresenter);
+    viPlayInteractor = new VIPlayInteractor(valueIterationState, viPresenter, valueIterationViewModel);
     viPauseInteractor = new VIPauseInteractor(valueIterationState, viPresenter);
-    viStepInteractor = new VIStepInteractor(valueIterationState, viPresenter);
+    viStepInteractor = new VIStepInteractor(valueIterationState, viPresenter, valueIterationViewModel);
     viResetInteractor = new VIResetInteractor(valueIterationState, viPresenter);
+    viSkipInteractor = new VISkipInteractor(valueIterationState, viPresenter, valueIterationViewModel);
 
     // Create Value Iteration view
     const valueIterationView = new ValueIterationView(canvasViewModel);

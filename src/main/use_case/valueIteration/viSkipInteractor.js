@@ -1,5 +1,5 @@
-// Interactor for VI Play — starts or resumes continuous playback
-class VIPlayInteractor extends VIPlayInputBoundary {
+// Interactor for VI Skip — completes one full state backup instantly
+class VISkipInteractor extends VISkipInputBoundary {
     constructor(viState, outputBoundary, viViewModel) {
         super();
         this.viState = viState;
@@ -9,7 +9,7 @@ class VIPlayInteractor extends VIPlayInputBoundary {
 
     execute(inputData) {
         if (!this.viState.initialized) {
-            this.outputBoundary.presentError('Value iteration not initialized. Click Play after setting T.');
+            this.outputBoundary.presentError('Value iteration not initialized.');
             return;
         }
 
@@ -18,7 +18,11 @@ class VIPlayInteractor extends VIPlayInputBoundary {
             return;
         }
 
-        this.viState.play();
-        this.animator.continuousPlay();
+        if (this.viState.isPlaying) {
+            this.viState.pause();
+        }
+
+        this.viState.phase = 'stepping';
+        this.animator.animateOneState();
     }
 }

@@ -11,6 +11,9 @@ class ValueIterationViewModel {
         this.animationPhase = 'idle';
         this.revealedValues = {};   // columnIndex -> Set of stateIds with revealed values
         this.visibleColumnCount = 0; // How many columns are currently shown
+        this.backupDetail = null;   // Current Bellman backup animation detail for view rendering
+        // perActionMode is NOT reset — it's a user preference toggle
+        if (this.perActionMode === undefined) this.perActionMode = false;
 
         // Layout constants
         this.COLUMN_GAP = 250;
@@ -120,6 +123,16 @@ class ValueIterationViewModel {
         const col = this.columns[columnIndex];
         if (!col) return;
         col.states.forEach(s => this.revealValue(columnIndex, s.id));
+    }
+
+    /** Set the backup detail for the current state being animated */
+    setBackupDetail(detail) {
+        this.backupDetail = detail;
+    }
+
+    /** Clear backup detail (when backup finishes or on reset) */
+    clearBackupDetail() {
+        this.backupDetail = null;
     }
 
     /** Get column data by index */

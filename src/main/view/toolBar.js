@@ -22,6 +22,7 @@ class ToolBar {
         // Value Iteration mode buttons
         this.viPlayPauseBtn = null;
         this.viStepBtn = null;
+        this.viSkipBtn = null;
         this.viResetBtn = null;
         this.viTInput = null;
         this.viTLabel = null;
@@ -75,22 +76,26 @@ class ToolBar {
     }
 
     createSimulateModeButtons() {
-        this.playPauseBtn = this.createButton('▶ Play', () => this.handlePlayPauseClick(), 'toolbar-btn--play');
+        this.playPauseBtn = this.createButton('Play', () => this.handlePlayPauseClick(), 'toolbar-btn--play');
         this.playPauseBtn.elt.dataset.mode = 'play';
 
-        this.stepBtn = this.createButton('⏭ Step', () => this.callbacks.onStep(), 'toolbar-btn--step');
-        this.rerunBtn = this.createButton('⟲ Rerun', () => this.callbacks.onRerun(), 'toolbar-btn--rerun');
+        this.stepBtn = this.createButton('Step', () => this.callbacks.onStep(), 'toolbar-btn--step');
+        this.rerunBtn = this.createButton('Rerun', () => this.callbacks.onRerun(), 'toolbar-btn--rerun');
     }
 
     createValueIterModeButtons() {
-        this.viPlayPauseBtn = this.createButton('▶ Play', () => this.handleVIPlayPauseClick(), 'toolbar-btn--play');
+        this.viPlayPauseBtn = this.createButton('Play', () => this.handleVIPlayPauseClick(), 'toolbar-btn--play');
         this.viPlayPauseBtn.elt.dataset.mode = 'play';
 
-        this.viStepBtn = this.createButton('⏭ Step', () => {
+        this.viStepBtn = this.createButton('Step', () => {
             if (this.callbacks.onVIStep) this.callbacks.onVIStep();
         }, 'toolbar-btn--step');
 
-        this.viResetBtn = this.createButton('⟲ Reset', () => {
+        this.viSkipBtn = this.createButton('Skip', () => {
+            if (this.callbacks.onVISkip) this.callbacks.onVISkip();
+        }, 'toolbar-btn--action');
+
+        this.viResetBtn = this.createButton('Reset', () => {
             if (this.callbacks.onVIReset) this.callbacks.onVIReset();
         }, 'toolbar-btn--rerun');
 
@@ -105,6 +110,20 @@ class ToolBar {
         this.viTInput.attribute('min', '0');
         this.viTInput.attribute('max', '100');
         this.viTInput.size(50);
+
+        // Per-action toggle
+        this.viPerActionLabel = createSpan('Per-action');
+        this.viPerActionLabel.parent(this.leftButtonsContainer);
+        this.viPerActionLabel.addClass('toolbar-t-label');
+
+        this.viPerActionToggle = createCheckbox('', false);
+        this.viPerActionToggle.parent(this.leftButtonsContainer);
+        this.viPerActionToggle.addClass('toolbar-checkbox');
+        this.viPerActionToggle.changed(() => {
+            if (this.callbacks.onVIPerActionToggle) {
+                this.callbacks.onVIPerActionToggle(this.viPerActionToggle.checked());
+            }
+        });
     }
 
     handleVIPlayPauseClick() {
@@ -190,9 +209,12 @@ class ToolBar {
         this.rerunBtn.hide();
         this.viPlayPauseBtn.hide();
         this.viStepBtn.hide();
+        this.viSkipBtn.hide();
         this.viResetBtn.hide();
         this.viTLabel.hide();
         this.viTInput.hide();
+        this.viPerActionLabel.hide();
+        this.viPerActionToggle.hide();
 
         // Clear all toggle active states
         this.editToggleBtn.removeClass('toolbar-toggle--active');
@@ -216,9 +238,12 @@ class ToolBar {
         } else if (mode === 'value_iteration') {
             this.viPlayPauseBtn.show();
             this.viStepBtn.show();
+            this.viSkipBtn.show();
             this.viResetBtn.show();
             this.viTLabel.show();
             this.viTInput.show();
+            this.viPerActionLabel.show();
+            this.viPerActionToggle.show();
             this.setVIPlayPauseMode('play');
             this.viToggleBtn.addClass('toolbar-toggle--active');
         }
@@ -250,11 +275,11 @@ class ToolBar {
         this.playPauseBtn.elt.dataset.mode = mode;
 
         if (mode === 'play') {
-            this.playPauseBtn.html('▶ Play');
+            this.playPauseBtn.html('Play');
             this.playPauseBtn.removeClass('toolbar-btn--pause');
             this.playPauseBtn.addClass('toolbar-btn--play');
         } else {
-            this.playPauseBtn.html('⏸ Pause');
+            this.playPauseBtn.html('Pause');
             this.playPauseBtn.removeClass('toolbar-btn--play');
             this.playPauseBtn.addClass('toolbar-btn--pause');
         }
@@ -300,11 +325,11 @@ class ToolBar {
         this.viPlayPauseBtn.elt.dataset.mode = mode;
 
         if (mode === 'play') {
-            this.viPlayPauseBtn.html('▶ Play');
+            this.viPlayPauseBtn.html('Play');
             this.viPlayPauseBtn.removeClass('toolbar-btn--pause');
             this.viPlayPauseBtn.addClass('toolbar-btn--play');
         } else {
-            this.viPlayPauseBtn.html('⏸ Pause');
+            this.viPlayPauseBtn.html('Pause');
             this.viPlayPauseBtn.removeClass('toolbar-btn--play');
             this.viPlayPauseBtn.addClass('toolbar-btn--pause');
         }
@@ -330,6 +355,14 @@ class ToolBar {
                 this.viStepBtn.removeAttribute('disabled');
             } else {
                 this.viStepBtn.attribute('disabled', '');
+            }
+        }
+
+        if (this.viSkipBtn) {
+            if (!isPlaying && canAdvance) {
+                this.viSkipBtn.removeAttribute('disabled');
+            } else {
+                this.viSkipBtn.attribute('disabled', '');
             }
         }
     }

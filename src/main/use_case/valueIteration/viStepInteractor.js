@@ -1,10 +1,10 @@
-// Interactor for VI Step — advances one state backup
+// Interactor for VI Step — advances one sub-phase of the Bellman backup
 class VIStepInteractor extends VIStepInputBoundary {
-    constructor(viState, outputBoundary) {
+    constructor(viState, outputBoundary, viViewModel) {
         super();
         this.viState = viState;
         this.outputBoundary = outputBoundary;
-        this.animator = new VIAnimator(viState, outputBoundary);
+        this.animator = new VIAnimator(viState, outputBoundary, viViewModel);
     }
 
     execute(inputData) {
@@ -23,6 +23,6 @@ class VIStepInteractor extends VIStepInputBoundary {
         }
 
         this.viState.phase = 'stepping';
-        this.animator.animateOneState();
+        this.animator.animateOneSubPhase();
     }
 }

@@ -408,7 +408,7 @@ class MainView {
                 fill(this.applyAlphaToColor(labelColor, Math.min(renderInfo.alpha, probAlpha)));
                 textSize(edge.labelSize);
                 textAlign(CENTER, CENTER);
-                const probOffsetDist = 16;
+                const probOffsetDist = 22;
                 const probX = midX - perpX * probOffsetDist + edge.labelOffset.x;
                 const probY = midY - perpY * probOffsetDist + edge.labelOffset.y;
                 text(`P: ${edge.getProbability().toFixed(2)}`, probX, probY);
@@ -577,7 +577,7 @@ class MainView {
                 fill(this.applyAlphaToColor(labelColor, Math.min(renderInfo.alpha, probAlpha)));
                 textSize(edge.labelSize);
                 textAlign(CENTER, CENTER);
-                const probOffsetDist = 16;
+                const probOffsetDist = 22;
                 const probX = curveMidX - midPerpX * probOffsetDist + edge.labelOffset.x;
                 const probY = curveMidY - midPerpY * probOffsetDist + edge.labelOffset.y;
                 text(`P: ${edge.getProbability().toFixed(2)}`, probX, probY);
@@ -612,14 +612,14 @@ class MainView {
     }
 
     drawSquigglyRewardLine(midX, midY, perpX, perpY, dirX, dirY, progress, reward, rewardColor, weight) {
-        const maxLength = 50;
+        const maxLength = 80;
         const length = progress * maxLength;
         if (length < 1) return;
 
-        const amplitude = 3;
-        const waves = 4;
-        const samples = 50;
-        const arrowSize = 5;
+        const amplitude = 5;
+        const waves = 5;
+        const samples = 60;
+        const arrowSize = 7;
 
         // Direction: extend along perpendicular (left side of edge direction)
         const extDirX = perpX;
@@ -677,9 +677,9 @@ class MainView {
         triangle(tipX, tipY, ax1, ay1, ax2, ay2);
 
         // Reward text past arrowhead
-        const textX = tipX + extDirX * 14;
-        const textY = tipY + extDirY * 14;
-        textSize(12);
+        const textX = tipX + extDirX * 16;
+        const textY = tipY + extDirY * 16;
+        textSize(13);
         textAlign(CENTER, CENTER);
         text(`R: ${reward.toFixed(1)}`, textX, textY);
     }

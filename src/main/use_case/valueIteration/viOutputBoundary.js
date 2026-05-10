@@ -11,4 +11,11 @@ class VIOutputBoundary {
     presentReset() { throw new Error('Not implemented'); }
     presentPhaseChange(phase, duration) { throw new Error('Not implemented'); }
     presentError(message) { throw new Error('Not implemented'); }
+
+    // Detailed Bellman backup sub-phase callbacks
+    presentEquationStart(columnIndex, stateId) { throw new Error('Not implemented'); }
+    presentActionsRevealed(columnIndex, stateId) { throw new Error('Not implemented'); }
+    presentTransitionsRevealed(columnIndex, stateId) { throw new Error('Not implemented'); }
+    presentQValuesComputed(columnIndex, stateId) { throw new Error('Not implemented'); }
+    presentMaxSelected(columnIndex, stateId) { throw new Error('Not implemented'); }
 }
