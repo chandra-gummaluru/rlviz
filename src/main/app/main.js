@@ -3,9 +3,13 @@ const graph = new Graph();
 const commandHistory = new CommandHistory(50);
 const simulationState = new SimulationState();
 const traceGenerator = new TraceGenerator(graph);
+const valueIterationState = new ValueIterationState();
 
 // Adapter - Create ViewModel (no interactors in constructor anymore)
 const canvasViewModel = new CanvasViewModel(graph, simulationState);
+const valueIterationViewModel = new ValueIterationViewModel();
+canvasViewModel.valueIterationState = valueIterationState;
+canvasViewModel.valueIterationViewModel = valueIterationViewModel;
 
 // Presenters for existing use cases
 const createNodePresenter = new CreateNodePresenter(canvasViewModel.interaction);
@@ -13,7 +17,7 @@ const createEdgePresenter = new CreateEdgePresenter(canvasViewModel);
 const serializeGraphPresenter = new SerializeGraphPresenter(canvasViewModel);
 const undoPresenter = new UndoPresenter(canvasViewModel);
 const redoPresenter = new RedoPresenter(canvasViewModel);
-const setModePresenter = new SetModePresenter(canvasViewModel.interaction);
+const setModePresenter = new SetModePresenter(canvasViewModel);
 const zoomPresenter = new ZoomPresenter(canvasViewModel.viewport);
 const importGraphPresenter = new ImportGraphPresenter(canvasViewModel);
 
@@ -86,31 +90,32 @@ let stepInteractor;
 let skipInteractor;
 let resetInteractor;
 
+// Value Iteration (created in setup)
+let viPresenter;
+let runVIInteractor;
+let viPlayInteractor;
+let viPauseInteractor;
+let viStepInteractor;
+let viResetInteractor;
+let viSkipInteractor;
+
 // Callbacks
 const onStateClick = () => {
-    console.log('State button clicked!');
     canvasController.startNodePlacement('state');
-    console.log('Placement mode:', canvasViewModel.interaction.placingMode);
-    console.log('Held node:', canvasViewModel.interaction.heldNode);
     redraw();
 };
 
 const onActionClick = () => {
-    console.log('Action button clicked!');
     canvasController.startNodePlacement('action');
-    console.log('Placement mode:', canvasViewModel.interaction.placingMode);
-    console.log('Held node:', canvasViewModel.interaction.heldNode);
     redraw();
 };
 
 const onTextBoxClick = () => {
-    console.log('Text box button clicked!');
     canvasController.startNodePlacement('textbox');
     redraw();
 };
 
 const onImportGraph = () => {
-    console.log('Import graph clicked!');
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = '.json';
@@ -129,7 +134,6 @@ const onImportGraph = () => {
 };
 
 const onExportGraph = () => {
-    console.log('Export graph clicked!');
     // Get the serialized graph
     const json = canvasController.exportGraph(true);
 
@@ -159,46 +163,87 @@ const onExportGraph = () => {
 };
 
 const onModeChange = (mode) => {
-    console.log('Mode changed to:', mode);
     canvasController.setMode(mode);
     redraw();
 };
 
 const onZoomIn = () => {
-    console.log('Zoom in clicked!');
     canvasController.zoomIn(windowWidth / 2, windowHeight / 2);
     redraw();
 };
 
 const onZoomOut = () => {
-    console.log('Zoom out clicked!');
     canvasController.zoomOut(windowWidth / 2, windowHeight / 2);
     redraw();
 };
 
 const onUndo = () => {
-    console.log('Undo clicked!');
     canvasController.undo();
     redraw();
 };
 
 const onRedo = () => {
-    console.log('Redo clicked!');
     canvasController.redo();
     redraw();
 };
 
 const onRenormalize = () => {
-    console.log('Renormalize clicked!');
     const inputData = new RenormalizeProbabilitiesInputData();
     renormalizeProbabilitiesInteractor.execute(inputData);
     redraw();
 };
 
 const onResetZoom = () => {
-    console.log('Reset zoom clicked!');
     canvasViewModel.viewport.reset();
     redraw();
+};
+
+// Animation speed presets
+const SPEED_PRESETS = {
+    fast: {
+        PRE_SETUP_PAUSE: 200,
+        POST_ERASE_PAUSE: 100,
+        CAMERA_CENTER: 300,
+        DECISION_PAUSE: 150,
+        EDGE_HIGHLIGHT: 250,
+        TRANSITION_PAUSE: 100,
+        CAMERA_TRANSITION: 250
+    },
+    medium: {
+        PRE_SETUP_PAUSE: 500,
+        POST_ERASE_PAUSE: 300,
+        CAMERA_CENTER: 600,
+        DECISION_PAUSE: 400,
+        EDGE_HIGHLIGHT: 600,
+        TRANSITION_PAUSE: 300,
+        CAMERA_TRANSITION: 600
+    },
+    slow: {
+        PRE_SETUP_PAUSE: 800,
+        POST_ERASE_PAUSE: 500,
+        CAMERA_CENTER: 1000,
+        DECISION_PAUSE: 700,
+        EDGE_HIGHLIGHT: 1000,
+        TRANSITION_PAUSE: 500,
+        CAMERA_TRANSITION: 1000
+    }
+};
+
+let currentSpeed = 'medium';
+
+const onSetAnimationSpeed = (speed) => {
+    const timing = SPEED_PRESETS[speed];
+    if (!timing) return;
+    currentSpeed = speed;
+    if (playInteractor) playInteractor.setTiming(timing);
+    if (stepInteractor) stepInteractor.setTiming(timing);
+    if (menuBar) menuBar.updateSettingsChecks(currentSpeed, simulationState.spinningArrowEnabled);
+};
+
+const onToggleSpinningArrow = () => {
+    const newEnabled = !simulationState.spinningArrowEnabled;
+    canvasController.toggleSpinningArrow(newEnabled);
+    if (menuBar) menuBar.updateSettingsChecks(currentSpeed, newEnabled);
 };
 
 /**
@@ -207,26 +252,97 @@ const onResetZoom = () => {
  * Returns true if simulation should proceed, false otherwise.
  */
 function checkAndRenormalizeIfNeeded() {
-    if (simulationState.replayInitialized) return true; // already running
-    const unnormalized = graph.getUnnormalizedActionNodes();
-    if (unnormalized.length === 0) return true; // all good
-    const names = unnormalized.map(n => n.name).join(', ');
+    if (simulationState.replayInitialized) return true;
+    const names = canvasController.getUnnormalizedActionNames();
+    if (names.length === 0) return true;
     const proceed = confirm(
-        `Action node(s) [${names}] have probabilities that don't sum to 1.\n\n` +
+        `Action node(s) [${names.join(', ')}] have probabilities that don't sum to 1.\n\n` +
         `Continuing will renormalize these probabilities. Proceed?`
     );
     if (proceed) {
-        renormalizeProbabilitiesInteractor.execute(new RenormalizeProbabilitiesInputData());
+        canvasController.renormalizeProbabilities();
     }
     return proceed;
 }
 
-const onPlay = () => {
-    console.log('Play clicked!');
-    if (!playInteractor) {
-        console.error('PlayInteractor not initialized');
-        return;
+// Value Iteration callbacks
+const getVICanvasDimensions = () => ({
+    width: windowWidth - 300,
+    height: windowHeight - 90
+});
+
+const onVIPlay = () => {
+    if (!runVIInteractor || !viPlayInteractor) return;
+
+    const T = toolBar ? toolBar.getVIT() : 5;
+    const gamma = rightPanel ? rightPanel.discountFactor : 0.9;
+
+    if (!valueIterationState.initialized) {
+        const dims = getVICanvasDimensions();
+        runVIInteractor.execute(new RunVIInputData(T, gamma, dims.width, dims.height));
     }
+
+    viPlayInteractor.execute(new VIPlayInputData());
+
+    if (toolBar) {
+        toolBar.updateVIButtonStates(valueIterationState.isPlaying, valueIterationState.canAdvance());
+    }
+};
+
+const onVIPause = () => {
+    if (!viPauseInteractor) return;
+    viPauseInteractor.execute(new VIPauseInputData());
+    if (toolBar) {
+        toolBar.updateVIButtonStates(valueIterationState.isPlaying, valueIterationState.canAdvance());
+    }
+};
+
+const onVIStep = () => {
+    if (!viStepInteractor) return;
+
+    const T = toolBar ? toolBar.getVIT() : 5;
+    const gamma = rightPanel ? rightPanel.discountFactor : 0.9;
+
+    if (!valueIterationState.initialized) {
+        const dims = getVICanvasDimensions();
+        runVIInteractor.execute(new RunVIInputData(T, gamma, dims.width, dims.height));
+    }
+
+    viStepInteractor.execute(new VIStepInputData());
+
+    if (toolBar) {
+        toolBar.updateVIButtonStates(valueIterationState.isPlaying, valueIterationState.canAdvance());
+    }
+};
+
+const onVISkip = () => {
+    if (!viSkipInteractor) return;
+
+    const T = toolBar ? toolBar.getVIT() : 5;
+    const gamma = rightPanel ? rightPanel.discountFactor : 0.9;
+
+    if (!valueIterationState.initialized) {
+        const dims = getVICanvasDimensions();
+        runVIInteractor.execute(new RunVIInputData(T, gamma, dims.width, dims.height));
+    }
+
+    viSkipInteractor.execute(new VISkipInputData());
+
+    if (toolBar) {
+        toolBar.updateVIButtonStates(valueIterationState.isPlaying, valueIterationState.canAdvance());
+    }
+};
+
+const onVIReset = () => {
+    if (!viResetInteractor) return;
+    viResetInteractor.execute(new VIResetInputData());
+    if (toolBar) {
+        toolBar.updateVIButtonStates(false, true);
+    }
+};
+
+const onPlay = () => {
+    if (!playInteractor) return;
 
     // Check if start node is selected
     if (!canvasViewModel.interaction.startNode && !simulationState.replayInitialized) {
@@ -247,11 +363,7 @@ const onPlay = () => {
 };
 
 const onPause = () => {
-    console.log('Pause clicked!');
-    if (!pauseInteractor) {
-        console.error('PauseInteractor not initialized');
-        return;
-    }
+    if (!pauseInteractor) return;
 
     const inputData = new PauseInputData();
     pauseInteractor.execute(inputData);
@@ -263,11 +375,7 @@ const onPause = () => {
 };
 
 const onStep = () => {
-    console.log('Step clicked!');
-    if (!stepInteractor) {
-        console.error('StepInteractor not initialized');
-        return;
-    }
+    if (!stepInteractor) return;
 
     // Check if start node is selected for first step
     if (!canvasViewModel.interaction.startNode && !simulationState.replayInitialized) {
@@ -291,11 +399,7 @@ const onStep = () => {
 };
 
 const onSkip = () => {
-    console.log('Skip clicked!');
-    if (!skipInteractor) {
-        console.error('SkipInteractor not initialized');
-        return;
-    }
+    if (!skipInteractor) return;
 
     // Check if simulation has been initialized
     if (!simulationState.replayInitialized) {
@@ -316,17 +420,10 @@ const onSkip = () => {
 };
 
 const onReset = () => {
-    console.log('Reset clicked!');
-    if (!resetInteractor) {
-        console.error('ResetInteractor not initialized');
-        return;
-    }
+    if (!resetInteractor) return;
 
     // Check if simulation has been initialized
-    if (!simulationState.replayInitialized) {
-        console.log('No simulation to reset');
-        return;
-    }
+    if (!simulationState.replayInitialized) return;
 
     const inputData = new ResetInputData();
     resetInteractor.execute(inputData);
@@ -339,8 +436,6 @@ const onReset = () => {
 
 // p5.js lifecycle hooks
 function setup() {
-    console.log('Setup called!');
-
     // Create menu bar (Row 1)
     menuBar = new MenuBar({
         onImport: onImportGraph,
@@ -349,10 +444,11 @@ function setup() {
         onRedo: onRedo,
         onZoomIn: onZoomIn,
         onZoomOut: onZoomOut,
-        onResetZoom: onResetZoom
+        onResetZoom: onResetZoom,
+        onSetAnimationSpeed: onSetAnimationSpeed,
+        onToggleSpinningArrow: onToggleSpinningArrow
     });
     menuBar.setup();
-    console.log('MenuBar created:', menuBar);
 
     // Create toolbar (Row 2)
     toolBar = new ToolBar({
@@ -362,23 +458,30 @@ function setup() {
         onRenormalize: onRenormalize,
         onPlay: onPlay,
         onPause: onPause,
-        onStep: onStep, // Step through animation one transition at a time
+        onStep: onStep,
         onRerun: onReset,
-        onModeChange: onModeChange
+        onModeChange: onModeChange,
+        onVIPlay: onVIPlay,
+        onVIPause: onVIPause,
+        onVIStep: onVIStep,
+        onVISkip: onVISkip,
+        onVIReset: onVIReset,
+        onVIPerActionToggle: (enabled) => {
+            if (valueIterationViewModel) {
+                valueIterationViewModel.perActionMode = enabled;
+            }
+        }
     }, canvasViewModel);
     toolBar.setup(menuBar.getHeight());
-    console.log('ToolBar created:', toolBar);
 
     // Create right panel
     rightPanel = new RightPanel(canvasViewModel, canvasController);
     rightPanel.setup(menuBar.getHeight() + toolBar.getHeight());
-    console.log('RightPanel created:', rightPanel);
 
     // Set right panel reference in setModePresenter so it can update when mode changes
     setModePresenter.setRightPanel(rightPanel);
 
-    mainView = new MainView(canvasViewModel, canvasController, null, menuBar, toolBar, rightPanel);
-    console.log('MainView created:', mainView);
+    mainView = new MainView(canvasViewModel, canvasController, menuBar, toolBar, rightPanel);
 
     // Create simulation presenter and interactors (need both ViewModel and MainView)
     simulationPresenter = new SimulationPresenter(canvasViewModel, mainView);
@@ -392,9 +495,23 @@ function setup() {
     skipInteractor = new SkipInteractor(simulationState, simulationPresenter);
     resetInteractor = new ResetInteractor(simulationState, simulationPresenter);
 
+    // Create Value Iteration presenter and interactors
+    viPresenter = new VIPresenter(canvasViewModel);
+    viPresenter.setToolBar(toolBar);
+
+    runVIInteractor = new RunVIInteractor(graph, valueIterationState, viPresenter);
+    viPlayInteractor = new VIPlayInteractor(valueIterationState, viPresenter, valueIterationViewModel);
+    viPauseInteractor = new VIPauseInteractor(valueIterationState, viPresenter);
+    viStepInteractor = new VIStepInteractor(valueIterationState, viPresenter, valueIterationViewModel);
+    viResetInteractor = new VIResetInteractor(valueIterationState, viPresenter);
+    viSkipInteractor = new VISkipInteractor(valueIterationState, viPresenter, valueIterationViewModel);
+
+    // Create Value Iteration view
+    const valueIterationView = new ValueIterationView(canvasViewModel);
+    mainView.valueIterationView = valueIterationView;
+
     // Initialize
     mainView.setup();
-    console.log('Setup complete!');
 }
 
 function draw() {

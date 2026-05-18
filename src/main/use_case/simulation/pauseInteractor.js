@@ -16,10 +16,7 @@ class PauseInteractor extends PauseInputBoundary {
         // Pause the simulation
         if (this.simulationState.isPlaying) {
             this.simulationState.pause();
-            console.log('Simulation paused');
             this.outputBoundary.presentPaused();
-        } else {
-            console.log('Simulation already paused');
         }
     }
 }

@@ -8,7 +8,6 @@ class SetSpinningArrowPresenter extends SetSpinningArrowOutputBoundary {
     presentSuccess(enabled, duration) {
         // Update ViewModel (if needed for display purposes)
         // Note: The actual state is in SimulationState, not ViewModel
-        console.log(`Spinning arrow animation ${enabled ? 'enabled' : 'disabled'} with duration ${duration}ms`);
 
         // Optionally set an info message
         if (this.viewModel.infoMessage !== undefined) {

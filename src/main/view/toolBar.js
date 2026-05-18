@@ -19,9 +19,18 @@ class ToolBar {
         this.stepBtn = null;
         this.rerunBtn = null;
 
+        // Value Iteration mode buttons
+        this.viPlayPauseBtn = null;
+        this.viStepBtn = null;
+        this.viSkipBtn = null;
+        this.viResetBtn = null;
+        this.viTInput = null;
+        this.viTLabel = null;
+
         // Mode toggle
         this.editToggleBtn = null;
         this.simulateToggleBtn = null;
+        this.viToggleBtn = null;
 
         this.currentMode = 'editor';
     }
@@ -49,6 +58,9 @@ class ToolBar {
         // Create Simulate mode buttons
         this.createSimulateModeButtons();
 
+        // Create Value Iteration mode buttons
+        this.createValueIterModeButtons();
+
         // Create mode toggle
         this.createModeToggle();
 
@@ -64,11 +76,67 @@ class ToolBar {
     }
 
     createSimulateModeButtons() {
-        this.playPauseBtn = this.createButton('▶ Play', () => this.handlePlayPauseClick(), 'toolbar-btn--play');
+        this.playPauseBtn = this.createButton('Play', () => this.handlePlayPauseClick(), 'toolbar-btn--play');
         this.playPauseBtn.elt.dataset.mode = 'play';
 
-        this.stepBtn = this.createButton('⏭ Step', () => this.callbacks.onStep(), 'toolbar-btn--step');
-        this.rerunBtn = this.createButton('⟲ Rerun', () => this.callbacks.onRerun(), 'toolbar-btn--rerun');
+        this.stepBtn = this.createButton('Step', () => this.callbacks.onStep(), 'toolbar-btn--step');
+        this.rerunBtn = this.createButton('Rerun', () => this.callbacks.onRerun(), 'toolbar-btn--rerun');
+    }
+
+    createValueIterModeButtons() {
+        this.viPlayPauseBtn = this.createButton('Play', () => this.handleVIPlayPauseClick(), 'toolbar-btn--play');
+        this.viPlayPauseBtn.elt.dataset.mode = 'play';
+
+        this.viStepBtn = this.createButton('Step', () => {
+            if (this.callbacks.onVIStep) this.callbacks.onVIStep();
+        }, 'toolbar-btn--step');
+
+        this.viSkipBtn = this.createButton('Skip', () => {
+            if (this.callbacks.onVISkip) this.callbacks.onVISkip();
+        }, 'toolbar-btn--action');
+
+        this.viResetBtn = this.createButton('Reset', () => {
+            if (this.callbacks.onVIReset) this.callbacks.onVIReset();
+        }, 'toolbar-btn--rerun');
+
+        // T input
+        this.viTLabel = createSpan('T =');
+        this.viTLabel.parent(this.leftButtonsContainer);
+        this.viTLabel.addClass('toolbar-t-label');
+
+        this.viTInput = createInput('5', 'number');
+        this.viTInput.parent(this.leftButtonsContainer);
+        this.viTInput.addClass('toolbar-t-input');
+        this.viTInput.attribute('min', '0');
+        this.viTInput.attribute('max', '100');
+        this.viTInput.size(50);
+
+        // Per-action toggle
+        this.viPerActionLabel = createSpan('Per-action');
+        this.viPerActionLabel.parent(this.leftButtonsContainer);
+        this.viPerActionLabel.addClass('toolbar-t-label');
+
+        this.viPerActionToggle = createCheckbox('', false);
+        this.viPerActionToggle.parent(this.leftButtonsContainer);
+        this.viPerActionToggle.addClass('toolbar-checkbox');
+        this.viPerActionToggle.changed(() => {
+            if (this.callbacks.onVIPerActionToggle) {
+                this.callbacks.onVIPerActionToggle(this.viPerActionToggle.checked());
+            }
+        });
+    }
+
+    handleVIPlayPauseClick() {
+        const mode = this.viPlayPauseBtn.elt.dataset.mode;
+        if (mode === 'play') {
+            if (this.callbacks.onVIPlay) this.callbacks.onVIPlay();
+        } else {
+            if (this.callbacks.onVIPause) this.callbacks.onVIPause();
+        }
+    }
+
+    getVIT() {
+        return parseInt(this.viTInput.value()) || 5;
     }
 
     handlePlayPauseClick() {
@@ -108,8 +176,15 @@ class ToolBar {
         this.simulateToggleBtn = createButton('Simulate');
         this.simulateToggleBtn.parent(this.rightToggleContainer);
         this.simulateToggleBtn.addClass('toolbar-toggle');
-        this.simulateToggleBtn.addClass('toolbar-toggle--last');
+        this.simulateToggleBtn.addClass('toolbar-toggle--middle');
         this.simulateToggleBtn.mousePressed(() => this.switchMode('simulate'));
+
+        // Value Iteration toggle button
+        this.viToggleBtn = createButton('Value Iter');
+        this.viToggleBtn.parent(this.rightToggleContainer);
+        this.viToggleBtn.addClass('toolbar-toggle');
+        this.viToggleBtn.addClass('toolbar-toggle--last');
+        this.viToggleBtn.mousePressed(() => this.switchMode('value_iteration'));
     }
 
     switchMode(newMode) {
@@ -124,35 +199,53 @@ class ToolBar {
     setMode(mode) {
         this.currentMode = mode;
 
+        // Hide all button sets first
+        this.addStateBtn.hide();
+        this.addActionBtn.hide();
+        this.addTextBtn.hide();
+        this.renormalizeBtn.hide();
+        this.playPauseBtn.hide();
+        this.stepBtn.hide();
+        this.rerunBtn.hide();
+        this.viPlayPauseBtn.hide();
+        this.viStepBtn.hide();
+        this.viSkipBtn.hide();
+        this.viResetBtn.hide();
+        this.viTLabel.hide();
+        this.viTInput.hide();
+        this.viPerActionLabel.hide();
+        this.viPerActionToggle.hide();
+
+        // Clear all toggle active states
+        this.editToggleBtn.removeClass('toolbar-toggle--active');
+        this.simulateToggleBtn.removeClass('toolbar-toggle--active');
+        this.viToggleBtn.removeClass('toolbar-toggle--active');
+
         if (mode === 'editor') {
             this.addStateBtn.show();
             this.addActionBtn.show();
             this.addTextBtn.show();
             this.renormalizeBtn.show();
-
-            this.playPauseBtn.hide();
-            this.stepBtn.hide();
-            this.rerunBtn.hide();
-
-            // Update toggle styles
             this.editToggleBtn.addClass('toolbar-toggle--active');
-            this.simulateToggleBtn.removeClass('toolbar-toggle--active');
-        } else {
-            this.addStateBtn.hide();
-            this.addActionBtn.hide();
-            this.addTextBtn.hide();
-            this.renormalizeBtn.hide();
-
+        } else if (mode === 'simulate') {
             this.playPauseBtn.show();
             this.stepBtn.show();
             this.rerunBtn.show();
-
             this.setPlayPauseMode('play');
             this.setPlayPauseEnabled(true);
             this.setStepEnabled(true);
-
             this.simulateToggleBtn.addClass('toolbar-toggle--active');
-            this.editToggleBtn.removeClass('toolbar-toggle--active');
+        } else if (mode === 'value_iteration') {
+            this.viPlayPauseBtn.show();
+            this.viStepBtn.show();
+            this.viSkipBtn.show();
+            this.viResetBtn.show();
+            this.viTLabel.show();
+            this.viTInput.show();
+            this.viPerActionLabel.show();
+            this.viPerActionToggle.show();
+            this.setVIPlayPauseMode('play');
+            this.viToggleBtn.addClass('toolbar-toggle--active');
         }
     }
 
@@ -182,11 +275,11 @@ class ToolBar {
         this.playPauseBtn.elt.dataset.mode = mode;
 
         if (mode === 'play') {
-            this.playPauseBtn.html('▶ Play');
+            this.playPauseBtn.html('Play');
             this.playPauseBtn.removeClass('toolbar-btn--pause');
             this.playPauseBtn.addClass('toolbar-btn--play');
         } else {
-            this.playPauseBtn.html('⏸ Pause');
+            this.playPauseBtn.html('Pause');
             this.playPauseBtn.removeClass('toolbar-btn--play');
             this.playPauseBtn.addClass('toolbar-btn--pause');
         }
@@ -222,5 +315,55 @@ class ToolBar {
         }
 
         this.setStepEnabled(!isPlaying && canAdvance);
+    }
+
+    // Value Iteration button methods
+
+    setVIPlayPauseMode(mode) {
+        if (!this.viPlayPauseBtn) return;
+
+        this.viPlayPauseBtn.elt.dataset.mode = mode;
+
+        if (mode === 'play') {
+            this.viPlayPauseBtn.html('Play');
+            this.viPlayPauseBtn.removeClass('toolbar-btn--pause');
+            this.viPlayPauseBtn.addClass('toolbar-btn--play');
+        } else {
+            this.viPlayPauseBtn.html('Pause');
+            this.viPlayPauseBtn.removeClass('toolbar-btn--play');
+            this.viPlayPauseBtn.addClass('toolbar-btn--pause');
+        }
+    }
+
+    updateVIButtonStates(isPlaying, canAdvance) {
+        if (isPlaying) {
+            this.setVIPlayPauseMode('pause');
+        } else {
+            this.setVIPlayPauseMode('play');
+        }
+
+        if (this.viPlayPauseBtn) {
+            if (canAdvance) {
+                this.viPlayPauseBtn.removeAttribute('disabled');
+            } else {
+                this.viPlayPauseBtn.attribute('disabled', '');
+            }
+        }
+
+        if (this.viStepBtn) {
+            if (!isPlaying && canAdvance) {
+                this.viStepBtn.removeAttribute('disabled');
+            } else {
+                this.viStepBtn.attribute('disabled', '');
+            }
+        }
+
+        if (this.viSkipBtn) {
+            if (!isPlaying && canAdvance) {
+                this.viSkipBtn.removeAttribute('disabled');
+            } else {
+                this.viSkipBtn.attribute('disabled', '');
+            }
+        }
     }
 }

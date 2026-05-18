@@ -1,5 +1,5 @@
 class MainView {
-    constructor(canvasViewModel, canvasController, _unused, menuBar, toolBar, rightPanel) {
+    constructor(canvasViewModel, canvasController, menuBar, toolBar, rightPanel) {
         this.viewModel = canvasViewModel;
         this.controller = canvasController;
         this.menuBar = menuBar;
@@ -20,6 +20,12 @@ class MainView {
         // Touch handling for pinch zoom
         this.touches = [];
         this.lastPinchDistance = 0;
+
+        // Reward particle system
+        this.rewardParticleSystem = new RewardParticleSystem();
+
+        // Value Iteration view (set after construction)
+        this.valueIterationView = null;
     }
 
     setup() {
@@ -37,12 +43,18 @@ class MainView {
     }
 
     draw() {
-        console.log('Draw called');
-        console.log('Nodes:', this.viewModel.graph.nodes.length);
-        console.log('PlacingMode:', this.viewModel.interaction.placingMode);
-        console.log('HeldNode:', this.viewModel.interaction.heldNode);
-
         background(240);
+
+        // Value Iteration mode: delegate to VI view
+        if (this.viewModel.interaction.mode === 'value_iteration' && this.valueIterationView) {
+            push();
+            translate(this.viewModel.viewport.panX, this.viewModel.viewport.panY);
+            scale(this.viewModel.viewport.zoom);
+            this.valueIterationView.draw();
+            pop();
+            this.drawZoomIndicator();
+            return;
+        }
 
         // Apply zoom and pan transformations
         push();
@@ -56,11 +68,37 @@ class MainView {
         // Draw spinning arrow if in spinning arrow phase
         if (this.viewModel.simulationState &&
             this.viewModel.simulationState.phase === 'spinning_arrow') {
-            console.log('[draw] Calling drawSpinningArrow()');
             this.drawSpinningArrow();
         }
 
         pop();
+
+        // Update hover animation
+        const interaction = this.viewModel.interaction;
+        if (interaction.hoverAnimating) {
+            const elapsed = Date.now() - interaction.hoverStartTime;
+            const duration = 300; // 300ms
+            const t = Math.min(elapsed / duration, 1.0);
+            const eased = t * (2 - t); // ease-out quadratic
+
+            if (interaction.hoverDirection === 1) {
+                interaction.hoverProgress = eased;
+            } else {
+                interaction.hoverProgress = 1.0 - eased;
+            }
+
+            if (t >= 1.0) {
+                interaction.hoverAnimating = false;
+                if (interaction.hoverDirection === -1) {
+                    interaction.hoveredEdge = null;
+                    interaction.hoverProgress = 0;
+                }
+            }
+
+            if (interaction.hoverAnimating) {
+                setTimeout(() => redraw(), 16); // ~60fps continuous redraw
+            }
+        }
 
         // Draw zoom level indicator
         this.drawZoomIndicator();
@@ -139,6 +177,33 @@ class MainView {
         if (this.rightPanel) {
             this.rightPanel.updateContent();
         }
+    }
+
+    launchRewardParticles(reward, actionNodeId) {
+        if (reward === 0) {
+            this.viewModel.simulationState.commitReward();
+            if (this.rightPanel) this.rightPanel.updateContent();
+            return;
+        }
+        const node = this.viewModel.graph.getNodeById(actionNodeId);
+        if (!node) {
+            this.viewModel.simulationState.commitReward();
+            if (this.rightPanel) this.rightPanel.updateContent();
+            return;
+        }
+        const screenPos = this.viewModel.viewport.worldToScreen(node.x, node.y);
+        const pageX = screenPos.x;
+        const pageY = screenPos.y + this.TOP_BARS_HEIGHT;
+        const targetEl = document.querySelector('.reward-bar-container');
+        if (!targetEl) {
+            this.viewModel.simulationState.commitReward();
+            if (this.rightPanel) this.rightPanel.updateContent();
+            return;
+        }
+        this.rewardParticleSystem.launch(reward, pageX, pageY, targetEl, () => {
+            this.viewModel.simulationState.commitReward();
+            if (this.rightPanel) this.rightPanel.updateContent();
+        });
     }
 
     drawZoomIndicator() {
@@ -282,6 +347,10 @@ class MainView {
         const normalizedDx = dx / distance;
         const normalizedDy = dy / distance;
 
+        // Perpendicular vector
+        const perpX = -normalizedDy;
+        const perpY = normalizedDx;
+
         const arrowSize = 8 + weight * 1.5;
 
         // Calculate the point on the circumference of the 'to' node
@@ -300,7 +369,18 @@ class MainView {
         const baseColor = renderInfo.colorOverride || edgeColor;
         const alphaEdgeColor = this.applyAlphaToColor(baseColor, renderInfo.alpha);
 
-        // Draw the edge line (stops before the arrowhead)
+        // Check if this edge is hovered (action→state only, not during spinning arrow)
+        const spinningArrow = this.viewModel.simulationState &&
+            this.viewModel.simulationState.phase === 'spinning_arrow';
+        const hoverInteraction = this.viewModel.interaction;
+        const isHovered = !spinningArrow && (hoverInteraction.hoveredEdge === edge);
+        const progress = isHovered ? hoverInteraction.hoverProgress : 0;
+
+        // Calculate midpoint
+        const midX = (from.x + to.x) / 2;
+        const midY = (from.y + to.y) / 2;
+
+        // Draw the edge line
         strokeWeight(weight);
         stroke(alphaEdgeColor);
 
@@ -319,19 +399,23 @@ class MainView {
 
         // Only show probability and reward labels for Action → State edges
         if (from.type === 'action' && to.type === 'state') {
-            const midX = (from.x + to.x) / 2 + edge.labelOffset.x;
-            const midY = (from.y + to.y) / 2 + edge.labelOffset.y;
+            if (progress > 0) {
+                const labelColor = renderInfo.colorOverride || edge.getLabelColor();
+                const probAlpha = Math.floor(progress * 255);
 
-            const prob = edge.getProbability().toFixed(2);
-            const reward = edge.getReward().toFixed(1);
-            const labelText = `(${prob}, ${reward})`;
+                // Probability text offset to opposite side from squiggly
+                noStroke();
+                fill(this.applyAlphaToColor(labelColor, Math.min(renderInfo.alpha, probAlpha)));
+                textSize(edge.labelSize);
+                textAlign(CENTER, CENTER);
+                const probOffsetDist = 22;
+                const probX = midX - perpX * probOffsetDist + edge.labelOffset.x;
+                const probY = midY - perpY * probOffsetDist + edge.labelOffset.y;
+                text(`P: ${edge.getProbability().toFixed(2)}`, probX, probY);
 
-            noStroke();
-            const labelColor = renderInfo.colorOverride || edge.getLabelColor();
-            fill(this.applyAlphaToColor(labelColor, renderInfo.alpha));
-            textSize(edge.labelSize);
-            textAlign(CENTER, CENTER);
-            text(labelText, midX, midY);
+                // Squiggly reward line
+                this.drawSquigglyRewardLine(midX, midY, perpX, perpY, normalizedDx, normalizedDy, progress, edge.getReward(), labelColor, weight);
+            }
         }
     }
 
@@ -427,6 +511,27 @@ class MainView {
         const baseColor = renderInfo.colorOverride || edgeColor;
         const alphaEdgeColor = this.applyAlphaToColor(baseColor, renderInfo.alpha);
 
+        // Check if this edge is hovered (action→state only, not during spinning arrow)
+        const spinningArrow = this.viewModel.simulationState &&
+            this.viewModel.simulationState.phase === 'spinning_arrow';
+        const hoverInteraction = this.viewModel.interaction;
+        const isHovered = !spinningArrow && (hoverInteraction.hoveredEdge === edge);
+        const progress = isHovered ? hoverInteraction.hoverProgress : 0;
+
+        // Calculate midpoint on curve (t=0.5)
+        const tMid = 0.5;
+        const curveMidX = (1 - tMid) * (1 - tMid) * from.x + 2 * (1 - tMid) * tMid * controlX + tMid * tMid * to.x;
+        const curveMidY = (1 - tMid) * (1 - tMid) * from.y + 2 * (1 - tMid) * tMid * controlY + tMid * tMid * to.y;
+
+        // Calculate tangent at midpoint for flap/squiggly direction
+        const midTangentDx = 2 * (1 - tMid) * (controlX - from.x) + 2 * tMid * (to.x - controlX);
+        const midTangentDy = 2 * (1 - tMid) * (controlY - from.y) + 2 * tMid * (to.y - controlY);
+        const midTangentDist = Math.sqrt(midTangentDx * midTangentDx + midTangentDy * midTangentDy);
+        const midDirX = midTangentDx / midTangentDist;
+        const midDirY = midTangentDy / midTangentDist;
+        const midPerpX = -midDirY;
+        const midPerpY = midDirX;
+
         // Draw the curved line from tStart (edge of from node) to tLineEnd (arrowhead base)
         strokeWeight(weight);
         stroke(alphaEdgeColor);
@@ -438,12 +543,10 @@ class MainView {
 
         // Sample points along the curve from tStart to tLineEnd
         beginShape();
-        // Always add the start point first
         const startX = (1 - tStart) * (1 - tStart) * from.x + 2 * (1 - tStart) * tStart * controlX + tStart * tStart * to.x;
         const startY = (1 - tStart) * (1 - tStart) * from.y + 2 * (1 - tStart) * tStart * controlY + tStart * tStart * to.y;
         vertex(startX, startY);
 
-        // Sample intermediate points
         const step = 0.02;
         for (let t = tStart + step; t < tLineEnd; t += step) {
             const x = (1 - t) * (1 - t) * from.x + 2 * (1 - t) * t * controlX + t * t * to.x;
@@ -451,7 +554,6 @@ class MainView {
             vertex(x, y);
         }
 
-        // Add the final point
         const finalX = (1 - tLineEnd) * (1 - tLineEnd) * from.x + 2 * (1 - tLineEnd) * tLineEnd * controlX + tLineEnd * tLineEnd * to.x;
         const finalY = (1 - tLineEnd) * (1 - tLineEnd) * from.y + 2 * (1 - tLineEnd) * tLineEnd * controlY + tLineEnd * tLineEnd * to.y;
         vertex(finalX, finalY);
@@ -466,21 +568,23 @@ class MainView {
 
         // Only show probability and reward labels for Action → State edges
         if (from.type === 'action' && to.type === 'state') {
-            // Position label on the curve (at t=0.5)
-            const labelT = 0.5;
-            const labelX = (1 - labelT) * (1 - labelT) * from.x + 2 * (1 - labelT) * labelT * controlX + labelT * labelT * to.x + edge.labelOffset.x;
-            const labelY = (1 - labelT) * (1 - labelT) * from.y + 2 * (1 - labelT) * labelT * controlY + labelT * labelT * to.y + edge.labelOffset.y;
+            if (progress > 0) {
+                const labelColor = renderInfo.colorOverride || edge.getLabelColor();
+                const probAlpha = Math.floor(progress * 255);
 
-            const prob = edge.getProbability().toFixed(2);
-            const reward = edge.getReward().toFixed(1);
-            const labelText = `(${prob}, ${reward})`;
+                // Probability text offset to opposite side from squiggly
+                noStroke();
+                fill(this.applyAlphaToColor(labelColor, Math.min(renderInfo.alpha, probAlpha)));
+                textSize(edge.labelSize);
+                textAlign(CENTER, CENTER);
+                const probOffsetDist = 22;
+                const probX = curveMidX - midPerpX * probOffsetDist + edge.labelOffset.x;
+                const probY = curveMidY - midPerpY * probOffsetDist + edge.labelOffset.y;
+                text(`P: ${edge.getProbability().toFixed(2)}`, probX, probY);
 
-            noStroke();
-            const labelColor = renderInfo.colorOverride || edge.getLabelColor();
-            fill(this.applyAlphaToColor(labelColor, renderInfo.alpha));
-            textSize(edge.labelSize);
-            textAlign(CENTER, CENTER);
-            text(labelText, labelX, labelY);
+                // Squiggly reward line
+                this.drawSquigglyRewardLine(curveMidX, curveMidY, midPerpX, midPerpY, midDirX, midDirY, progress, edge.getReward(), labelColor, weight);
+            }
         }
     }
 
@@ -505,6 +609,79 @@ class MainView {
         fill(color);
         noStroke();
         triangle(x, y, x1, y1, x2, y2);
+    }
+
+    drawSquigglyRewardLine(midX, midY, perpX, perpY, dirX, dirY, progress, reward, rewardColor, weight) {
+        const maxLength = 80;
+        const length = progress * maxLength;
+        if (length < 1) return;
+
+        const amplitude = 5;
+        const waves = 5;
+        const samples = 60;
+        const arrowSize = 7;
+
+        // Direction: extend along perpendicular (left side of edge direction)
+        const extDirX = perpX;
+        const extDirY = perpY;
+
+        // Stop squiggly before arrowhead
+        const squigglyLength = Math.max(0, length - arrowSize);
+
+        strokeWeight(Math.max(1, weight * 0.6));
+        const alphaColor = this.applyAlphaToColor(rewardColor, Math.floor(progress * 255));
+        stroke(alphaColor);
+        noFill();
+
+        let lastPx, lastPy;
+        beginShape();
+        for (let i = 0; i <= samples; i++) {
+            const t = i / samples;
+            const dist = t * squigglyLength;
+            // Position along perpendicular
+            const baseX = midX + extDirX * dist;
+            const baseY = midY + extDirY * dist;
+            // Sinusoidal offset along edge direction
+            const wave = Math.sin(t * waves * 2 * Math.PI) * amplitude * progress;
+            const px = baseX + dirX * wave;
+            const py = baseY + dirY * wave;
+            // Catmull-Rom splines need duplicate first/last control points
+            if (i === 0) curveVertex(px, py);
+            curveVertex(px, py);
+            if (i === samples) curveVertex(px, py);
+            lastPx = px;
+            lastPy = py;
+        }
+        endShape();
+
+        // Straight connector from last wave point to arrowhead base
+        const tipX = midX + extDirX * length;
+        const tipY = midY + extDirY * length;
+        const arrowBaseX = tipX - extDirX * arrowSize;
+        const arrowBaseY = tipY - extDirY * arrowSize;
+        line(lastPx, lastPy, arrowBaseX, arrowBaseY);
+        const arrowAngle = Math.PI / 6;
+
+        const cos1 = Math.cos(Math.PI - arrowAngle);
+        const sin1 = Math.sin(Math.PI - arrowAngle);
+        const cos2 = Math.cos(Math.PI + arrowAngle);
+        const sin2 = Math.sin(Math.PI + arrowAngle);
+
+        const ax1 = tipX + (extDirX * cos1 - extDirY * sin1) * arrowSize;
+        const ay1 = tipY + (extDirX * sin1 + extDirY * cos1) * arrowSize;
+        const ax2 = tipX + (extDirX * cos2 - extDirY * sin2) * arrowSize;
+        const ay2 = tipY + (extDirX * sin2 + extDirY * cos2) * arrowSize;
+
+        fill(alphaColor);
+        noStroke();
+        triangle(tipX, tipY, ax1, ay1, ax2, ay2);
+
+        // Reward text past arrowhead
+        const textX = tipX + extDirX * 16;
+        const textY = tipY + extDirY * 16;
+        textSize(13);
+        textAlign(CENTER, CENTER);
+        text(`R: ${reward.toFixed(1)}`, textX, textY);
     }
 
     // Apply alpha to a color (supports p5 color objects, rgb(), hex strings)
@@ -554,214 +731,140 @@ class MainView {
     // Returns { dashed: bool, alpha: number, colorOverride: string|null }
     getSpinningArrowRenderInfo(from, to) {
         const defaultInfo = { dashed: false, alpha: 255, colorOverride: null };
+        const fadedInfo = { dashed: false, alpha: 40, colorOverride: null };
 
-        // Only during spinning arrow phase in simulate mode
         if (this.viewModel.interaction.mode !== 'simulate') return defaultInfo;
         if (!this.viewModel.simulationState) return defaultInfo;
-        if (this.viewModel.simulationState.phase !== 'spinning_arrow') return defaultInfo;
 
         const simState = this.viewModel.simulationState;
         const currentNode = simState.currentNode;
-        if (!currentNode || currentNode.type !== 'action') return defaultInfo;
+        if (!currentNode) return defaultInfo;
 
-        // Only affect edges outgoing from the current action node to state nodes
-        if (from.id !== currentNode.id || from.type !== 'action' || to.type !== 'state') return defaultInfo;
+        // === SPINNING ARROW phase: action node selecting next state ===
+        if (simState.phase === 'spinning_arrow' && currentNode.type === 'action') {
+            // Edges FROM the current action node to state nodes → highlighted/faded logic
+            if (from.id === currentNode.id && from.type === 'action' && to.type === 'state') {
+                const highlightedEdgeIndex = simState.getHighlightedEdgeByArrow();
+                const actionNode = this.viewModel.graph.getNodeById(currentNode.id);
+                if (!actionNode || !actionNode.sas) return { dashed: true, alpha: 80, colorOverride: null };
 
-        // Check if this edge is the one the arrow is currently pointing at
-        const highlightedEdgeIndex = simState.getHighlightedEdgeByArrow();
-        const actionNode = this.viewModel.graph.getNodeById(currentNode.id);
-        if (!actionNode || !actionNode.sas) return { dashed: true, alpha: 80, colorOverride: null };
-
-        // Compute blue color matching the ring segment for this edge's transition
-        const segments = simState.spinningArrowEdges;
-        let blueColor = null;
-        if (segments && segments.length > 0) {
-            const probs = segments.map(s => s.probability);
-            const minProb = Math.min(...probs);
-            const maxProb = Math.max(...probs);
-            // Find the segment matching this edge's target
-            const matchingSegment = segments.find(s => s.targetId === to.id);
-            if (matchingSegment) {
-                blueColor = this.getRingSegmentColor(matchingSegment.probability, minProb, maxProb);
+                const highlightedTransition = actionNode.sas[highlightedEdgeIndex];
+                if (highlightedTransition && to.id === highlightedTransition.nextState) {
+                    return { dashed: false, alpha: 255, colorOverride: null };
+                }
+                return { dashed: true, alpha: 80, colorOverride: null };
             }
+
+            // Edge incoming to the current action node → keep visible
+            if (to.id === currentNode.id) return defaultInfo;
+
+            // All other edges → very faded
+            return fadedInfo;
         }
 
-        // Find if this edge's target matches the highlighted transition's target
-        const highlightedTransition = actionNode.sas[highlightedEdgeIndex];
-        if (highlightedTransition && to.id === highlightedTransition.nextState) {
-            return { dashed: false, alpha: 255, colorOverride: blueColor }; // Highlighted: solid, bright
+        // === REVEAL phase: state node selecting action ===
+        if (simState.phase === 'reveal' && currentNode.type === 'state') {
+            const stateNode = this.viewModel.graph.getNodeById(currentNode.id);
+            if (!stateNode || !stateNode.actions) return fadedInfo;
+
+            // Edges FROM the current state to its action nodes → full opacity
+            if (from.id === currentNode.id && from.type === 'state' && to.type === 'action') {
+                if (stateNode.actions.includes(to.id)) return defaultInfo;
+            }
+
+            // All other edges → very faded
+            return fadedInfo;
         }
 
-        return { dashed: true, alpha: 80, colorOverride: blueColor }; // Non-highlighted: dashed, faded
+        return defaultInfo;
     }
 
-    // Get alpha for a node during spinning arrow phase
+    // Get alpha for a node during decision phases (spinning arrow or reveal)
     getNodeSpinningArrowAlpha(node) {
         if (this.viewModel.interaction.mode !== 'simulate') return 255;
         if (!this.viewModel.simulationState) return 255;
-        if (this.viewModel.simulationState.phase !== 'spinning_arrow') return 255;
 
         const simState = this.viewModel.simulationState;
         const currentNode = simState.currentNode;
-        if (!currentNode || currentNode.type !== 'action') return 255;
+        if (!currentNode) return 255;
 
-        const actionNode = this.viewModel.graph.getNodeById(currentNode.id);
-        if (!actionNode || !actionNode.sas) return 255;
+        // === SPINNING ARROW phase: action node selecting next state ===
+        if (simState.phase === 'spinning_arrow' && currentNode.type === 'action') {
+            // The action node itself stays fully visible
+            if (node.id === currentNode.id) return 255;
 
-        // Check if this node is a destination of the current action node
-        const isDestination = actionNode.sas.some(t => t.nextState === node.id);
-        if (!isDestination) return 255;
+            // The parent state node (that led to this action) stays visible
+            if (simState.currentIndex > 0) {
+                const prevEntry = simState.visited[simState.currentIndex - 1];
+                if (prevEntry && node.id === prevEntry.id && node.type === 'state') return 255;
+            }
 
-        // Check if this node is the highlighted destination
-        const highlightedEdgeIndex = simState.getHighlightedEdgeByArrow();
-        const highlightedTransition = actionNode.sas[highlightedEdgeIndex];
-        if (highlightedTransition && node.id === highlightedTransition.nextState) {
-            return 255; // Highlighted destination: full brightness
+            const actionNode = this.viewModel.graph.getNodeById(currentNode.id);
+            if (!actionNode || !actionNode.sas) return 40;
+
+            // Check if this node is a destination of the current action node
+            const isDestination = actionNode.sas.some(t => t.nextState === node.id);
+            if (!isDestination) return 40;
+
+            // Check if this node is the highlighted destination
+            const highlightedEdgeIndex = simState.getHighlightedEdgeByArrow();
+            const highlightedTransition = actionNode.sas[highlightedEdgeIndex];
+            if (highlightedTransition && node.id === highlightedTransition.nextState) {
+                return 255;
+            }
+            return 80;
         }
 
-        return 80; // Non-highlighted destination: faded
-    }
+        // === REVEAL phase: state node selecting action ===
+        if (simState.phase === 'reveal' && currentNode.type === 'state') {
+            // The state node itself stays fully visible
+            if (node.id === currentNode.id) return 255;
 
-    // Convert HSB (h: 0-360, s: 0-100, b: 0-100) to rgb() string
-    hsbToRgb(h, s, b) {
-        s /= 100;
-        b /= 100;
-        const c = b * s;
-        const x = c * (1 - Math.abs((h / 60) % 2 - 1));
-        const m = b - c;
-        let r, g, bl;
-        if (h < 60) { r = c; g = x; bl = 0; }
-        else if (h < 120) { r = x; g = c; bl = 0; }
-        else if (h < 180) { r = 0; g = c; bl = x; }
-        else if (h < 240) { r = 0; g = x; bl = c; }
-        else if (h < 300) { r = x; g = 0; bl = c; }
-        else { r = c; g = 0; bl = x; }
-        return `rgb(${Math.round((r + m) * 255)}, ${Math.round((g + m) * 255)}, ${Math.round((bl + m) * 255)})`;
-    }
+            const stateNode = this.viewModel.graph.getNodeById(currentNode.id);
+            if (!stateNode || !stateNode.actions) return 40;
 
-    // Get the blue color for a ring segment based on probability
-    getRingSegmentColor(probability, minProb, maxProb) {
-        // Brightness: highest probability → 35 (dark), lowest → 85 (light)
-        let brightness;
-        if (maxProb === minProb) {
-            brightness = 60; // Equal probabilities → uniform medium blue
-        } else {
-            const t = (probability - minProb) / (maxProb - minProb);
-            brightness = 85 - t * 50; // 85 (low prob) to 35 (high prob)
+            // Action nodes connected to the current state → full opacity
+            if (stateNode.actions.includes(node.id)) return 255;
+
+            // Everything else → very faded
+            return 40;
         }
-        return this.hsbToRgb(220, 80, brightness);
-    }
 
-    // Draw probability ring around action node during spinning arrow phase
-    drawProbabilityRing(actionNode, simState) {
-        const segments = simState.spinningArrowEdges;
-        if (!segments || segments.length === 0) return;
-
-        const highlightedEdgeIndex = simState.getHighlightedEdgeByArrow();
-        const innerRadius = actionNode.size;
-        const baseOuterRadius = actionNode.size + 10;
-        const highlightOuterRadius = actionNode.size + 13;
-        const angleOffset = -Math.PI / 2; // Align with arrow (points UP at angle 0)
-        const gap = 0.02; // 0.02 rad gap on each side
-
-        // Find min/max probability for color mapping
-        const probs = segments.map(s => s.probability);
-        const minProb = Math.min(...probs);
-        const maxProb = Math.max(...probs);
-
-        const ctx = drawingContext;
-
-        segments.forEach((segment, index) => {
-            const isHighlighted = (index === highlightedEdgeIndex);
-            const outerRadius = isHighlighted ? highlightOuterRadius : baseOuterRadius;
-
-            // Inset arc by gap for visual separation
-            let startAngle = segment.startAngle + gap + angleOffset;
-            let endAngle = segment.endAngle - gap + angleOffset;
-            if (endAngle <= startAngle) return; // Skip if gap eats the segment
-
-            // Color based on probability
-            let brightness;
-            if (maxProb === minProb) {
-                brightness = 60;
-            } else {
-                const t = (segment.probability - minProb) / (maxProb - minProb);
-                brightness = 85 - t * 50;
-            }
-            if (isHighlighted) {
-                brightness = Math.min(brightness, 30); // Slightly brighter for highlighted
-            }
-            const fillColor = this.hsbToRgb(220, 80, brightness);
-
-            // Draw annular arc using Canvas 2D API
-            ctx.beginPath();
-            ctx.arc(actionNode.x, actionNode.y, outerRadius, startAngle, endAngle);
-            ctx.arc(actionNode.x, actionNode.y, innerRadius, endAngle, startAngle, true);
-            ctx.closePath();
-
-            ctx.fillStyle = fillColor;
-            ctx.fill();
-
-            if (isHighlighted) {
-                ctx.strokeStyle = 'rgba(255,255,255,1)';
-                ctx.lineWidth = 2;
-            } else {
-                ctx.strokeStyle = 'rgba(0,0,0,0.3)';
-                ctx.lineWidth = 1;
-            }
-            ctx.stroke();
-        });
+        return 255;
     }
 
     // Draw spinning arrow animation at action node during selection phase
     drawSpinningArrow() {
         const simState = this.viewModel.simulationState;
 
-        console.log('[drawSpinningArrow] Called, phase:', simState ? simState.phase : 'no simState');
-
         // Only draw if in spinning arrow phase
-        if (!simState || simState.phase !== 'spinning_arrow') {
-            console.log('[drawSpinningArrow] Exiting - wrong phase');
-            return;
-        }
+        if (!simState || simState.phase !== 'spinning_arrow') return;
 
         const currentNode = simState.currentNode;
-        console.log('[drawSpinningArrow] currentNode:', currentNode);
-        if (!currentNode || currentNode.type !== 'action') {
-            console.log('[drawSpinningArrow] Exiting - no current node or not action');
-            return;
-        }
+        if (!currentNode || currentNode.type !== 'action') return;
 
         // Get the actual action node from the graph
         const actionNode = this.viewModel.graph.getNodeById(currentNode.id);
-        console.log('[drawSpinningArrow] actionNode:', actionNode);
-        if (!actionNode || !actionNode.sas || actionNode.sas.length === 0) {
-            console.log('[drawSpinningArrow] Exiting - no action node or no transitions');
-            return;
-        }
+        if (!actionNode || !actionNode.sas || actionNode.sas.length === 0) return;
 
-        console.log('[drawSpinningArrow] Drawing arrow! Transitions:', actionNode.sas.length);
-
-        // Calculate current arrow angle with deceleration
-        const currentAngle = simState.calculateArrowAngle();
-        console.log('[drawSpinningArrow] Current angle:', currentAngle);
-
-        // Get which edge the arrow is currently pointing at
+        // Get which edge the arrow is currently pointing at (discrete tick)
         const highlightedEdgeIndex = simState.getHighlightedEdgeByArrow();
-
-        // Draw probability ring behind the arrow
-        this.drawProbabilityRing(actionNode, simState);
+        // Compute arrow direction from action node toward the highlighted target state
+        let arrowAngle = 0;
+        const highlightedTransition = actionNode.sas[highlightedEdgeIndex];
+        if (highlightedTransition) {
+            const targetNode = this.viewModel.graph.getNodeById(highlightedTransition.nextState);
+            if (targetNode) {
+                // atan2 gives angle where right=0; triangle points "up" (negative Y), so add PI/2
+                arrowAngle = atan2(targetNode.y - actionNode.y, targetNode.x - actionNode.x) + PI / 2;
+            }
+        }
 
         // Draw the arrow at the center of the action node
         push();
-
-        // Position at action node center
         translate(actionNode.x, actionNode.y);
+        rotate(arrowAngle);
 
-        // Rotate based on calculated angle
-        rotate(currentAngle);
-
-        // Draw arrow pointing upward (will be rotated)
         const arrowLength = 25;
         const arrowWidth = 12;
 
@@ -783,28 +886,22 @@ class MainView {
             const targetNode = this.viewModel.graph.getNodeById(transition.nextState);
             if (!targetNode) return;
 
-            // Calculate midpoint of edge for label
             const midX = (actionNode.x + targetNode.x) / 2;
             const midY = (actionNode.y + targetNode.y) / 2;
 
-            // Highlight currently pointed edge
             const isHighlighted = (index === highlightedEdgeIndex);
-
-            // Display probability as percentage
             const probText = `p=${transition.probability.toFixed(2)}`;
 
             push();
             noStroke();
 
             if (isHighlighted) {
-                // Highlighted: bright yellow background with larger text
                 fill(255, 235, 59, 220);  // Bright yellow
                 rect(midX - 30, midY - 12, 60, 24, 4);
                 fill(0);
                 textSize(14);
                 textStyle(BOLD);
             } else {
-                // Non-highlighted: faded to match dashed/transparent edges
                 fill(255, 255, 255, 60);  // Very faded white background
                 rect(midX - 30, midY - 12, 60, 24, 4);
                 fill(80, 80, 80, 80);  // Faded text
@@ -819,7 +916,7 @@ class MainView {
 
         // Keep redrawing for smooth animation
         if (!simState.isPhaseComplete()) {
-            setTimeout(() => redraw(), 16);  // ~60 FPS
+            requestAnimationFrame(() => redraw());
         }
     }
 
@@ -924,10 +1021,6 @@ class MainView {
             return;
         }
 
-        console.log('mouseDragged - isPanning:', this.viewModel.viewport.isPanning,
-                    'draggingNode:', this.viewModel.interaction.draggingNode,
-                    'resizingNode:', this.viewModel.interaction.resizingNode);
-
         // Handle panning
         if (this.viewModel.viewport.isPanning) {
             const dx = mouseX - this.viewModel.viewport.panStartX;
@@ -981,7 +1074,10 @@ class MainView {
     }
 
     mouseMoved() {
-        if (this.viewModel.interaction.placingMode) {
+        this.controller.handleMouseMove(mouseX, mouseY);
+        if (this.viewModel.interaction.placingMode ||
+            this.viewModel.interaction.hoverAnimating ||
+            this.viewModel.interaction.hoveredEdge) {
             redraw();
         }
     }
@@ -1000,11 +1096,20 @@ class MainView {
             const probStr = prompt('Enter transition probability [0-1]:', '0.5');
             if (probStr === null) return;
 
+            prob = parseFloat(probStr);
+            if (isNaN(prob) || prob < 0 || prob > 1) {
+                alert('Invalid probability. Must be a number between 0 and 1.');
+                return;
+            }
+
             const rewardStr = prompt('Enter reward:', '0');
             if (rewardStr === null) return;
 
-            prob = parseFloat(probStr);
             reward = parseFloat(rewardStr);
+            if (isNaN(reward)) {
+                alert('Invalid reward. Must be a number.');
+                return;
+            }
         }
 
         this.controller.createEdge(fromNode.id, toNode.id, prob, reward);
@@ -1093,7 +1198,7 @@ class MainView {
                 const centerX = (this.touches[0].x + this.touches[1].x) / 2;
                 const centerY = (this.touches[0].y + this.touches[1].y) / 2;
 
-                this.viewModel.setZoom(this.viewModel.zoom * zoomChange, centerX, centerY);
+                this.viewModel.viewport.setZoom(this.viewModel.viewport.zoom * zoomChange, centerX, centerY);
                 redraw();
             }
 

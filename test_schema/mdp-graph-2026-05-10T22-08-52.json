@@ -1,0 +1,382 @@
+{
+  "nodes": [
+    {
+      "id": 0,
+      "type": "state",
+      "name": "S0",
+      "x": 298,
+      "y": 371,
+      "size": 30,
+      "actions": [
+        1,
+        2
+      ]
+    },
+    {
+      "id": 1,
+      "type": "action",
+      "name": "A1",
+      "x": 245.27474349718563,
+      "y": 242.37025759620812,
+      "size": 38.48906269775036,
+      "transitions": [
+        {
+          "stateId": 0,
+          "probability": 0.25,
+          "reward": 0
+        },
+        {
+          "stateId": 3,
+          "probability": 0.25,
+          "reward": 0
+        },
+        {
+          "stateId": 4,
+          "probability": 0.25,
+          "reward": 0
+        },
+        {
+          "stateId": 0,
+          "probability": 0.25,
+          "reward": 0
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "action",
+      "name": "A2",
+      "x": 411,
+      "y": 249,
+      "size": 28.600699292150182,
+      "transitions": [
+        {
+          "stateId": 0,
+          "probability": 0.1111111111111111,
+          "reward": 0
+        },
+        {
+          "stateId": 3,
+          "probability": 0.1111111111111111,
+          "reward": 0
+        },
+        {
+          "stateId": 5,
+          "probability": 0.1111111111111111,
+          "reward": 0
+        },
+        {
+          "stateId": 5,
+          "probability": 0.1111111111111111,
+          "reward": 0
+        },
+        {
+          "stateId": 4,
+          "probability": 0.2222222222222222,
+          "reward": 0
+        },
+        {
+          "stateId": 5,
+          "probability": 0.1111111111111111,
+          "reward": 0
+        },
+        {
+          "stateId": 0,
+          "probability": 0.1111111111111111,
+          "reward": 0
+        },
+        {
+          "stateId": 3,
+          "probability": 0.1111111111111111,
+          "reward": 0
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "state",
+      "name": "S3",
+      "x": 658.7738742714993,
+      "y": 484.61911586179826,
+      "size": 30,
+      "actions": [
+        2
+      ]
+    },
+    {
+      "id": 4,
+      "type": "state",
+      "name": "S4",
+      "x": 388,
+      "y": 488,
+      "size": 30,
+      "actions": [
+        1,
+        2
+      ]
+    },
+    {
+      "id": 5,
+      "type": "state",
+      "name": "S5",
+      "x": 523,
+      "y": 157,
+      "size": 30,
+      "actions": [
+        1,
+        2
+      ]
+    }
+  ],
+  "transitionMatrix": {
+    "states": [
+      0,
+      3,
+      4,
+      5
+    ],
+    "stateNames": [
+      "S0",
+      "S3",
+      "S4",
+      "S5"
+    ],
+    "actions": [
+      1,
+      2
+    ],
+    "actionNames": [
+      "A1",
+      "A2"
+    ],
+    "P": [
+      [
+        [
+          0.25,
+          0.25,
+          0.25,
+          0
+        ],
+        [
+          0.1111111111111111,
+          0.1111111111111111,
+          0.2222222222222222,
+          0.1111111111111111
+        ]
+      ],
+      [
+        [
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0.1111111111111111,
+          0.1111111111111111,
+          0.2222222222222222,
+          0.1111111111111111
+        ]
+      ],
+      [
+        [
+          0.25,
+          0.25,
+          0.25,
+          0
+        ],
+        [
+          0.1111111111111111,
+          0.1111111111111111,
+          0.2222222222222222,
+          0.1111111111111111
+        ]
+      ],
+      [
+        [
+          0.25,
+          0.25,
+          0.25,
+          0
+        ],
+        [
+          0.1111111111111111,
+          0.1111111111111111,
+          0.2222222222222222,
+          0.1111111111111111
+        ]
+      ]
+    ],
+    "R": [
+      [
+        [
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0
+        ]
+      ],
+      [
+        [
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0
+        ]
+      ],
+      [
+        [
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0
+        ]
+      ],
+      [
+        [
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0
+        ]
+      ]
+    ],
+    "description": "P[s][a][s'] = probability of transitioning from state s to state s' via action a. R[s][a][s'] = reward for that transition."
+  },
+  "edges": [
+    {
+      "from": 2,
+      "to": 5,
+      "probability": 0.1111111111111111,
+      "reward": 0,
+      "labelOffset": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "from": 1,
+      "to": 0,
+      "probability": 0.25,
+      "reward": 0,
+      "labelOffset": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "from": 3,
+      "to": 2,
+      "probability": 0.1111111111111111,
+      "reward": 0,
+      "labelOffset": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "from": 2,
+      "to": 4,
+      "probability": 0.2222222222222222,
+      "reward": 0,
+      "labelOffset": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "from": 0,
+      "to": 2,
+      "probability": 0.1111111111111111,
+      "reward": 0,
+      "labelOffset": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "from": 2,
+      "to": 5,
+      "probability": 0.1111111111111111,
+      "reward": 0,
+      "labelOffset": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "from": 5,
+      "to": 2,
+      "probability": 0.1111111111111111,
+      "reward": 0,
+      "labelOffset": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "from": 4,
+      "to": 2,
+      "probability": 0.2222222222222222,
+      "reward": 0,
+      "labelOffset": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "from": 0,
+      "to": 1,
+      "probability": 0.25,
+      "reward": 0,
+      "labelOffset": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "from": 2,
+      "to": 0,
+      "probability": 0.1111111111111111,
+      "reward": 0,
+      "labelOffset": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "from": 2,
+      "to": 3,
+      "probability": 0.1111111111111111,
+      "reward": 0,
+      "labelOffset": {
+        "x": 0,
+        "y": 0
+      }
+    }
+  ]
+}

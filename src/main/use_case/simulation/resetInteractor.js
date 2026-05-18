@@ -10,6 +10,5 @@ class ResetInteractor extends ResetInputBoundary {
         // Reset simulation to initial state
         this.simulationState.reset();
         this.outputBoundary.presentPhaseChange('reset', 0);
-        console.log('Simulation reset');
     }
 }
