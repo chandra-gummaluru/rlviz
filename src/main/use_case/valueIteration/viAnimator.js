@@ -167,8 +167,9 @@ class VIAnimator {
         // Reveal value
         this.viState.subPhase = 'revealing_value';
         this.viState.setPhase('revealing_value', timing.revealing_value);
-        this.outputBoundary.presentStateBackupComplete(columnIndex, stateId);
+        this.outputBoundary.presentValueRevealStart(columnIndex, stateId);
         await this.waitForPhase();
+        this.outputBoundary.presentStateBackupComplete(columnIndex, stateId);
     }
 
     /**
@@ -234,6 +235,7 @@ class VIAnimator {
         this.viState.setPhase('idle', 0);
 
         if (nextPhase.phase === 'revealing_value') {
+            this.outputBoundary.presentStateBackupComplete(colIdx, stateId);
             this._advanceCursorAfterState(colIdx);
         }
     }
@@ -362,7 +364,7 @@ class VIAnimator {
                 this.outputBoundary.presentMaxSelected(colIdx, stateId);
                 break;
             case 'revealing_value':
-                this.outputBoundary.presentStateBackupComplete(colIdx, stateId);
+                this.outputBoundary.presentValueRevealStart(colIdx, stateId);
                 break;
         }
     }

@@ -18,4 +18,5 @@ class VIOutputBoundary {
     presentTransitionsRevealed(columnIndex, stateId) { throw new Error('Not implemented'); }
     presentQValuesComputed(columnIndex, stateId) { throw new Error('Not implemented'); }
     presentMaxSelected(columnIndex, stateId) { throw new Error('Not implemented'); }
+    presentValueRevealStart(columnIndex, stateId) { throw new Error('Not implemented'); }
 }

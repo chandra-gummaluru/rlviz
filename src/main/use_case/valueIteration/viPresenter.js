@@ -127,6 +127,11 @@ class VIPresenter extends VIOutputBoundary {
         this._redraw();
     }
 
+    presentValueRevealStart(columnIndex, stateId) {
+        this._buildBackupDetail(columnIndex, stateId, this.viState.subPhase);
+        this._redraw();
+    }
+
     // --- Internal helpers ---
 
     /**
@@ -158,7 +163,9 @@ class VIPresenter extends VIOutputBoundary {
                 bestActionId: null,
                 value: 0,
                 equationLines: [this._formatEquationHeader(stateNode.name, col.timestep)],
-                gamma: this.viState.gamma
+                gamma: this.viState.gamma,
+                phaseDuration: this.viState.phaseDuration,
+                phaseStartTime: this.viState.phaseStartTime
             });
             return;
         }
@@ -240,11 +247,14 @@ class VIPresenter extends VIOutputBoundary {
             actions: actionsWithPositions,
             visibleActionCount,
             currentActionIndex: actionIdx,
+            currentTransitionIndex: transIdx,
             visibleTransitionCount,
             bestActionId: detail.bestActionId,
             value: detail.value,
             equationLines,
-            gamma: this.viState.gamma
+            gamma: this.viState.gamma,
+            phaseDuration: this.viState.phaseDuration,
+            phaseStartTime: this.viState.phaseStartTime
         });
     }
 

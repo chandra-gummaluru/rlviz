@@ -1,8 +1,64 @@
+// Easing functions for VI animations
+const VI_EASINGS = {
+    linear: t => t,
+    easeOut: t => 1 - (1 - t) * (1 - t),
+    easeInOut: t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2,
+    easeOutBack: t => {
+        const c1 = 1.70158, c3 = c1 + 1;
+        return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+    }
+};
+
+class VITweenEngine {
+    constructor() { this._tweens = {}; }
+
+    start(id, durationMs, easing = 'easeInOut', delayMs = 0, onComplete = null) {
+        const now = Date.now();
+        this._tweens[id] = {
+            startMs: now + Math.max(0, delayMs),
+            durationMs: Math.max(0, durationMs),
+            easing,
+            onComplete,
+            completed: false
+        };
+    }
+
+    progress(id) {
+        const tween = this._tweens[id];
+        if (!tween) return 1;
+        if (tween.durationMs === 0) { this._complete(id, tween); return 1; }
+        const now = Date.now();
+        if (now < tween.startMs) return 0;
+        const raw = Math.min((now - tween.startMs) / tween.durationMs, 1);
+        const fn = VI_EASINGS[tween.easing] || VI_EASINGS.linear;
+        const eased = fn(raw);
+        if (raw >= 1) this._complete(id, tween);
+        return eased;
+    }
+
+    _complete(id, tween) {
+        if (!tween || tween.completed) return;
+        tween.completed = true;
+        if (tween.onComplete) tween.onComplete();
+        delete this._tweens[id];
+    }
+
+    hasActive() {
+        Object.keys(this._tweens).forEach(id => this.progress(id));
+        return Object.keys(this._tweens).length > 0;
+    }
+
+    clear() { this._tweens = {}; }
+}
+
 // View for Value Iteration visualization — renders unrolled columns
 class ValueIterationView {
     constructor(canvasViewModel) {
         this.viewModel = canvasViewModel;
         this.ACTION_NODE_RADIUS = 18;
+        this.tween = new VITweenEngine();
+        this._lastPhaseKey = null;
+        this._lastVisibleColumnCount = 0;
     }
 
     get viState() {
@@ -25,12 +81,20 @@ class ValueIterationView {
             return;
         }
 
+        const detail = this.viViewModel.backupDetail;
+
+        // Phase change detection — starts tweens for new phases
+        const phaseKey = this._getPhaseKey(detail);
+        if (phaseKey !== this._lastPhaseKey) {
+            this._onPhaseChange(detail);
+            this._lastPhaseKey = phaseKey;
+        }
+        this._detectNewColumnTweens();
+
         const activeColIdx = this.viViewModel.activeColumnIndex;
         const activeStateId = this.viViewModel.activeStateId;
 
         // Draw edges between adjacent visible columns (behind nodes)
-        // Active column's edges are skipped inside _drawColumnEdges — drawn by backup animation instead
-        const detail = this.viViewModel.backupDetail;
         for (let i = 0; i < visibleCount - 1; i++) {
             const fromCol = this.viViewModel.columns[i];
             const toCol = this.viViewModel.columns[i + 1];
@@ -39,19 +103,26 @@ class ValueIterationView {
             }
         }
 
-        // Draw visible columns only
+        // Draw visible columns
         for (let i = 0; i < visibleCount; i++) {
             const col = this.viViewModel.columns[i];
             if (!col) continue;
             this._drawColumn(col, i, activeColIdx, activeStateId);
         }
 
-        // Draw timestep labels at top (visible only)
+        // Draw timestep labels at top
         this._drawTimestepLabels(visibleCount);
 
         // Draw detailed backup animation overlay if active
         if (detail) {
             this._drawBackupAnimation(detail);
+        }
+
+        // Loop management — continuous during active tweens, noLoop when idle
+        if (this.tween.hasActive()) {
+            if (typeof loop === 'function') loop();
+        } else if (typeof noLoop === 'function') {
+            noLoop();
         }
     }
 
@@ -102,6 +173,15 @@ class ValueIterationView {
 
         push();
 
+        // Column scale-in animation
+        const scaleId = `column:${colIdx}:state:${stateNode.id}:scale`;
+        const s = this.tween.progress(scaleId);
+        if (s < 1) {
+            translate(stateNode.x, stateNode.y);
+            scale(s, s);
+            translate(-stateNode.x, -stateNode.y);
+        }
+
         const isRevealed = this.viViewModel.isValueRevealed(colIdx, stateNode.id);
         const fillColor = isRevealed ? color(76, 175, 80, alpha) : color(200, 200, 200, alpha);
         fill(fillColor);
@@ -109,17 +189,19 @@ class ValueIterationView {
         strokeWeight(2);
         ellipse(stateNode.x, stateNode.y, r * 2, r * 2);
 
-        fill(0, 0, 0, alpha);
-        noStroke();
-        textAlign(CENTER, CENTER);
-        textSize(14);
-        textFont('Calibri, "Segoe UI", Tahoma, sans-serif');
-        text(stateNode.name, stateNode.x, stateNode.y - 6);
-
-        if (isRevealed) {
+        if (s > 0.2) {
             fill(0, 0, 0, alpha);
-            textSize(11);
-            text(`V = ${stateNode.value.toFixed(2)}`, stateNode.x, stateNode.y + 10);
+            noStroke();
+            textAlign(CENTER, CENTER);
+            textSize(14);
+            textFont('Calibri, "Segoe UI", Tahoma, sans-serif');
+            text(stateNode.name, stateNode.x, stateNode.y - 6);
+
+            if (isRevealed) {
+                fill(0, 0, 0, alpha);
+                textSize(11);
+                text(`V = ${stateNode.value.toFixed(2)}`, stateNode.x, stateNode.y + 10);
+            }
         }
 
         pop();
@@ -159,14 +241,7 @@ class ValueIterationView {
             if (!actionNode || !actionNode.sas) return;
 
             const isBest = actionId === bestActionId;
-            let edgeColor;
-            if (qValues.length > 1 && isBest) {
-                edgeColor = color(46, 160, 67, alpha);
-            } else if (qValues.length > 1) {
-                edgeColor = color(210, 60, 50, alpha);
-            } else {
-                edgeColor = color(100, 100, 100, alpha);
-            }
+            const edgeColor = this._getActionColor(actionId, qValues, alpha, [100, 100, 100]);
 
             actionNode.sas.forEach(({ nextState, probability, reward }) => {
                 const toStateNode = toCol.states.find(s => s.id === nextState);
@@ -238,6 +313,9 @@ class ValueIterationView {
             this._drawQValues(detail);
             this._drawMaxSelection(detail);
             this._drawQTable(detail);
+            if (detail.subPhase === 'revealing_value') {
+                this._drawRevealingValueOverlay(detail);
+            }
         } else {
             // Bundled mode: cumulative phases
             if (phaseIdx >= 1) this._drawActionFanOut(detail);
@@ -251,16 +329,17 @@ class ValueIterationView {
     _drawEquationOverlay(detail) {
         if (!detail.equationLines || detail.equationLines.length === 0) return;
 
+        const p = this._progress(detail, 'equation');
+        const lines = detail.equationLines;
         const boxX = detail.stateX - 160;
-        const boxY = detail.stateY - detail.stateRadius - 30 - detail.equationLines.length * 18;
+        const boxY = detail.stateY - detail.stateRadius - 30 - lines.length * 18;
         const boxW = 320;
         const lineHeight = 18;
-        const boxH = detail.equationLines.length * lineHeight + 16;
+        const boxH = lines.length * lineHeight + 16;
 
         push();
-        // Semi-transparent background
-        fill(255, 255, 255, 220);
-        stroke(100, 100, 100, 150);
+        fill(255, 255, 255, 220 * p);
+        stroke(100, 100, 100, 150 * p);
         strokeWeight(1);
         rect(boxX, boxY, boxW, boxH, 6);
 
@@ -268,22 +347,29 @@ class ValueIterationView {
         textAlign(LEFT, TOP);
         textFont('Calibri, "Segoe UI", Tahoma, sans-serif');
 
-        detail.equationLines.forEach((line, i) => {
-            const y = boxY + 8 + i * lineHeight;
+        lines.forEach((line, i) => {
+            const lineStart = i / Math.max(lines.length, 1);
+            const lineWindow = 1 / Math.max(lines.length, 1);
+            const lineP = Math.min(Math.max((p - lineStart) / lineWindow, 0), 1);
+            const yOffset = 4 * (1 - lineP);
+            const a = Math.round(255 * lineP);
+            if (a < 2) return;
+
+            const y = boxY + 8 + i * lineHeight + yOffset;
             if (line.type === 'header') {
-                fill(30, 30, 30);
+                fill(30, 30, 30, a);
                 textSize(13);
                 textStyle(BOLD);
             } else if (line.type === 'best') {
-                fill(46, 125, 50);
+                fill(46, 125, 50, a);
                 textSize(11);
                 textStyle(NORMAL);
             } else if (line.type === 'result') {
-                fill(25, 80, 170);
+                fill(25, 80, 170, a);
                 textSize(12);
                 textStyle(BOLD);
             } else {
-                fill(80, 80, 80);
+                fill(80, 80, 80, a);
                 textSize(11);
                 textStyle(NORMAL);
             }
@@ -299,25 +385,21 @@ class ValueIterationView {
         if (!detail.actions || detail.actions.length === 0) return;
 
         const count = detail.visibleActionCount !== undefined ? detail.visibleActionCount : detail.actions.length;
-        const isBeyondMax = detail.actions.length > 1;
 
-        detail.actions.slice(0, count).forEach(action => {
-            const isBest = action.actionId === detail.bestActionId;
+        detail.actions.slice(0, count).forEach((action, i) => {
+            const actionColor = this._getActionColor(action.actionId, detail.actions, 200);
+            const lineP = this._progress(detail, 'sa_line', i);
+            const headP = this._progress(detail, 'sa_head', i);
 
-            // Edge: state → action
-            let actionColor;
-            if (isBeyondMax && isBest) {
-                actionColor = color(46, 160, 67, 200);
-            } else if (isBeyondMax) {
-                actionColor = color(210, 60, 50, 200);
-            } else {
-                actionColor = color(100, 149, 237, 200);
+            this._drawAnimatedArrow(
+                detail.stateX, detail.stateY, action.x, action.y,
+                detail.stateRadius, this.ACTION_NODE_RADIUS,
+                actionColor, 1.5, lineP, headP
+            );
+
+            if (lineP > 0) {
+                this._drawActionDiamond(action.x, action.y, action.actionName, actionColor, Math.round(200 * Math.min(lineP * 3, 1)));
             }
-
-            this._drawArrowLine(detail.stateX, detail.stateY, action.x, action.y, detail.stateRadius, this.ACTION_NODE_RADIUS, actionColor, 1.5);
-
-            // Draw action diamond
-            this._drawActionDiamond(action.x, action.y, action.actionName, isBest, isBeyondMax, 200);
         });
     }
 
@@ -326,59 +408,50 @@ class ValueIterationView {
         if (!detail.actions) return;
 
         const count = detail.visibleActionCount !== undefined ? detail.visibleActionCount : detail.actions.length;
-        const isBeyondMax = detail.actions.length > 1;
-
-        // Determine if we should show rewards (compute phase) or just probabilities (show phase)
         const showRewards = (detail.subPhase === 'compute_action' || detail.subPhase === 'compute_q_values' ||
                              detail.subPhase === 'select_max' || detail.subPhase === 'revealing_value');
 
         detail.actions.slice(0, count).forEach((action, actionIdx) => {
-            const isBest = action.actionId === detail.bestActionId;
-
-            let edgeColor;
-            if (isBeyondMax && isBest) {
-                edgeColor = color(46, 160, 67, 180);
-            } else if (isBeyondMax) {
-                edgeColor = color(210, 60, 50, 180);
-            } else {
-                edgeColor = color(100, 149, 237, 180);
-            }
-
-            // In per-action mode, only show rewards for actions that have been computed
+            const edgeColor = this._getActionColor(action.actionId, detail.actions, 180);
             const isComputed = showRewards && (
-                detail.subPhase !== 'compute_action' ||  // bundled phases show all
-                actionIdx === count - 1                  // per-action: current action being computed
+                detail.subPhase !== 'compute_action' || actionIdx === count - 1
             );
-            // Previously computed actions also show rewards
             const showRewardForAction = showRewards || (actionIdx < count - 1 && detail.subPhase === 'show_action');
 
-            action.transitions.forEach(t => {
-                this._drawArrowLine(action.x, action.y, t.toX, t.toY, this.ACTION_NODE_RADIUS, t.toRadius, edgeColor, 1.0);
+            action.transitions.forEach((t, ti) => {
+                const key = `${actionIdx}_${ti}`;
+                const lineP = this._progress(detail, 'as_line', key);
+                const headP = this._progress(detail, 'as_head', key);
+                const labelP = this._progress(detail, 'label', key);
 
-                const labelX = (action.x + t.toX) / 2;
-                const labelY = (action.y + t.toY) / 2 - 8;
-                push();
-                noStroke();
-                textSize(9);
-                textAlign(CENTER, CENTER);
-                textFont('Calibri, "Segoe UI", Tahoma, sans-serif');
+                this._drawAnimatedArrow(
+                    action.x, action.y, t.toX, t.toY,
+                    this.ACTION_NODE_RADIUS, t.toRadius,
+                    edgeColor, 1.0, lineP, headP
+                );
 
-                // Always show probability
-                fill(60, 60, 60, 200);
-                text(`p=${t.probability.toFixed(2)}`, labelX, labelY);
+                if (labelP > 0) {
+                    const labelX = (action.x + t.toX) / 2;
+                    const labelY = (action.y + t.toY) / 2 - 8;
+                    push();
+                    noStroke();
+                    textSize(9);
+                    textAlign(CENTER, CENTER);
+                    textFont('Calibri, "Segoe UI", Tahoma, sans-serif');
 
-                // Show reward + term only during compute phases
-                if (isComputed || showRewardForAction) {
-                    const gamma = detail.gamma || 0.9;
-                    fill(80, 80, 80, 200);
-                    text(`r=${t.reward.toFixed(1)}`, labelX, labelY + 11);
-                    // Show the term contribution
-                    fill(100, 100, 100, 180);
-                    textSize(8);
-                    text(`${t.probability.toFixed(2)}\u00B7[${t.reward.toFixed(1)}+${gamma}\u00B7${t.nextValue.toFixed(1)}] = ${t.term.toFixed(2)}`, labelX, labelY + 22);
+                    fill(60, 60, 60, 200 * labelP);
+                    text(`p=${t.probability.toFixed(2)}`, labelX, labelY);
+
+                    if (isComputed || showRewardForAction) {
+                        const gamma = detail.gamma || 0.9;
+                        fill(80, 80, 80, 200 * labelP);
+                        text(`r=${t.reward.toFixed(1)}`, labelX, labelY + 11);
+                        fill(100, 100, 100, 180 * labelP);
+                        textSize(8);
+                        text(`${t.probability.toFixed(2)}\u00B7[${t.reward.toFixed(1)}+${gamma}\u00B7${t.nextValue.toFixed(1)}] = ${t.term.toFixed(2)}`, labelX, labelY + 22);
+                    }
+                    pop();
                 }
-
-                pop();
             });
         });
     }
@@ -408,17 +481,32 @@ class ValueIterationView {
     _drawMaxSelection(detail) {
         if (!detail.actions || detail.actions.length === 0) return;
 
-        // Redraw action diamonds with emphasis on best
-        detail.actions.forEach(action => {
-            const isBest = action.actionId === detail.bestActionId;
-            if (isBest) {
-                // Highlight ring around best action
+        const burstP = this._progress(detail, 'select_burst');
+        const scanP = this._progress(detail, 'scan');
+
+        // Scan bar sweeping through action rows during select_max
+        if (detail.subPhase === 'select_max' && scanP < 1) {
+            const numActions = detail.actions.length;
+            const scanRow = Math.min(Math.floor(scanP * numActions), numActions - 1);
+            const action = detail.actions[scanRow];
+            push();
+            noStroke();
+            fill(255, 240, 60, 70);
+            const sr = this.ACTION_NODE_RADIUS + 6;
+            rect(action.x - sr, action.y - sr, sr * 2, sr * 2, 4);
+            pop();
+        }
+
+        // Best action highlight ring — appears with burst or in revealing_value
+        const ringAlpha = detail.subPhase === 'select_max' ? burstP : 1;
+        if (ringAlpha > 0) {
+            detail.actions.forEach(action => {
+                if (action.actionId !== detail.bestActionId) return;
                 push();
                 noFill();
-                stroke(46, 160, 67, 255);
+                stroke(46, 160, 67, 255 * ringAlpha);
                 strokeWeight(3);
                 const r = this.ACTION_NODE_RADIUS + 4;
-                // Diamond outline
                 beginShape();
                 vertex(action.x, action.y - r);
                 vertex(action.x + r, action.y);
@@ -426,29 +514,16 @@ class ValueIterationView {
                 vertex(action.x - r, action.y);
                 endShape(CLOSE);
                 pop();
-            }
-        });
+            });
+        }
 
-        // Draw V(s) = value near the state node
-        push();
-        const vText = `V${detail.timestep}(${detail.stateName}) = ${detail.value.toFixed(2)}`;
-        noStroke();
-        // Background pill
-        textSize(13);
-        textFont('Calibri, "Segoe UI", Tahoma, sans-serif');
-        textStyle(BOLD);
-        const tw = textWidth(vText) + 16;
-        const th = 24;
-        const vx = detail.stateX;
-        const vy = detail.stateY + detail.stateRadius + 16;
-        fill(25, 80, 170, 220);
-        rect(vx - tw / 2, vy - th / 2, tw, th, 12);
-        // Text
-        fill(255);
-        textAlign(CENTER, CENTER);
-        text(vText, vx, vy);
-        textStyle(NORMAL);
-        pop();
+        // V badge — static for select_max (fades in with burst), omit for revealing_value (drawn by overlay)
+        if (detail.subPhase !== 'revealing_value') {
+            const vAlpha = detail.subPhase === 'select_max' ? burstP * 220 : 220;
+            if (vAlpha > 4) {
+                this._drawStaticVBadge(detail, vAlpha);
+            }
+        }
     }
 
     // --- Q-value table (per-action mode) ---
@@ -669,81 +744,68 @@ class ValueIterationView {
 
     /** Draw a single action diamond with its state→action edge */
     _drawSingleAction(detail, action) {
-        const isBest = action.actionId === detail.bestActionId;
-        const hasMultiple = detail.actions.length > 1;
+        const actionColor = this._getActionColor(action.actionId, detail.actions, 200);
+        const ai = detail.currentActionIndex ?? 0;
+        const lineP = this._progress(detail, 'sa_line', ai);
+        const headP = this._progress(detail, 'sa_head', ai);
 
-        let actionColor;
-        if (hasMultiple && isBest) {
-            actionColor = color(46, 160, 67, 200);
-        } else if (hasMultiple) {
-            actionColor = color(210, 60, 50, 200);
-        } else {
-            actionColor = color(100, 149, 237, 200);
+        this._drawAnimatedArrow(
+            detail.stateX, detail.stateY, action.x, action.y,
+            detail.stateRadius, this.ACTION_NODE_RADIUS,
+            actionColor, 1.5, lineP, headP
+        );
+        if (lineP > 0) {
+            this._drawActionDiamond(action.x, action.y, action.actionName, actionColor, Math.round(200 * Math.min(lineP * 3, 1)));
         }
-
-        this._drawArrowLine(detail.stateX, detail.stateY, action.x, action.y, detail.stateRadius, this.ACTION_NODE_RADIUS, actionColor, 1.5);
-        this._drawActionDiamond(action.x, action.y, action.actionName, isBest, hasMultiple, 200);
     }
 
     /** Draw N transitions for a single action, with optional reward labels */
     _drawPartialTransitions(detail, action, transCount, showReward) {
         if (transCount <= 0) return;
 
-        const isBest = action.actionId === detail.bestActionId;
-        const hasMultiple = detail.actions.length > 1;
-
-        let edgeColor;
-        if (hasMultiple && isBest) {
-            edgeColor = color(46, 160, 67, 180);
-        } else if (hasMultiple) {
-            edgeColor = color(210, 60, 50, 180);
-        } else {
-            edgeColor = color(100, 149, 237, 180);
-        }
-
+        const edgeColor = this._getActionColor(action.actionId, detail.actions, 180);
         const transitions = action.transitions.slice(0, transCount);
+
         transitions.forEach((t, ti) => {
-            this._drawArrowLine(action.x, action.y, t.toX, t.toY, this.ACTION_NODE_RADIUS, t.toRadius, edgeColor, 1.0);
+            const lineP = this._progress(detail, 'as_line', ti);
+            const headP = this._progress(detail, 'as_head', ti);
+            const labelP = this._progress(detail, 'label', ti);
 
-            const labelX = (action.x + t.toX) / 2;
-            const labelY = (action.y + t.toY) / 2 - 8;
-            push();
-            noStroke();
-            textSize(9);
-            textAlign(CENTER, CENTER);
-            textFont('Calibri, "Segoe UI", Tahoma, sans-serif');
+            this._drawAnimatedArrow(
+                action.x, action.y, t.toX, t.toY,
+                this.ACTION_NODE_RADIUS, t.toRadius,
+                edgeColor, 1.0, lineP, headP
+            );
 
-            fill(60, 60, 60, 200);
-            text(`p=${t.probability.toFixed(2)}`, labelX, labelY);
+            if (labelP > 0) {
+                const labelX = (action.x + t.toX) / 2;
+                const labelY = (action.y + t.toY) / 2 - 8;
+                push();
+                noStroke();
+                textSize(9);
+                textAlign(CENTER, CENTER);
+                textFont('Calibri, "Segoe UI", Tahoma, sans-serif');
 
-            // Show reward + term for transitions that have been computed
-            // All transitions before the current one are computed; current one only if showReward
-            const isComputed = showReward && (ti < transCount);
-            if (isComputed) {
-                const gamma = detail.gamma || 0.9;
-                fill(80, 80, 80, 200);
-                text(`r=${t.reward.toFixed(1)}`, labelX, labelY + 11);
-                fill(100, 100, 100, 180);
-                textSize(8);
-                text(`${t.probability.toFixed(2)}\u00B7[${t.reward.toFixed(1)}+${gamma}\u00B7${t.nextValue.toFixed(1)}] = ${t.term.toFixed(2)}`, labelX, labelY + 22);
+                fill(60, 60, 60, 200 * labelP);
+                text(`p=${t.probability.toFixed(2)}`, labelX, labelY);
+
+                const isComputed = showReward && (ti < transCount);
+                if (isComputed) {
+                    const gamma = detail.gamma || 0.9;
+                    fill(80, 80, 80, 200 * labelP);
+                    text(`r=${t.reward.toFixed(1)}`, labelX, labelY + 11);
+                    fill(100, 100, 100, 180 * labelP);
+                    textSize(8);
+                    text(`${t.probability.toFixed(2)}\u00B7[${t.reward.toFixed(1)}+${gamma}\u00B7${t.nextValue.toFixed(1)}] = ${t.term.toFixed(2)}`, labelX, labelY + 22);
+                }
+                pop();
             }
-            pop();
         });
     }
 
     /** Draw transition edges for a single action */
     _drawSingleActionTransitions(detail, action) {
-        const isBest = action.actionId === detail.bestActionId;
-        const hasMultiple = detail.actions.length > 1;
-
-        let edgeColor;
-        if (hasMultiple && isBest) {
-            edgeColor = color(46, 160, 67, 180);
-        } else if (hasMultiple) {
-            edgeColor = color(210, 60, 50, 180);
-        } else {
-            edgeColor = color(100, 149, 237, 180);
-        }
+        const edgeColor = this._getActionColor(action.actionId, detail.actions, 180);
 
         const showRewards = (detail.subPhase === 'compute_action');
 
@@ -788,22 +850,13 @@ class ValueIterationView {
         pop();
     }
 
-    /** Draw a small diamond shape for an action node */
-    _drawActionDiamond(x, y, name, isBest, hasMultiple, alpha) {
+    /** Draw a small diamond shape for an action node. fillColor is a pre-computed p5 color. */
+    _drawActionDiamond(x, y, name, fillColor, alpha) {
         const r = this.ACTION_NODE_RADIUS;
 
         push();
 
-        let fillCol;
-        if (hasMultiple && isBest) {
-            fillCol = color(46, 160, 67, alpha);
-        } else if (hasMultiple) {
-            fillCol = color(210, 60, 50, alpha);
-        } else {
-            fillCol = color(100, 149, 237, alpha);
-        }
-
-        fill(fillCol);
+        fill(fillColor);
         stroke(60, 60, 60, alpha);
         strokeWeight(1.5);
 
@@ -822,6 +875,34 @@ class ValueIterationView {
         text(name, x, y);
 
         pop();
+    }
+
+    /**
+     * Returns a color on a green→grey→red scale based on Q-value rank.
+     * actionsArray: array of {actionId, qValue}. Single action returns blue (animation) or dark grey (completed).
+     */
+    _getActionColor(actionId, actionsArray, alpha, singleActionColor) {
+        if (!actionsArray || actionsArray.length <= 1) {
+            return singleActionColor !== undefined
+                ? color(singleActionColor[0], singleActionColor[1], singleActionColor[2], alpha)
+                : color(100, 149, 237, alpha);
+        }
+        const sorted = [...actionsArray].sort((a, b) => b.qValue - a.qValue);
+        const rank = sorted.findIndex(a => a.actionId === actionId);
+        const t = rank / (sorted.length - 1); // 0 = best, 1 = worst
+        let r, g, b;
+        if (t <= 0.5) {
+            const s = t * 2;
+            r = Math.round(46  + (150 - 46)  * s);
+            g = Math.round(160 + (150 - 160) * s);
+            b = Math.round(67  + (150 - 67)  * s);
+        } else {
+            const s = (t - 0.5) * 2;
+            r = Math.round(150 + (210 - 150) * s);
+            g = Math.round(150 + (60  - 150) * s);
+            b = Math.round(150 + (50  - 150) * s);
+        }
+        return color(r, g, b, alpha);
     }
 
     /** Draw a line with arrowhead between two points, accounting for node radii */
@@ -858,5 +939,221 @@ class ValueIterationView {
         if (fromColIdx < activeColIdx) return 50;
         if (fromColIdx === activeColIdx) return 30;
         return 50;
+    }
+
+    // --- Animated arrow helper ---
+
+    _drawAnimatedArrow(x1, y1, x2, y2, r1, r2, edgeColor, weight, lineProgress, headProgress) {
+        const dx = x2 - x1, dy = y2 - y1;
+        const angle = atan2(dy, dx);
+        const startX = x1 + r1 * cos(angle), startY = y1 + r1 * sin(angle);
+        const endX = x2 - r2 * cos(angle), endY = y2 - r2 * sin(angle);
+        const tipX = lerp(startX, endX, lineProgress);
+        const tipY = lerp(startY, endY, lineProgress);
+
+        push();
+        stroke(edgeColor);
+        strokeWeight(weight);
+        line(startX, startY, tipX, tipY);
+
+        if (lineProgress >= 0.9 || headProgress > 0) {
+            const arrowSize = 7 * Math.max(0.001, headProgress);
+            fill(edgeColor);
+            noStroke();
+            triangle(
+                tipX, tipY,
+                tipX - arrowSize * cos(angle - 0.4), tipY - arrowSize * sin(angle - 0.4),
+                tipX - arrowSize * cos(angle + 0.4), tipY - arrowSize * sin(angle + 0.4)
+            );
+        }
+        pop();
+    }
+
+    // --- V badge helpers ---
+
+    _drawStaticVBadge(detail, alpha = 220) {
+        push();
+        const vText = `V${detail.timestep}(${detail.stateName}) = ${detail.value.toFixed(2)}`;
+        noStroke();
+        textSize(13);
+        textFont('Calibri, "Segoe UI", Tahoma, sans-serif');
+        textStyle(BOLD);
+        const tw = textWidth(vText) + 16;
+        const th = 24;
+        const vx = detail.stateX;
+        const vy = detail.stateY + detail.stateRadius + 16;
+        fill(25, 80, 170, alpha);
+        rect(vx - tw / 2, vy - th / 2, tw, th, 12);
+        fill(255, 255, 255, alpha);
+        textAlign(CENTER, CENTER);
+        text(vText, vx, vy);
+        textStyle(NORMAL);
+        pop();
+    }
+
+    _drawRevealingValueOverlay(detail) {
+        const badgeP = this._progress(detail, 'badge_expand');
+        const countP = this._progress(detail, 'value_countup');
+        const pulseP = this._progress(detail, 'node_pulse');
+
+        // Node ring pulse
+        if (pulseP > 0 && pulseP < 1) {
+            push();
+            noFill();
+            stroke(255, 255, 255, 200 * (1 - pulseP));
+            strokeWeight(3 * (1 - pulseP));
+            ellipse(detail.stateX, detail.stateY, (detail.stateRadius + 10 * pulseP) * 2);
+            pop();
+        }
+
+        if (badgeP <= 0) return;
+
+        const displayValue = detail.value * countP;
+        const finalText = `V${detail.timestep}(${detail.stateName}) = ${detail.value.toFixed(2)}`;
+        const vText = `V${detail.timestep}(${detail.stateName}) = ${displayValue.toFixed(2)}`;
+        const vx = detail.stateX;
+        const vy = detail.stateY + detail.stateRadius + 16;
+
+        push();
+        noStroke();
+        textSize(13);
+        textFont('Calibri, "Segoe UI", Tahoma, sans-serif');
+        textStyle(BOLD);
+        const fullTw = textWidth(finalText) + 16;
+        const th = 24;
+
+        // Scale badge horizontally from center
+        translate(vx, vy);
+        scale(badgeP, 1);
+        translate(-vx, -vy);
+
+        fill(25, 80, 170, 220);
+        rect(vx - fullTw / 2, vy - th / 2, fullTw, th, 12);
+        fill(255);
+        textAlign(CENTER, CENTER);
+        text(vText, vx, vy);
+        textStyle(NORMAL);
+        pop();
+    }
+
+    // --- Animation infrastructure ---
+
+    _onPhaseChange(detail) {
+        this.tween.clear();
+        if (!detail) return;
+        if (!this._shouldAnimate(detail)) return;
+        this._startTweensForPhase(detail);
+        if (typeof loop === 'function') loop();
+    }
+
+    _startTweensForPhase(detail) {
+        switch (detail.subPhase) {
+            case 'show_equation':
+                this.tween.start(this._phaseId(detail, 'equation'), 500, 'easeInOut');
+                break;
+            case 'show_actions':
+                detail.actions.forEach((action, i) => {
+                    this.tween.start(this._phaseId(detail, 'sa_line', i), 200, 'linear', i * 60);
+                    this.tween.start(this._phaseId(detail, 'sa_head', i), 80, 'easeOut', i * 60 + 170);
+                });
+                break;
+            case 'show_action':
+                this.tween.start(this._phaseId(detail, 'sa_line', detail.currentActionIndex ?? 0), 200, 'linear');
+                this.tween.start(this._phaseId(detail, 'sa_head', detail.currentActionIndex ?? 0), 80, 'easeOut', 170);
+                break;
+            case 'show_transitions':
+                this._forVisibleTransitions(detail, (action, t, key, i) => {
+                    this.tween.start(this._phaseId(detail, 'as_line', key), 220, 'linear', i * 60);
+                    this.tween.start(this._phaseId(detail, 'as_head', key), 80, 'easeOut', i * 60 + 190);
+                    this.tween.start(this._phaseId(detail, 'label', key), 180, 'easeOutBack', i * 60 + 220);
+                });
+                break;
+            case 'show_transition': {
+                const ti = detail.currentTransitionIndex ?? 0;
+                this.tween.start(this._phaseId(detail, 'as_line', ti), 220, 'linear');
+                this.tween.start(this._phaseId(detail, 'as_head', ti), 80, 'easeOut', 190);
+                this.tween.start(this._phaseId(detail, 'label', ti), 180, 'easeOutBack', 220);
+                break;
+            }
+            case 'compute_q_values':
+                this.tween.start(this._phaseId(detail, 'q_countup'), 400, 'easeInOut');
+                break;
+            case 'show_q_result':
+                this.tween.start(this._phaseId(detail, 'q_badge'), 250, 'easeOutBack');
+                break;
+            case 'select_max': {
+                const scanDur = Math.min(500, detail.actions.length * 80);
+                this.tween.start(this._phaseId(detail, 'scan'), scanDur, 'linear');
+                this.tween.start(this._phaseId(detail, 'select_burst'), 300, 'easeOut', scanDur);
+                break;
+            }
+            case 'revealing_value':
+                this.tween.start(this._phaseId(detail, 'badge_expand'), 200, 'easeOut');
+                this.tween.start(this._phaseId(detail, 'value_countup'), 400, 'easeInOut');
+                this.tween.start(this._phaseId(detail, 'node_pulse'), 150, 'easeOut');
+                break;
+        }
+    }
+
+    _detectNewColumnTweens() {
+        const current = this.viViewModel.visibleColumnCount;
+        if (current < this._lastVisibleColumnCount) {
+            this._lastVisibleColumnCount = 0;
+            this.tween.clear();
+        }
+        if (current <= this._lastVisibleColumnCount) return;
+
+        for (let colIdx = this._lastVisibleColumnCount; colIdx < current; colIdx++) {
+            const col = this.viViewModel.columns[colIdx];
+            if (!col) continue;
+            col.states.forEach((state, i) => {
+                this.tween.start(`column:${colIdx}:state:${state.id}:scale`, 300, 'easeOutBack', i * 40);
+            });
+        }
+        this._lastVisibleColumnCount = current;
+        if (typeof loop === 'function') loop();
+    }
+
+    _getPhaseKey(detail) {
+        if (!detail) return null;
+        return [
+            detail.columnIndex,
+            detail.stateId,
+            detail.subPhase,
+            detail.currentActionIndex ?? -1,
+            detail.currentTransitionIndex ?? -1
+        ].join(':');
+    }
+
+    _phaseId(detail, name, suffix = '') {
+        return [
+            detail.columnIndex,
+            detail.stateId,
+            detail.subPhase,
+            detail.currentActionIndex ?? -1,
+            detail.currentTransitionIndex ?? -1,
+            name,
+            suffix
+        ].join(':');
+    }
+
+    _progress(detail, name, suffix = '') {
+        if (!this._shouldAnimate(detail)) return 1;
+        return this.tween.progress(this._phaseId(detail, name, suffix));
+    }
+
+    _shouldAnimate(detail) {
+        return (detail?.phaseDuration ?? 0) > 0;
+    }
+
+    _forVisibleTransitions(detail, callback) {
+        const count = detail.visibleActionCount !== undefined ? detail.visibleActionCount : detail.actions.length;
+        let i = 0;
+        detail.actions.slice(0, count).forEach((action, ai) => {
+            action.transitions.forEach((t, ti) => {
+                callback(action, t, `${ai}_${ti}`, i);
+                i++;
+            });
+        });
     }
 }
