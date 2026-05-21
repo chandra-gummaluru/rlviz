@@ -52,9 +52,10 @@ class VIAnimator {
 
     async animateColumn(columnIndex) {
         this.outputBoundary.presentColumnStart(columnIndex);
+        let completed = true;
 
         for (let si = 0; si < this.viState.stateCount; si++) {
-            if (!this.viState.isPlaying && this.viState.phase !== 'stepping') break;
+            if (!this.viState.isPlaying && this.viState.phase !== 'stepping') { completed = false; break; }
 
             const stateId = this.viState.stateIds[si];
             this.viState.currentColumnIndex = columnIndex;
@@ -63,18 +64,20 @@ class VIAnimator {
             this.outputBoundary.presentStateBackupStart(columnIndex, stateId);
             await this._animateStateBackup(columnIndex, stateId, this.TIMING);
 
-            if (!this.viState.isPlaying && this.viState.phase !== 'stepping') break;
+            if (!this.viState.isPlaying && this.viState.phase !== 'stepping') { completed = false; break; }
         }
 
-        this.viState.currentStateIndex = this.viState.stateCount;
-        this.viState.subPhase = 'idle';
-        this.viState.setPhase('idle', 0);
-        this.outputBoundary.presentColumnComplete(columnIndex);
+        if (completed) {
+            this.viState.currentStateIndex = this.viState.stateCount;
+            this.viState.subPhase = 'idle';
+            this.viState.setPhase('idle', 0);
+            this.outputBoundary.presentColumnComplete(columnIndex);
 
-        if (this.viState.isPlaying) {
-            this.viState.setPhase('pause', this.TIMING.COLUMN_PAUSE);
-            this.outputBoundary.presentPhaseChange('pause', this.TIMING.COLUMN_PAUSE);
-            await this.waitForPhase();
+            if (this.viState.isPlaying) {
+                this.viState.setPhase('pause', this.TIMING.COLUMN_PAUSE);
+                this.outputBoundary.presentPhaseChange('pause', this.TIMING.COLUMN_PAUSE);
+                await this.waitForPhase();
+            }
         }
     }
 
@@ -416,7 +419,7 @@ class VIAnimator {
     waitForPhase() {
         return new Promise(resolve => {
             const checkComplete = () => {
-                if (this.viState.isPhaseComplete() || (!this.viState.isPlaying && this.viState.phase !== 'stepping')) {
+                if (this.viState.isPhaseComplete()) {
                     resolve();
                 } else {
                     setTimeout(checkComplete, 50);

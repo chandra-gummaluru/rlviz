@@ -610,4 +610,22 @@ class CanvasController {
         }
     }
 
+    clearSelection() {
+        if (this.interactors.selectNode) {
+            this.interactors.selectNode.clearSelection(SelectNodeInputData.forClear());
+        }
+    }
+
+    createTextLabel(text) {
+        if (this.interactors.createTextLabel) {
+            this.interactors.createTextLabel.execute(CreateTextLabelInputData.forExecution(text, 0, 0, 16));
+        }
+    }
+
+    renameNode(nodeId, oldName, newName) {
+        if (this.interactors.renameNode) {
+            this.interactors.renameNode.executeRename(RenameNodeInputData.forExecution(nodeId, oldName, newName));
+        }
+    }
+
 }

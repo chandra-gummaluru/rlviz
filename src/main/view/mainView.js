@@ -1113,12 +1113,7 @@ class MainView {
         }
 
         this.controller.createEdge(fromNode.id, toNode.id, prob, reward);
-
-        // Clear selection after creating edge
-        if (this.controller.interactors && this.controller.interactors.selectNode) {
-            const inputData = SelectNodeInputData.forClear();
-            this.controller.interactors.selectNode.clearSelection(inputData);
-        }
+        this.controller.clearSelection();
 
         redraw();
     }
@@ -1126,11 +1121,7 @@ class MainView {
     promptForTextLabel() {
         const text = prompt('Enter text label:');
         if (text && text.trim()) {
-            // Create the text label - access interactor directly since controller doesn't have a method for this
-            if (this.controller.interactors && this.controller.interactors.createTextLabel) {
-                const inputData = CreateTextLabelInputData.forExecution(text, 0, 0, 16);
-                this.controller.interactors.createTextLabel.execute(inputData);
-            }
+            this.controller.createTextLabel(text.trim());
         }
         this.viewModel.interaction.textLabelRequested = false;
         redraw();
@@ -1139,11 +1130,7 @@ class MainView {
     promptForRename(node) {
         const newName = prompt(`Rename "${node.name}":`, node.name);
         if (newName && newName.trim() && newName !== node.name) {
-            // Access interactor directly since controller doesn't have a public method for this
-            if (this.controller.interactors && this.controller.interactors.renameNode) {
-                const inputData = RenameNodeInputData.forExecution(node.id, node.name, newName);
-                this.controller.interactors.renameNode.executeRename(inputData);
-            }
+            this.controller.renameNode(node.id, node.name, newName.trim());
         }
         this.viewModel.interaction.renameRequested = false;
         this.viewModel.interaction.renameTargetNode = null;

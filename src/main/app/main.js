@@ -483,8 +483,13 @@ function setup() {
 
     mainView = new MainView(canvasViewModel, canvasController, menuBar, toolBar, rightPanel);
 
-    // Create simulation presenter and interactors (need both ViewModel and MainView)
-    simulationPresenter = new SimulationPresenter(canvasViewModel, mainView);
+    // Create simulation presenter and interactors
+    simulationPresenter = new SimulationPresenter(canvasViewModel);
+    simulationPresenter.setToolBar(toolBar);
+    simulationPresenter.setParticleCallbacks(
+        (reward, nodeId) => mainView.launchRewardParticles(reward, nodeId),
+        () => { if (mainView.rewardParticleSystem) mainView.rewardParticleSystem.destroy(); }
+    );
 
     // Create start node provider function
     const startNodeProvider = () => canvasViewModel.interaction.startNode;
