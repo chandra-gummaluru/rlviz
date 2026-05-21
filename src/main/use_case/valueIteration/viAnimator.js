@@ -64,6 +64,12 @@ class VIAnimator {
             this.outputBoundary.presentStateBackupStart(columnIndex, stateId);
             await this._animateStateBackup(columnIndex, stateId, this.TIMING);
 
+            // Advance cursor when state completed so resume starts at next state
+            if (this.viState.subPhase === 'revealing_value') {
+                this.viState.currentStateIndex = si + 1;
+                this.viState.subPhase = 'idle';
+            }
+
             if (!this.viState.isPlaying && this.viState.phase !== 'stepping') { completed = false; break; }
         }
 
@@ -83,96 +89,54 @@ class VIAnimator {
 
     /**
      * Animate all sub-phases for a single state's Bellman backup.
-     * In per-action mode, loops through actions individually.
+     * resumeAfterPhase: if set, skip all phases up to and including this sub-phase name
+     * (used when resuming after a mid-state pause).
      */
-    async _animateStateBackup(columnIndex, stateId, timing) {
+    async _animateStateBackup(columnIndex, stateId, timing, resumeAfterPhase = null) {
         const detail = this.viState.getBackupDetail(columnIndex, stateId);
         const hasActions = detail && detail.actions && detail.actions.length > 0;
+        const phases = this._getApplicablePhases(hasActions, detail);
 
-        // Sub-phase 1: Show equation
-        this.viState.subPhase = 'show_equation';
-        this.viState.currentActionIndex = 0;
-        this.viState.setPhase('computing', timing.show_equation);
-        this.outputBoundary.presentEquationStart(columnIndex, stateId);
-        await this.waitForPhase();
-        if (!this.viState.isPlaying && this.viState.phase !== 'stepping') return;
-
-        if (hasActions) {
-            if (this.perActionMode) {
-                // Per-action mode: for each action, step through each transition
-                for (let ai = 0; ai < detail.actions.length; ai++) {
-                    this.viState.currentActionIndex = ai;
-                    this.viState.currentTransitionIndex = 0;
-
-                    // Show this action diamond
-                    this.viState.subPhase = 'show_action';
-                    this.viState.setPhase('computing', timing.show_action);
-                    this.outputBoundary.presentActionsRevealed(columnIndex, stateId);
-                    await this.waitForPhase();
-                    if (!this.viState.isPlaying && this.viState.phase !== 'stepping') return;
-
-                    // Step through each transition in this action
-                    const transitions = detail.actions[ai].transitions;
-                    for (let ti = 0; ti < transitions.length; ti++) {
-                        this.viState.currentTransitionIndex = ti;
-
-                        // Show the transition edge
-                        this.viState.subPhase = 'show_transition';
-                        this.viState.setPhase('computing', timing.show_transition);
-                        this.outputBoundary.presentTransitionsRevealed(columnIndex, stateId);
-                        await this.waitForPhase();
-                        if (!this.viState.isPlaying && this.viState.phase !== 'stepping') return;
-
-                        // Compute this transition's contribution
-                        this.viState.subPhase = 'compute_transition';
-                        this.viState.setPhase('computing', timing.compute_transition);
-                        this.outputBoundary.presentQValuesComputed(columnIndex, stateId);
-                        await this.waitForPhase();
-                        if (!this.viState.isPlaying && this.viState.phase !== 'stepping') return;
-                    }
-
-                    // Show the final Q-value for this action
-                    this.viState.subPhase = 'show_q_result';
-                    this.viState.setPhase('computing', timing.show_q_result);
-                    this.outputBoundary.presentQValuesComputed(columnIndex, stateId);
-                    await this.waitForPhase();
-                    if (!this.viState.isPlaying && this.viState.phase !== 'stepping') return;
-                }
-            } else {
-                // Bundled mode: show all actions at once
-                this.viState.subPhase = 'show_actions';
-                this.viState.setPhase('computing', timing.show_actions);
-                this.outputBoundary.presentActionsRevealed(columnIndex, stateId);
-                await this.waitForPhase();
-                if (!this.viState.isPlaying && this.viState.phase !== 'stepping') return;
-
-                this.viState.subPhase = 'show_transitions';
-                this.viState.setPhase('computing', timing.show_transitions);
-                this.outputBoundary.presentTransitionsRevealed(columnIndex, stateId);
-                await this.waitForPhase();
-                if (!this.viState.isPlaying && this.viState.phase !== 'stepping') return;
-
-                this.viState.subPhase = 'compute_q_values';
-                this.viState.setPhase('computing', timing.compute_q_values);
-                this.outputBoundary.presentQValuesComputed(columnIndex, stateId);
-                await this.waitForPhase();
-                if (!this.viState.isPlaying && this.viState.phase !== 'stepping') return;
+        // Find start index: skip phases up to and including resumeAfterPhase
+        let startIdx = 0;
+        if (resumeAfterPhase !== null) {
+            const resumeActionIdx = this.viState.currentActionIndex;
+            const resumeTransIdx = this.viState.currentTransitionIndex;
+            for (let i = 0; i < phases.length; i++) {
+                const p = phases[i];
+                if (p.phase !== resumeAfterPhase) continue;
+                const actionMatch = p.actionIndex === undefined || p.actionIndex === resumeActionIdx;
+                const transMatch = p.transitionIndex === undefined || p.transitionIndex === resumeTransIdx;
+                if (actionMatch && transMatch) { startIdx = i + 1; break; }
             }
-
-            // Select max action
-            this.viState.subPhase = 'select_max';
-            this.viState.setPhase('computing', timing.select_max);
-            this.outputBoundary.presentMaxSelected(columnIndex, stateId);
-            await this.waitForPhase();
-            if (!this.viState.isPlaying && this.viState.phase !== 'stepping') return;
         }
 
-        // Reveal value
-        this.viState.subPhase = 'revealing_value';
-        this.viState.setPhase('revealing_value', timing.revealing_value);
-        this.outputBoundary.presentValueRevealStart(columnIndex, stateId);
-        await this.waitForPhase();
-        this.outputBoundary.presentStateBackupComplete(columnIndex, stateId);
+        if (startIdx === 0) {
+            this.viState.currentActionIndex = 0;
+            this.viState.currentTransitionIndex = 0;
+        }
+
+        for (let i = startIdx; i < phases.length; i++) {
+            const entry = phases[i];
+            const duration = timing[entry.phase] ?? 500;
+
+            this.viState.subPhase = entry.phase;
+            if (entry.actionIndex !== undefined) this.viState.currentActionIndex = entry.actionIndex;
+            if (entry.transitionIndex !== undefined) this.viState.currentTransitionIndex = entry.transitionIndex;
+
+            const phaseState = entry.phase === 'revealing_value' ? 'revealing_value' : 'computing';
+            this.viState.setPhase(phaseState, duration);
+            this._callPresenterForSubPhase(entry.phase, columnIndex, stateId);
+
+            await this.waitForPhase();
+
+            if (entry.phase === 'revealing_value') {
+                this.outputBoundary.presentStateBackupComplete(columnIndex, stateId);
+                return;
+            }
+
+            if (!this.viState.isPlaying && this.viState.phase !== 'stepping') return;
+        }
     }
 
     /**
@@ -393,14 +357,25 @@ class VIAnimator {
     }
 
     async _animateRemainingStates(columnIndex, startStateIdx) {
+        const resumePhase = this.viState.subPhase !== 'idle' ? this.viState.subPhase : null;
+
         for (let si = startStateIdx; si < this.viState.stateCount; si++) {
             if (!this.viState.isPlaying) break;
 
             const stateId = this.viState.stateIds[si];
             this.viState.currentStateIndex = si;
 
-            this.outputBoundary.presentStateBackupStart(columnIndex, stateId);
-            await this._animateStateBackup(columnIndex, stateId, this.TIMING);
+            const isResuming = si === startStateIdx && resumePhase !== null;
+            if (!isResuming) {
+                this.outputBoundary.presentStateBackupStart(columnIndex, stateId);
+            }
+            await this._animateStateBackup(columnIndex, stateId, this.TIMING, isResuming ? resumePhase : null);
+
+            // Advance cursor when state completed
+            if (this.viState.subPhase === 'revealing_value') {
+                this.viState.currentStateIndex = si + 1;
+                this.viState.subPhase = 'idle';
+            }
 
             if (!this.viState.isPlaying) break;
         }
