@@ -71,7 +71,17 @@ class MainView {
             this.drawSpinningArrow();
         }
 
+        // Draw travel ball during edge_highlight phase
+        this.drawHighlightedEdgeTravelBall();
+
         pop();
+
+        // Continuous redraw during animated simulation phases
+        const _simS = this.viewModel.simulationState;
+        if (_simS && _simS.replayInitialized && !_simS.isPhaseComplete() &&
+            (_simS.phase === 'reveal' || _simS.phase === 'highlight')) {
+            requestAnimationFrame(() => { if (typeof redraw === 'function') redraw(); });
+        }
 
         // Update hover animation
         const interaction = this.viewModel.interaction;
@@ -229,12 +239,38 @@ class MainView {
                 }
             }
 
+            // Reveal phase: scale-in newly revealed nodes
+            let revealScale = 1;
+            const simRevealNode = this.viewModel.simulationState;
+            if (simRevealNode && simRevealNode.replayInitialized && simRevealNode.phase === 'reveal') {
+                const cur = simRevealNode.currentNode;
+                if (cur && node.id !== cur.id) {
+                    const srcNode = this.viewModel.graph.getNodeById(cur.id);
+                    let idx = -1;
+                    if (cur.type === 'state' && node.type === 'action') {
+                        idx = srcNode && srcNode.actions ? srcNode.actions.indexOf(node.id) : -1;
+                    } else if (cur.type === 'action' && node.type === 'state') {
+                        idx = srcNode && srcNode.sas ? srcNode.sas.findIndex(t => t.nextState === node.id) : -1;
+                    }
+                    if (idx >= 0) {
+                        const staggerMs = idx * 60;
+                        const elapsed = Date.now() - simRevealNode.phaseStartTime;
+                        const tRaw = Math.max(0, Math.min(1, (elapsed - staggerMs) / 200));
+                        revealScale = VI_EASINGS.easeOutBack(tRaw);
+                        if (revealScale <= 0) return;
+                    }
+                }
+            }
+
             const nodeVM = this.viewModel.createNodeViewModel(node);
             const color = nodeVM.color;
 
             // Get spinning arrow alpha for this node
             const nodeAlpha = this.getNodeSpinningArrowAlpha(node);
             const isNodeFaded = nodeAlpha < 255;
+
+            const scaleActive = revealScale !== 1;
+            if (scaleActive) { push(); translate(node.x, node.y); scale(revealScale); translate(-node.x, -node.y); }
 
             // Apply alpha to node fill color
             const nodeColor = this.applyAlphaToColor(color, nodeAlpha);
@@ -286,6 +322,8 @@ class MainView {
                 textSize(14);
                 text(node.name, node.x, node.y);
             }
+
+            if (scaleActive) { pop(); }
         });
     }
 
@@ -320,6 +358,30 @@ class MainView {
             }
 
             const edgeColor = edgeVM.color;
+
+            // Reveal phase: animate edges drawing themselves outward from the source node
+            const simReveal = this.viewModel.simulationState;
+            if (simReveal && simReveal.replayInitialized && simReveal.phase === 'reveal' && !isBidirectional) {
+                const cur = simReveal.currentNode;
+                if (cur) {
+                    const isRevealEdge =
+                        (cur.type === 'state' && from.id === cur.id && to.type === 'action') ||
+                        (cur.type === 'action' && from.id === cur.id && to.type === 'state');
+                    if (isRevealEdge) {
+                        const srcNode = this.viewModel.graph.getNodeById(cur.id);
+                        const idx = cur.type === 'state'
+                            ? (srcNode && srcNode.actions ? srcNode.actions.indexOf(to.id) : 0)
+                            : (srcNode && srcNode.sas ? srcNode.sas.findIndex(t => t.nextState === to.id) : 0);
+                        const staggerMs = Math.max(0, idx) * 60;
+                        const elapsed = Date.now() - simReveal.phaseStartTime;
+                        const tRaw = Math.max(0, Math.min(1, (elapsed - staggerMs) / 250));
+                        const lineP = VI_EASINGS.easeOut(tRaw);
+                        const headP = Math.max(0, Math.min(1, (lineP - 0.7) / 0.3));
+                        this._drawPartialStraightEdge(from, to, weight, edgeColor, lineP, headP);
+                        return;
+                    }
+                }
+            }
 
             if (isBidirectional) {
                 // Draw curved edge
@@ -611,6 +673,36 @@ class MainView {
         triangle(x, y, x1, y1, x2, y2);
     }
 
+    _drawPartialStraightEdge(from, to, weight, color, lineP, headP) {
+        const dx = to.x - from.x;
+        const dy = to.y - from.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist === 0) return;
+        const nx = dx / dist, ny = dy / dist;
+
+        const arrowSize = 8 + weight * 1.5;
+        const startX = from.x + nx * from.size;
+        const startY = from.y + ny * from.size;
+        const fullEndX = to.x - nx * to.size;
+        const fullEndY = to.y - ny * to.size;
+
+        const curEndX = lerp(startX, fullEndX, lineP);
+        const curEndY = lerp(startY, fullEndY, lineP);
+
+        const lineStopX = curEndX - nx * arrowSize * headP;
+        const lineStopY = curEndY - ny * arrowSize * headP;
+
+        stroke(color);
+        strokeWeight(weight);
+        noFill();
+        line(startX, startY, lineStopX, lineStopY);
+
+        if (headP > 0) {
+            const alphaHead = this.applyAlphaToColor(color, Math.round(headP * 255));
+            this.drawArrowhead(curEndX, curEndY, nx, ny, alphaHead, weight);
+        }
+    }
+
     drawSquigglyRewardLine(midX, midY, perpX, perpY, dirX, dirY, progress, reward, rewardColor, weight) {
         const maxLength = 80;
         const length = progress * maxLength;
@@ -831,6 +923,46 @@ class MainView {
         }
 
         return 255;
+    }
+
+    drawHighlightedEdgeTravelBall() {
+        const simState = this.viewModel.simulationState;
+        if (!simState || simState.phase !== 'highlight') return;
+        if (!simState.highlightedEdge) return;
+
+        const { fromId, toId } = simState.highlightedEdge;
+        const from = this.viewModel.graph.getNodeById(fromId);
+        const to = this.viewModel.graph.getNodeById(toId);
+        if (!from || !to) return;
+
+        const elapsed = Date.now() - simState.phaseStartTime;
+        const t = VI_EASINGS.easeInOut(Math.min(1, elapsed / simState.phaseDuration));
+
+        const dx = to.x - from.x;
+        const dy = to.y - from.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist === 0) return;
+        const nx = dx / dist, ny = dy / dist;
+
+        const startX = from.x + nx * from.size;
+        const startY = from.y + ny * from.size;
+        const endX = to.x - nx * to.size;
+        const endY = to.y - ny * to.size;
+
+        const ballX = lerp(startX, endX, t);
+        const ballY = lerp(startY, endY, t);
+
+        const r = 7;
+        noStroke();
+        fill(255, 215, 0, 230);
+        circle(ballX, ballY, r * 2);
+
+        noFill();
+        stroke(255, 215, 0, Math.round(120 * (1 - t)));
+        strokeWeight(2);
+        circle(ballX, ballY, r * 3);
+
+        drawingContext.setLineDash([]);
     }
 
     // Draw spinning arrow animation at action node during selection phase
