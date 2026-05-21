@@ -944,13 +944,54 @@ class MainView {
         if (dist === 0) return;
         const nx = dx / dist, ny = dy / dist;
 
-        const startX = from.x + nx * from.size;
-        const startY = from.y + ny * from.size;
-        const endX = to.x - nx * to.size;
-        const endY = to.y - ny * to.size;
+        // Check if bidirectional (curved edge)
+        const hasReverse = this.viewModel.graph.edges.some(e =>
+            e.getFromNode().id === toId && e.getToNode().id === fromId
+        );
 
-        const ballX = lerp(startX, endX, t);
-        const ballY = lerp(startY, endY, t);
+        let ballX, ballY;
+        if (hasReverse) {
+            // Quadratic Bezier path (same control point as drawCurvedEdge)
+            const perpX = -dy / dist;
+            const perpY = dx / dist;
+            const curveOffset = dist * 0.15;
+            const cx = (from.x + to.x) / 2 + perpX * curveOffset;
+            const cy = (from.y + to.y) / 2 + perpY * curveOffset;
+
+            // Find tStart (curve exits from-node circumference)
+            let tStartMin = 0.0, tStartMax = 0.5;
+            for (let i = 0; i < 10; i++) {
+                const tm = (tStartMin + tStartMax) / 2;
+                const bx = (1-tm)*(1-tm)*from.x + 2*(1-tm)*tm*cx + tm*tm*to.x;
+                const by = (1-tm)*(1-tm)*from.y + 2*(1-tm)*tm*cy + tm*tm*to.y;
+                const d = Math.sqrt((bx-from.x)**2 + (by-from.y)**2);
+                if (d < from.size) tStartMin = tm; else tStartMax = tm;
+            }
+            const tStart = (tStartMin + tStartMax) / 2;
+
+            // Find tEnd (curve enters to-node circumference)
+            let tEndMin = 0.5, tEndMax = 1.0;
+            for (let i = 0; i < 10; i++) {
+                const tm = (tEndMin + tEndMax) / 2;
+                const bx = (1-tm)*(1-tm)*from.x + 2*(1-tm)*tm*cx + tm*tm*to.x;
+                const by = (1-tm)*(1-tm)*from.y + 2*(1-tm)*tm*cy + tm*tm*to.y;
+                const d = Math.sqrt((bx-to.x)**2 + (by-to.y)**2);
+                if (d > to.size) tEndMin = tm; else tEndMax = tm;
+            }
+            const tEnd = (tEndMin + tEndMax) / 2;
+
+            const tb = lerp(tStart, tEnd, t);
+            ballX = (1-tb)*(1-tb)*from.x + 2*(1-tb)*tb*cx + tb*tb*to.x;
+            ballY = (1-tb)*(1-tb)*from.y + 2*(1-tb)*tb*cy + tb*tb*to.y;
+        } else {
+            // Straight edge
+            const startX = from.x + nx * from.size;
+            const startY = from.y + ny * from.size;
+            const endX = to.x - nx * to.size;
+            const endY = to.y - ny * to.size;
+            ballX = lerp(startX, endX, t);
+            ballY = lerp(startY, endY, t);
+        }
 
         const r = 7;
         noStroke();
