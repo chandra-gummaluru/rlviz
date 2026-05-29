@@ -44,15 +44,24 @@ class RightPanel {
         this.contentContainer.html('');
 
         const selectedNode = this.viewModel.selection.selectedNode;
+        const selectedEdge = this.viewModel.selection.selectedEdge;
+        const hoveredNode  = this.viewModel.interaction.hoveredNode;
+        const hoveredEdge  = this.viewModel.interaction.hoveredEdge;
         const isSimulateMode = this.viewModel.interaction.mode === 'simulate';
         const isVIMode = this.viewModel.interaction.mode === 'value_iteration';
 
         if (isVIMode) {
             this.renderValueIterationPanel();
-        } else if (isSimulateMode && !selectedNode) {
-            this.renderSimulationPanel();
         } else if (selectedNode) {
-            this.renderNodePanel(selectedNode);
+            this.renderNodePanel(selectedNode, { readOnly: false });
+        } else if (selectedEdge) {
+            this.renderEdgePanel(selectedEdge);
+        } else if (hoveredNode) {
+            this.renderNodePanel(hoveredNode, { readOnly: true });
+        } else if (hoveredEdge) {
+            this.renderEdgePanel(hoveredEdge);
+        } else if (isSimulateMode) {
+            this.renderSimulationPanel();
         } else {
             this.renderMDPInfoPanel();
         }
@@ -232,105 +241,200 @@ class RightPanel {
         });
     }
 
-    renderNodePanel(node) {
+    renderNodePanel(node, { readOnly = false } = {}) {
         // Title
         const title = createDiv(`${node.type === 'state' ? 'State' : 'Action'} Node`);
         title.parent(this.contentContainer);
         title.addClass('panel-title');
 
-        // Name Editing Section
-        this.createSection('Name', () => {
-            const nameContainer = createDiv();
-            nameContainer.parent(this.contentContainer);
-            nameContainer.addClass('panel-section-content');
-
-            const input = createInput(node.name);
-            input.parent(nameContainer);
-            input.addClass('panel-input');
-
-            const saveBtn = createButton('Save Name');
-            saveBtn.parent(nameContainer);
-            saveBtn.addClass('panel-btn');
-            saveBtn.addClass('panel-btn--primary');
-
-            saveBtn.mousePressed(() => {
-                const newName = input.value();
-                if (newName && newName.trim() !== '') {
-                    if (this.controller.interactors.renameNode) {
-                        const inputData = new RenameNodeInputData(node.id, newName.trim());
-                        this.controller.interactors.renameNode.executeRename(inputData);
-                        this.updateContent();
-                        redraw();
-                    }
-                }
+        if (readOnly) {
+            // Read-only: show name as plain text
+            this.createSection('Name', () => {
+                const nameContainer = createDiv();
+                nameContainer.parent(this.contentContainer);
+                nameContainer.addClass('panel-section-content');
+                const nameVal = createDiv(node.name);
+                nameVal.parent(nameContainer);
+                nameVal.addClass('panel-stat-value');
             });
-        });
+        } else {
+            // Editable name section
+            this.createSection('Name', () => {
+                const nameContainer = createDiv();
+                nameContainer.parent(this.contentContainer);
+                nameContainer.addClass('panel-section-content');
 
-        // Image Upload Section
-        this.createSection('Image', () => {
-            const imageContainer = createDiv();
-            imageContainer.parent(this.contentContainer);
-            imageContainer.addClass('panel-section-content');
+                const input = createInput(node.name);
+                input.parent(nameContainer);
+                input.addClass('panel-input');
 
-            // Show current image if exists
-            if (node.image) {
-                const imgPreview = createImg(node.image, 'Node image');
-                imgPreview.parent(imageContainer);
-                imgPreview.addClass('panel-img-preview');
-            } else {
-                const noImage = createDiv('No image uploaded');
-                noImage.parent(imageContainer);
-                noImage.addClass('panel-empty');
-                noImage.addClass('panel-empty--with-gap');
-            }
+                const saveBtn = createButton('Save Name');
+                saveBtn.parent(nameContainer);
+                saveBtn.addClass('panel-btn');
+                saveBtn.addClass('panel-btn--primary');
 
-            const uploadBtn = createButton('Upload Image');
-            uploadBtn.parent(imageContainer);
-            uploadBtn.addClass('panel-btn');
-            uploadBtn.addClass('panel-btn--success');
-
-            uploadBtn.mousePressed(() => {
-                const input = document.createElement('input');
-                input.type = 'file';
-                input.accept = 'image/*';
-                input.onchange = (e) => {
-                    const file = e.target.files[0];
-                    if (file) {
-                        const reader = new FileReader();
-                        reader.onload = (event) => {
-                            this.controller.setNodeImage(node.id, event.target.result);
+                saveBtn.mousePressed(() => {
+                    const newName = input.value();
+                    if (newName && newName.trim() !== '') {
+                        if (this.controller.interactors.renameNode) {
+                            const inputData = new RenameNodeInputData(node.id, newName.trim());
+                            this.controller.interactors.renameNode.executeRename(inputData);
                             this.updateContent();
                             redraw();
-                        };
-                        reader.readAsDataURL(file);
+                        }
                     }
-                };
-                input.click();
+                });
             });
 
-            if (node.image) {
-                const removeBtn = createButton('Remove Image');
-                removeBtn.parent(imageContainer);
-                removeBtn.addClass('panel-btn');
-                removeBtn.addClass('panel-btn--danger');
+            // Image Upload Section (edit mode only)
+            this.createSection('Image', () => {
+                const imageContainer = createDiv();
+                imageContainer.parent(this.contentContainer);
+                imageContainer.addClass('panel-section-content');
 
-                removeBtn.mousePressed(() => {
-                    this.controller.setNodeImage(node.id, null);
-                    this.updateContent();
-                    redraw();
+                if (node.image) {
+                    const imgPreview = createImg(node.image, 'Node image');
+                    imgPreview.parent(imageContainer);
+                    imgPreview.addClass('panel-img-preview');
+                } else {
+                    const noImage = createDiv('No image uploaded');
+                    noImage.parent(imageContainer);
+                    noImage.addClass('panel-empty');
+                    noImage.addClass('panel-empty--with-gap');
+                }
+
+                const uploadBtn = createButton('Upload Image');
+                uploadBtn.parent(imageContainer);
+                uploadBtn.addClass('panel-btn');
+                uploadBtn.addClass('panel-btn--success');
+
+                uploadBtn.mousePressed(() => {
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.accept = 'image/*';
+                    input.onchange = (e) => {
+                        const file = e.target.files[0];
+                        if (file) {
+                            const reader = new FileReader();
+                            reader.onload = (event) => {
+                                this.controller.setNodeImage(node.id, event.target.result);
+                                this.updateContent();
+                                redraw();
+                            };
+                            reader.readAsDataURL(file);
+                        }
+                    };
+                    input.click();
                 });
-            }
-        });
 
-        // Connections Section
+                if (node.image) {
+                    const removeBtn = createButton('Remove Image');
+                    removeBtn.parent(imageContainer);
+                    removeBtn.addClass('panel-btn');
+                    removeBtn.addClass('panel-btn--danger');
+
+                    removeBtn.mousePressed(() => {
+                        this.controller.setNodeImage(node.id, null);
+                        this.updateContent();
+                        redraw();
+                    });
+                }
+            });
+        }
+
+        // Connections Section (always shown)
         if (node.type === 'state') {
-            this.renderStateConnections(node);
+            this.renderStateConnections(node, readOnly);
         } else {
-            this.renderActionConnections(node);
+            this.renderActionConnections(node, readOnly);
         }
     }
 
-    renderStateConnections(stateNode) {
+    renderEdgePanel(edge) {
+        const from = edge.getFromNode();
+        const to = edge.getToNode();
+        const isTransition = from.type === 'action' && to.type === 'state';
+
+        const title = createDiv('Edge');
+        title.parent(this.contentContainer);
+        title.addClass('panel-title');
+
+        this.createSection('Connection', () => {
+            const content = createDiv();
+            content.parent(this.contentContainer);
+            content.addClass('panel-section-content');
+
+            const typeLabel = createDiv(`${from.type === 'state' ? 'State' : 'Action'} → ${to.type === 'state' ? 'State' : 'Action'}`);
+            typeLabel.parent(content);
+            typeLabel.addClass('panel-label');
+
+            const connRow = createDiv();
+            connRow.parent(content);
+            connRow.style('display', 'flex');
+            connRow.style('align-items', 'center');
+            connRow.style('gap', '6px');
+            connRow.style('margin-top', '6px');
+
+            const fromBadge = createSpan(from.name);
+            fromBadge.parent(connRow);
+            fromBadge.style('background', from.type === 'state' ? '#2d6a4f' : '#1565c0');
+            fromBadge.style('color', 'white');
+            fromBadge.style('padding', '2px 8px');
+            fromBadge.style('border-radius', '4px');
+            fromBadge.style('font-size', '13px');
+
+            const arrow = createSpan('→');
+            arrow.parent(connRow);
+
+            const toBadge = createSpan(to.name);
+            toBadge.parent(connRow);
+            toBadge.style('background', to.type === 'state' ? '#2d6a4f' : '#1565c0');
+            toBadge.style('color', 'white');
+            toBadge.style('padding', '2px 8px');
+            toBadge.style('border-radius', '4px');
+            toBadge.style('font-size', '13px');
+        });
+
+        if (isTransition) {
+            this.createSection('Transition', () => {
+                const content = createDiv();
+                content.parent(this.contentContainer);
+                content.addClass('panel-section-content');
+
+                const probRow = createDiv();
+                probRow.parent(content);
+                probRow.addClass('panel-slider-row');
+                const probLabel = createDiv('Probability:');
+                probLabel.parent(probRow);
+                probLabel.addClass('panel-label');
+                const probVal = createDiv(edge.getProbability().toFixed(3));
+                probVal.parent(probRow);
+                probVal.addClass('panel-stat-value');
+
+                const rewRow = createDiv();
+                rewRow.parent(content);
+                rewRow.addClass('panel-slider-row');
+                const rewLabel = createDiv('Reward:');
+                rewLabel.parent(rewRow);
+                rewLabel.addClass('panel-label');
+                const rewVal = createDiv(edge.getReward().toFixed(2));
+                rewVal.parent(rewRow);
+                rewVal.addClass('panel-stat-value');
+                this._applyRewardColor(rewVal, edge.getReward());
+            });
+        } else {
+            this.createSection('Info', () => {
+                const content = createDiv();
+                content.parent(this.contentContainer);
+                content.addClass('panel-section-content');
+                const info = createDiv('Availability edge — no transition probability or reward.');
+                info.parent(content);
+                info.addClass('panel-empty');
+            });
+        }
+    }
+
+    renderStateConnections(stateNode, readOnly = false) {
         const states = this.viewModel.graph.nodes.filter(n => n.type === 'state');
         const stateIndex = states.findIndex(s => s.id === stateNode.id);
 
@@ -367,9 +471,7 @@ class RightPanel {
         });
     }
 
-    renderActionConnections(actionNode) {
-        const actions = this.viewModel.graph.nodes.filter(n => n.type === 'action');
-        const actionIndex = actions.findIndex(a => a.id === actionNode.id);
+    renderActionConnections(actionNode, readOnly = false) {
         const states = this.viewModel.graph.nodes.filter(n => n.type === 'state');
 
         this.createSection('Transitions', () => {
@@ -381,7 +483,7 @@ class RightPanel {
                 empty.parent(transitionsDiv);
                 empty.addClass('panel-empty');
             } else {
-                actionNode.sas.forEach((transition, index) => {
+                actionNode.sas.forEach((transition) => {
                     const transitionContainer = createDiv();
                     transitionContainer.parent(transitionsDiv);
                     transitionContainer.addClass('panel-transition-box');
@@ -389,68 +491,91 @@ class RightPanel {
                     const targetState = states.find(s => s.id === transition.nextState);
                     const targetStateName = targetState ? targetState.name : 'Unknown';
 
-                    // Transition header
                     const header = createDiv(`→ ${targetStateName}`);
                     header.parent(transitionContainer);
                     header.addClass('panel-transition-header');
 
-                    // Probability control
-                    const probLabel = createDiv('Probability:');
-                    probLabel.parent(transitionContainer);
-                    probLabel.addClass('panel-label');
+                    if (readOnly) {
+                        // Static probability + reward
+                        const probRow = createDiv();
+                        probRow.parent(transitionContainer);
+                        probRow.addClass('panel-slider-row');
+                        const probLabel = createDiv('Probability:');
+                        probLabel.parent(probRow);
+                        probLabel.addClass('panel-label');
+                        const probVal = createDiv(transition.probability.toFixed(3));
+                        probVal.parent(probRow);
+                        probVal.addClass('panel-stat-value');
 
-                    const probInputContainer = createDiv();
-                    probInputContainer.parent(transitionContainer);
-                    probInputContainer.addClass('panel-slider-row');
+                        const rewRow = createDiv();
+                        rewRow.parent(transitionContainer);
+                        rewRow.addClass('panel-slider-row');
+                        const rewLabel = createDiv('Reward:');
+                        rewLabel.parent(rewRow);
+                        rewLabel.addClass('panel-label');
+                        const rewVal = createDiv(transition.reward.toFixed(2));
+                        rewVal.parent(rewRow);
+                        rewVal.addClass('panel-stat-value');
+                        this._applyRewardColor(rewVal, transition.reward);
+                    } else {
+                        // Editable probability slider
+                        const probLabel = createDiv('Probability:');
+                        probLabel.parent(transitionContainer);
+                        probLabel.addClass('panel-label');
 
-                    const probSlider = createSlider(0, 1, transition.probability, 0.01);
-                    probSlider.parent(probInputContainer);
-                    probSlider.addClass('panel-slider');
+                        const probInputContainer = createDiv();
+                        probInputContainer.parent(transitionContainer);
+                        probInputContainer.addClass('panel-slider-row');
 
-                    const probValue = createDiv(transition.probability.toFixed(3));
-                    probValue.parent(probInputContainer);
-                    probValue.addClass('panel-slider-value');
+                        const probSlider = createSlider(0, 1, transition.probability, 0.01);
+                        probSlider.parent(probInputContainer);
+                        probSlider.addClass('panel-slider');
 
-                    probSlider.input(() => {
-                        const newProb = parseFloat(probSlider.value());
-                        this.controller.setTransitionProbability(actionNode.id, transition.nextState, newProb);
-                        probValue.html(newProb.toFixed(3));
-                        redraw();
-                    });
+                        const probValue = createDiv(transition.probability.toFixed(3));
+                        probValue.parent(probInputContainer);
+                        probValue.addClass('panel-slider-value');
 
-                    probSlider.elt.addEventListener('mousedown', (e) => e.stopPropagation());
-                    probSlider.elt.addEventListener('click', (e) => e.stopPropagation());
+                        probSlider.input(() => {
+                            const newProb = parseFloat(probSlider.value());
+                            this.controller.setTransitionProbability(actionNode.id, transition.nextState, newProb);
+                            probValue.html(newProb.toFixed(3));
+                            redraw();
+                        });
 
-                    // Reward control
-                    const rewardLabel = createDiv('Reward:');
-                    rewardLabel.parent(transitionContainer);
-                    rewardLabel.addClass('panel-label');
+                        probSlider.elt.addEventListener('mousedown', (e) => e.stopPropagation());
+                        probSlider.elt.addEventListener('click', (e) => e.stopPropagation());
 
-                    const rewardInputContainer = createDiv();
-                    rewardInputContainer.parent(transitionContainer);
-                    rewardInputContainer.addClass('panel-slider-row');
+                        // Editable reward slider
+                        const rewardLabel = createDiv('Reward:');
+                        rewardLabel.parent(transitionContainer);
+                        rewardLabel.addClass('panel-label');
 
-                    const rewardSlider = createSlider(-100, 100, transition.reward, 1);
-                    rewardSlider.parent(rewardInputContainer);
-                    rewardSlider.addClass('panel-slider');
+                        const rewardInputContainer = createDiv();
+                        rewardInputContainer.parent(transitionContainer);
+                        rewardInputContainer.addClass('panel-slider-row');
 
-                    const rewardValue = createDiv(transition.reward.toFixed(2));
-                    rewardValue.parent(rewardInputContainer);
-                    rewardValue.addClass('panel-slider-value');
-                    rewardValue.addClass('panel-slider-value--reward');
+                        const rewardSlider = createSlider(-100, 100, transition.reward, 1);
+                        rewardSlider.parent(rewardInputContainer);
+                        rewardSlider.addClass('panel-slider');
 
-                    this._applyRewardColor(rewardValue, transition.reward);
+                        const rewardValue = createDiv(transition.reward.toFixed(2));
+                        rewardValue.parent(rewardInputContainer);
+                        rewardValue.addClass('panel-slider-value');
+                        rewardValue.addClass('panel-slider-value--reward');
 
-                    rewardSlider.input(() => {
-                        const newReward = parseFloat(rewardSlider.value());
-                        this.controller.setTransitionReward(actionNode.id, transition.nextState, newReward);
-                        rewardValue.html(newReward.toFixed(2));
-                        this._applyRewardColor(rewardValue, newReward);
-                        redraw();
-                    });
+                        this._applyRewardColor(rewardValue, transition.reward);
 
-                    rewardSlider.elt.addEventListener('mousedown', (e) => e.stopPropagation());
-                    rewardSlider.elt.addEventListener('click', (e) => e.stopPropagation());
+                        rewardSlider.input(() => {
+                            const newReward = parseFloat(rewardSlider.value());
+                            this.controller.setTransitionReward(actionNode.id, transition.nextState, newReward);
+                            rewardValue.html(newReward.toFixed(2));
+                            this._applyRewardColor(rewardValue, newReward);
+                            redraw();
+                        });
+
+                        rewardSlider.elt.addEventListener('mousedown', (e) => e.stopPropagation());
+                        rewardSlider.elt.addEventListener('click', (e) => e.stopPropagation());
+                    }
                 });
 
                 // Show total probability sum

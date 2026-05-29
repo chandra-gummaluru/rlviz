@@ -57,30 +57,19 @@ class CanvasController {
     }
 
     handleMouseMove(screenX, screenY) {
-        const world = this.viewModel.screenToWorld(screenX, screenY);
-        const edge = GeometricHelper.findEdgeAtPosition(this.viewModel.graph, world.x, world.y);
+        if (this.viewModel.interaction.isInteracting()) return false;
 
-        // Only action→state edges get hover effect
-        const isActionToState = edge &&
-            edge.getFromNode().type === 'action' &&
-            edge.getToNode().type === 'state';
-        const targetEdge = isActionToState ? edge : null;
+        const world = this.viewModel.screenToWorld(screenX, screenY);
+        const entity = GeometricHelper.findEntityAtPosition(this.viewModel.graph, world.x, world.y);
         const interaction = this.viewModel.interaction;
 
-        if (targetEdge !== interaction.hoveredEdge) {
-            if (targetEdge) {
-                // Start opening animation
-                interaction.hoveredEdge = targetEdge;
-                interaction.hoverDirection = 1;
-                interaction.hoverStartTime = Date.now();
-                interaction.hoverAnimating = true;
-            } else if (interaction.hoveredEdge) {
-                // Start closing animation (keep hoveredEdge until animation finishes)
-                interaction.hoverDirection = -1;
-                interaction.hoverStartTime = Date.now();
-                interaction.hoverAnimating = true;
-            }
-        }
+        const prevNode = interaction.hoveredNode;
+        const prevEdge = interaction.hoveredEdge;
+
+        interaction.hoveredNode = entity.type === 'node' ? entity.entity : null;
+        interaction.hoveredEdge = entity.type === 'edge' ? entity.entity : null;
+
+        return interaction.hoveredNode !== prevNode || interaction.hoveredEdge !== prevEdge;
     }
 
     handleMouseDrag(screenX, screenY) {

@@ -50,15 +50,15 @@ class RewardParticleSystem {
         const animateFlash = (now) => {
             if (animState.cancelled) { flash.remove(); return; }
             const elapsed = now - flashStart;
-            if (elapsed < 200) {
+            if (elapsed < 400) {
                 // Pop: scale 1 -> 1.5 -> 1
-                const t = elapsed / 200;
+                const t = elapsed / 400;
                 const scale = t < 0.5 ? 1 + t * 2 * 0.5 : 1.5 - (t - 0.5) * 2 * 0.5;
                 flash.style.transform = `translate(-50%, -50%) scale(${scale})`;
                 requestAnimationFrame(animateFlash);
             } else {
-                // Fade out flash text (200-300ms)
-                const fadeT = Math.min((elapsed - 200) / 100, 1);
+                // Fade out flash text (400-600ms)
+                const fadeT = Math.min((elapsed - 400) / 200, 1);
                 flash.style.opacity = String(1 - fadeT);
                 if (fadeT < 1) {
                     requestAnimationFrame(animateFlash);
@@ -87,7 +87,7 @@ class RewardParticleSystem {
                     onComplete
                 );
             }
-        }, 200);
+        }, 400);
     }
 
     launchParticle(x, y, color, targetElement, animState, delay, onComplete) {
@@ -103,7 +103,7 @@ class RewardParticleSystem {
         const burstX = x + (Math.random() - 0.5) * 40;
         const burstY = y + (Math.random() - 0.5) * 40 - 15;
 
-        const travelDuration = 500; // 300-800ms window, each particle ~500ms
+        const travelDuration = 900;
         const startTime = performance.now() + delay;
 
         const animate = (now) => {

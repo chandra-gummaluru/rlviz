@@ -83,33 +83,6 @@ class MainView {
             requestAnimationFrame(() => { if (typeof redraw === 'function') redraw(); });
         }
 
-        // Update hover animation
-        const interaction = this.viewModel.interaction;
-        if (interaction.hoverAnimating) {
-            const elapsed = Date.now() - interaction.hoverStartTime;
-            const duration = 300; // 300ms
-            const t = Math.min(elapsed / duration, 1.0);
-            const eased = t * (2 - t); // ease-out quadratic
-
-            if (interaction.hoverDirection === 1) {
-                interaction.hoverProgress = eased;
-            } else {
-                interaction.hoverProgress = 1.0 - eased;
-            }
-
-            if (t >= 1.0) {
-                interaction.hoverAnimating = false;
-                if (interaction.hoverDirection === -1) {
-                    interaction.hoveredEdge = null;
-                    interaction.hoverProgress = 0;
-                }
-            }
-
-            if (interaction.hoverAnimating) {
-                setTimeout(() => redraw(), 16); // ~60fps continuous redraw
-            }
-        }
-
         // Draw zoom level indicator
         this.drawZoomIndicator();
 
@@ -431,17 +404,6 @@ class MainView {
         const baseColor = renderInfo.colorOverride || edgeColor;
         const alphaEdgeColor = this.applyAlphaToColor(baseColor, renderInfo.alpha);
 
-        // Check if this edge is hovered (action→state only, not during spinning arrow)
-        const spinningArrow = this.viewModel.simulationState &&
-            this.viewModel.simulationState.phase === 'spinning_arrow';
-        const hoverInteraction = this.viewModel.interaction;
-        const isHovered = !spinningArrow && (hoverInteraction.hoveredEdge === edge);
-        const progress = isHovered ? hoverInteraction.hoverProgress : 0;
-
-        // Calculate midpoint
-        const midX = (from.x + to.x) / 2;
-        const midY = (from.y + to.y) / 2;
-
         // Draw the edge line
         strokeWeight(weight);
         stroke(alphaEdgeColor);
@@ -458,27 +420,6 @@ class MainView {
 
         // Draw arrowhead at the circumference
         this.drawArrowhead(arrowTipX, arrowTipY, normalizedDx, normalizedDy, alphaEdgeColor, weight);
-
-        // Only show probability and reward labels for Action → State edges
-        if (from.type === 'action' && to.type === 'state') {
-            if (progress > 0) {
-                const labelColor = renderInfo.colorOverride || edge.getLabelColor();
-                const probAlpha = Math.floor(progress * 255);
-
-                // Probability text offset to opposite side from squiggly
-                noStroke();
-                fill(this.applyAlphaToColor(labelColor, Math.min(renderInfo.alpha, probAlpha)));
-                textSize(edge.labelSize);
-                textAlign(CENTER, CENTER);
-                const probOffsetDist = 22;
-                const probX = midX - perpX * probOffsetDist + edge.labelOffset.x;
-                const probY = midY - perpY * probOffsetDist + edge.labelOffset.y;
-                text(`P: ${edge.getProbability().toFixed(2)}`, probX, probY);
-
-                // Squiggly reward line
-                this.drawSquigglyRewardLine(midX, midY, perpX, perpY, normalizedDx, normalizedDy, progress, edge.getReward(), labelColor, weight);
-            }
-        }
     }
 
     drawCurvedEdge(from, to, weight, edgeColor, edge) {
@@ -573,13 +514,6 @@ class MainView {
         const baseColor = renderInfo.colorOverride || edgeColor;
         const alphaEdgeColor = this.applyAlphaToColor(baseColor, renderInfo.alpha);
 
-        // Check if this edge is hovered (action→state only, not during spinning arrow)
-        const spinningArrow = this.viewModel.simulationState &&
-            this.viewModel.simulationState.phase === 'spinning_arrow';
-        const hoverInteraction = this.viewModel.interaction;
-        const isHovered = !spinningArrow && (hoverInteraction.hoveredEdge === edge);
-        const progress = isHovered ? hoverInteraction.hoverProgress : 0;
-
         // Calculate midpoint on curve (t=0.5)
         const tMid = 0.5;
         const curveMidX = (1 - tMid) * (1 - tMid) * from.x + 2 * (1 - tMid) * tMid * controlX + tMid * tMid * to.x;
@@ -627,27 +561,6 @@ class MainView {
 
         // Draw arrowhead at the intersection point
         this.drawArrowhead(arrowX, arrowY, normalizedTangentDx, normalizedTangentDy, alphaEdgeColor, weight);
-
-        // Only show probability and reward labels for Action → State edges
-        if (from.type === 'action' && to.type === 'state') {
-            if (progress > 0) {
-                const labelColor = renderInfo.colorOverride || edge.getLabelColor();
-                const probAlpha = Math.floor(progress * 255);
-
-                // Probability text offset to opposite side from squiggly
-                noStroke();
-                fill(this.applyAlphaToColor(labelColor, Math.min(renderInfo.alpha, probAlpha)));
-                textSize(edge.labelSize);
-                textAlign(CENTER, CENTER);
-                const probOffsetDist = 22;
-                const probX = curveMidX - midPerpX * probOffsetDist + edge.labelOffset.x;
-                const probY = curveMidY - midPerpY * probOffsetDist + edge.labelOffset.y;
-                text(`P: ${edge.getProbability().toFixed(2)}`, probX, probY);
-
-                // Squiggly reward line
-                this.drawSquigglyRewardLine(curveMidX, curveMidY, midPerpX, midPerpY, midDirX, midDirY, progress, edge.getReward(), labelColor, weight);
-            }
-        }
     }
 
     drawArrowhead(x, y, dirX, dirY, color, lineWeight) {
@@ -701,79 +614,6 @@ class MainView {
             const alphaHead = this.applyAlphaToColor(color, Math.round(headP * 255));
             this.drawArrowhead(curEndX, curEndY, nx, ny, alphaHead, weight);
         }
-    }
-
-    drawSquigglyRewardLine(midX, midY, perpX, perpY, dirX, dirY, progress, reward, rewardColor, weight) {
-        const maxLength = 80;
-        const length = progress * maxLength;
-        if (length < 1) return;
-
-        const amplitude = 5;
-        const waves = 5;
-        const samples = 60;
-        const arrowSize = 7;
-
-        // Direction: extend along perpendicular (left side of edge direction)
-        const extDirX = perpX;
-        const extDirY = perpY;
-
-        // Stop squiggly before arrowhead
-        const squigglyLength = Math.max(0, length - arrowSize);
-
-        strokeWeight(Math.max(1, weight * 0.6));
-        const alphaColor = this.applyAlphaToColor(rewardColor, Math.floor(progress * 255));
-        stroke(alphaColor);
-        noFill();
-
-        let lastPx, lastPy;
-        beginShape();
-        for (let i = 0; i <= samples; i++) {
-            const t = i / samples;
-            const dist = t * squigglyLength;
-            // Position along perpendicular
-            const baseX = midX + extDirX * dist;
-            const baseY = midY + extDirY * dist;
-            // Sinusoidal offset along edge direction
-            const wave = Math.sin(t * waves * 2 * Math.PI) * amplitude * progress;
-            const px = baseX + dirX * wave;
-            const py = baseY + dirY * wave;
-            // Catmull-Rom splines need duplicate first/last control points
-            if (i === 0) curveVertex(px, py);
-            curveVertex(px, py);
-            if (i === samples) curveVertex(px, py);
-            lastPx = px;
-            lastPy = py;
-        }
-        endShape();
-
-        // Straight connector from last wave point to arrowhead base
-        const tipX = midX + extDirX * length;
-        const tipY = midY + extDirY * length;
-        const arrowBaseX = tipX - extDirX * arrowSize;
-        const arrowBaseY = tipY - extDirY * arrowSize;
-        line(lastPx, lastPy, arrowBaseX, arrowBaseY);
-        const arrowAngle = Math.PI / 6;
-
-        const cos1 = Math.cos(Math.PI - arrowAngle);
-        const sin1 = Math.sin(Math.PI - arrowAngle);
-        const cos2 = Math.cos(Math.PI + arrowAngle);
-        const sin2 = Math.sin(Math.PI + arrowAngle);
-
-        const ax1 = tipX + (extDirX * cos1 - extDirY * sin1) * arrowSize;
-        const ay1 = tipY + (extDirX * sin1 + extDirY * cos1) * arrowSize;
-        const ax2 = tipX + (extDirX * cos2 - extDirY * sin2) * arrowSize;
-        const ay2 = tipY + (extDirX * sin2 + extDirY * cos2) * arrowSize;
-
-        fill(alphaColor);
-        noStroke();
-        triangle(tipX, tipY, ax1, ay1, ax2, ay2);
-
-        // Reward text past arrowhead
-        const textX = tipX + extDirX * 16;
-        const textY = tipY + extDirY * 16;
-        textSize(13);
-        textAlign(CENTER, CENTER);
-        text(`R: ${reward.toFixed(1)}`, textX, textY);
     }
 
     // Apply alpha to a color (supports p5 color objects, rgb(), hex strings)
@@ -1247,10 +1087,11 @@ class MainView {
     }
 
     mouseMoved() {
-        this.controller.handleMouseMove(mouseX, mouseY);
-        if (this.viewModel.interaction.placingMode ||
-            this.viewModel.interaction.hoverAnimating ||
-            this.viewModel.interaction.hoveredEdge) {
+        const hoverChanged = this.controller.handleMouseMove(mouseX, mouseY);
+        if (hoverChanged && this.rightPanel) {
+            this.rightPanel.updateContent();
+        }
+        if (hoverChanged || this.viewModel.interaction.placingMode) {
             redraw();
         }
     }
