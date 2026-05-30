@@ -903,28 +903,24 @@ class MainView {
             const midY = (actionNode.y + targetNode.y) / 2;
 
             const isHighlighted = (index === highlightedEdgeIndex);
-            const probText = `p=${transition.probability.toFixed(2)}`;
+            const probLatex = `p = ${transition.probability.toFixed(2)}`;
 
             push();
             noStroke();
-
             if (isHighlighted) {
-                fill(255, 235, 59, 220);  // Bright yellow
+                fill(255, 235, 59, 220);
                 rect(midX - 30, midY - 12, 60, 24, 4);
-                fill(0);
-                textSize(14);
-                textStyle(BOLD);
             } else {
-                fill(255, 255, 255, 60);  // Very faded white background
+                fill(255, 255, 255, 60);
                 rect(midX - 30, midY - 12, 60, 24, 4);
-                fill(80, 80, 80, 80);  // Faded text
-                textSize(12);
-                textStyle(NORMAL);
             }
-
-            textAlign(CENTER, CENTER);
-            text(probText, midX, midY);
             pop();
+
+            mathRenderer.draw(drawingContext, probLatex, midX, midY, {
+                color: isHighlighted ? '#000000' : '#505050',
+                em: isHighlighted ? 14 : 12,
+                alpha: isHighlighted ? 255 : 80
+            });
         });
 
         // Keep redrawing for smooth animation

@@ -1,3 +1,15 @@
+// Escape user-controlled names for use inside LaTeX \text{} blocks
+function latexEscapeText(value) {
+    return String(value)
+        .replace(/\\/g, '\\textbackslash{}')
+        .replace(/[{}]/g, match => `\\${match}`)
+        .replace(/_/g, '\\_')
+        .replace(/%/g, '\\%')
+        .replace(/&/g, '\\&')
+        .replace(/#/g, '\\#')
+        .replace(/\$/g, '\\$');
+}
+
 // Presenter for Value Iteration — translates state changes to ViewModel updates
 class VIPresenter extends VIOutputBoundary {
     constructor(canvasViewModel) {
@@ -259,16 +271,18 @@ class VIPresenter extends VIOutputBoundary {
     }
 
     _formatEquationHeader(stateName, timestep) {
-        return `V${timestep}(${stateName}) = max_a \u03A3 P(s'|s,a)[R + \u03B3\u00B7V${timestep + 1}(s')]`;
+        const s = latexEscapeText(stateName);
+        return `V_{${timestep}}(\\text{${s}}) = \\max_a \\sum_{s'} P(s'|s,a)[R + \\gamma V_{${timestep + 1}}(s')]`;
     }
 
     _formatEquationLines(stateName, timestep, detail, subPhase, actionIdx, transIdx) {
         const lines = [];
         const gamma = this.viState.gamma;
+        const s = latexEscapeText(stateName);
 
-        // Always show the general equation
+        // Always show the general equation header
         lines.push({
-            text: `V${timestep}(${stateName}) = max { Q(${stateName}, a) }`,
+            text: `V_{${timestep}}(\\text{${s}}) = \\max\\{ Q(\\text{${s}}, a) \\}`,
             type: 'header'
         });
 
@@ -277,39 +291,38 @@ class VIPresenter extends VIOutputBoundary {
         const showMax = phaseIdx >= 4;
 
         if (subPhase === 'compute_transition') {
-            // Per-transition: show the current action's running computation
             const action = detail.actions[actionIdx];
             if (action) {
-                // Show terms computed so far (up to and including current transition)
                 const visibleTerms = action.transitions.slice(0, transIdx + 1);
                 let runningSum = 0;
                 visibleTerms.forEach(t => {
                     lines.push({
-                        text: `${t.probability.toFixed(2)}\u00B7[${t.reward.toFixed(1)} + ${gamma}\u00B7${t.nextValue.toFixed(2)}] = ${t.term.toFixed(2)}`,
+                        text: `${t.probability.toFixed(2)} \\cdot [${t.reward.toFixed(1)} + ${gamma} \\cdot ${t.nextValue.toFixed(2)}] = ${t.term.toFixed(2)}`,
                         type: 'normal'
                     });
                     runningSum += t.term;
                 });
+                const a = latexEscapeText(action.actionName);
                 lines.push({
-                    text: `Q(${stateName}, ${action.actionName}) = ${runningSum.toFixed(2)} (so far)`,
+                    text: `Q(\\text{${s}}, \\text{${a}}) = ${runningSum.toFixed(2)} \\text{ (so far)}`,
                     type: 'header'
                 });
             }
         } else if (subPhase === 'show_q_result') {
-            // Show the final Q-value for the current action
             const action = detail.actions[actionIdx];
             if (action) {
+                const a = latexEscapeText(action.actionName);
                 lines.push({
-                    text: `Q(${stateName}, ${action.actionName}) = ${action.qValue.toFixed(2)}`,
+                    text: `Q(\\text{${s}}, \\text{${a}}) = ${action.qValue.toFixed(2)}`,
                     type: action.actionId === detail.bestActionId ? 'best' : 'normal'
                 });
             }
         } else if (phaseIdx >= 3) {
-            // Bundled mode or select_max/revealing_value: show all Q-values
             for (let i = 0; i < detail.actions.length; i++) {
                 const action = detail.actions[i];
+                const a = latexEscapeText(action.actionName);
                 lines.push({
-                    text: `Q(${stateName}, ${action.actionName}) = ${action.qValue.toFixed(2)}`,
+                    text: `Q(\\text{${s}}, \\text{${a}}) = ${action.qValue.toFixed(2)}`,
                     type: action.actionId === detail.bestActionId ? 'best' : 'normal'
                 });
             }
@@ -317,9 +330,9 @@ class VIPresenter extends VIOutputBoundary {
 
         if (showMax) {
             if (detail.actions.length > 0) {
-                const qVals = detail.actions.map(a => a.qValue.toFixed(2)).join(', ');
+                const qVals = detail.actions.map(a => a.qValue.toFixed(2)).join(',\\, ');
                 lines.push({
-                    text: `V${timestep}(${stateName}) = max{${qVals}} = ${detail.value.toFixed(2)}`,
+                    text: `V_{${timestep}}(\\text{${s}}) = \\max\\{${qVals}\\} = ${detail.value.toFixed(2)}`,
                     type: 'result'
                 });
             }

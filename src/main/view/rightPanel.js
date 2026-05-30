@@ -165,7 +165,7 @@ class RightPanel {
                 empty.parent(probabilityInfo);
                 empty.addClass('panel-empty');
             } else {
-                const dimensionsDiv = createDiv(`Dimensions: ${states.length} × ${actions.length} × ${states.length}`);
+                const dimensionsDiv = createDiv(`Dimensions: ${states.length} \\(\\times\\) ${actions.length} \\(\\times\\) ${states.length}`);
                 dimensionsDiv.parent(probabilityInfo);
                 dimensionsDiv.addClass('panel-dimensions');
 
@@ -175,7 +175,7 @@ class RightPanel {
                 descDiv.addClass('panel-description');
 
                 if (window.MathJax) {
-                    MathJax.typesetPromise([descDiv.elt]).catch(() => {});
+                    MathJax.typesetPromise([dimensionsDiv.elt, descDiv.elt]).catch(() => {});
                 }
             }
         });
@@ -194,7 +194,7 @@ class RightPanel {
                 empty.parent(rewardInfo);
                 empty.addClass('panel-empty');
             } else {
-                const dimensionsDiv = createDiv(`Dimensions: ${states.length} × ${actions.length} × ${states.length}`);
+                const dimensionsDiv = createDiv(`Dimensions: ${states.length} \\(\\times\\) ${actions.length} \\(\\times\\) ${states.length}`);
                 dimensionsDiv.parent(rewardInfo);
                 dimensionsDiv.addClass('panel-dimensions');
 
@@ -204,7 +204,7 @@ class RightPanel {
                 descDiv.addClass('panel-description');
 
                 if (window.MathJax) {
-                    MathJax.typesetPromise([descDiv.elt]).catch(() => {});
+                    MathJax.typesetPromise([dimensionsDiv.elt, descDiv.elt]).catch(() => {});
                 }
             }
         });
@@ -609,9 +609,12 @@ class RightPanel {
         paramsDiv.addClass('panel-section-content');
         paramsDiv.style('margin-top', '10px');
 
-        const gammaLine = createDiv(`<strong>Discount (γ):</strong> ${this.discountFactor}`);
+        const gammaLine = createDiv(`<strong>Discount (\\(\\gamma\\)):</strong> ${this.discountFactor}`);
         gammaLine.parent(paramsDiv);
         gammaLine.style('margin-bottom', '4px');
+        if (window.MathJax) {
+            MathJax.typesetPromise([gammaLine.elt]).catch(() => {});
+        }
 
         if (viState && viState.initialized) {
             const tLine = createDiv(`<strong>Horizon (T):</strong> ${viState.T}`);

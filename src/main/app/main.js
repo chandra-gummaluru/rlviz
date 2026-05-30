@@ -1,3 +1,6 @@
+// Shared MathJax-to-canvas renderer (used by ValueIterationView and MainView)
+const mathRenderer = new MathRenderer(() => { if (typeof redraw === 'function') redraw(); });
+
 // Domain
 const graph = new Graph();
 const commandHistory = new CommandHistory(50);
@@ -163,7 +166,12 @@ const onExportGraph = () => {
 };
 
 const onModeChange = (mode) => {
+    const prevMode = canvasViewModel.interaction.mode;
     canvasController.setMode(mode);
+    // Clear cached MathJax renders when leaving VI mode — values change each run
+    if (prevMode === 'value_iteration' && mode !== 'value_iteration') {
+        mathRenderer.clear();
+    }
     redraw();
 };
 

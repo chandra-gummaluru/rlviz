@@ -139,17 +139,13 @@ class ValueIterationView {
     }
 
     _drawTimestepLabels(visibleCount) {
-        push();
-        fill(80);
-        noStroke();
-        textAlign(CENTER, TOP);
-        textSize(14);
-        textFont('Calibri, "Segoe UI", Tahoma, sans-serif');
         for (let i = 0; i < visibleCount; i++) {
             const col = this.viViewModel.columns[i];
-            if (col) text(`t = ${col.timestep}`, col.x, 10);
+            if (col) {
+                mathRenderer.draw(drawingContext, `t = ${col.timestep}`, col.x, 10,
+                    { color: '#505050', em: 14, alignX: 'center', alignY: 'top' });
+            }
         }
-        pop();
     }
 
     _drawColumn(col, colIdx, activeColIdx, activeStateId) {
@@ -190,6 +186,7 @@ class ValueIterationView {
         ellipse(stateNode.x, stateNode.y, r * 2, r * 2);
 
         if (s > 0.2) {
+            // State name — plain text, not math
             fill(0, 0, 0, alpha);
             noStroke();
             textAlign(CENTER, CENTER);
@@ -198,9 +195,9 @@ class ValueIterationView {
             text(stateNode.name, stateNode.x, stateNode.y - 6);
 
             if (isRevealed) {
-                fill(0, 0, 0, alpha);
-                textSize(11);
-                text(`V = ${stateNode.value.toFixed(2)}`, stateNode.x, stateNode.y + 10);
+                mathRenderer.draw(drawingContext, `V = ${stateNode.value.toFixed(2)}`,
+                    stateNode.x, stateNode.y + 10,
+                    { color: '#000000', em: 11, alpha, alignX: 'center', alignY: 'middle' });
             }
         }
 
@@ -259,18 +256,13 @@ class ValueIterationView {
                     const ey = toStateNode.y - toStateNode.radius * sin(ang);
                     const midX = (sx + ex) / 2;
                     const midY = (sy + ey) / 2 - 10;
-                    push();
-                    noStroke();
-                    fill(60, 60, 60, alpha);
-                    textSize(10);
-                    textAlign(CENTER, CENTER);
-                    textFont('Calibri, "Segoe UI", Tahoma, sans-serif');
-                    text(`p=${probability.toFixed(2)}`, midX, midY);
+                    mathRenderer.draw(drawingContext, `p = ${probability.toFixed(2)}`,
+                        midX, midY, { color: '#3c3c3c', em: 10, alpha, alignX: 'center', alignY: 'middle' });
                     if (reward !== 0) {
-                        fill(reward > 0 ? color(46, 125, 50, alpha) : color(198, 40, 40, alpha));
-                        text(`r=${reward.toFixed(1)}`, midX, midY + 12);
+                        const rColor = reward > 0 ? '#2e7d32' : '#c62828';
+                        mathRenderer.draw(drawingContext, `r = ${reward.toFixed(1)}`,
+                            midX, midY + 12, { color: rColor, em: 10, alpha, alignX: 'center', alignY: 'middle' });
                     }
-                    pop();
                 }
             });
         });
@@ -342,42 +334,29 @@ class ValueIterationView {
         stroke(100, 100, 100, 150 * p);
         strokeWeight(1);
         rect(boxX, boxY, boxW, boxH, 6);
+        pop();
 
-        noStroke();
-        textAlign(LEFT, TOP);
-        textFont('Calibri, "Segoe UI", Tahoma, sans-serif');
-
+        // Render LaTeX lines — drawImage must honour the current transform,
+        // which for the equation overlay is world-space (correct: it moves with the graph).
         lines.forEach((line, i) => {
-            const lineStart = i / Math.max(lines.length, 1);
+            const lineStart  = i / Math.max(lines.length, 1);
             const lineWindow = 1 / Math.max(lines.length, 1);
             const lineP = Math.min(Math.max((p - lineStart) / lineWindow, 0), 1);
-            const yOffset = 4 * (1 - lineP);
             const a = Math.round(255 * lineP);
             if (a < 2) return;
 
-            const y = boxY + 8 + i * lineHeight + yOffset;
-            if (line.type === 'header') {
-                fill(30, 30, 30, a);
-                textSize(13);
-                textStyle(BOLD);
-            } else if (line.type === 'best') {
-                fill(46, 125, 50, a);
-                textSize(11);
-                textStyle(NORMAL);
-            } else if (line.type === 'result') {
-                fill(25, 80, 170, a);
-                textSize(12);
-                textStyle(BOLD);
-            } else {
-                fill(80, 80, 80, a);
-                textSize(11);
-                textStyle(NORMAL);
-            }
-            text(line.text, boxX + 8, y);
-        });
+            const yOffset = 4 * (1 - lineP);
+            const ly = boxY + 8 + i * lineHeight + yOffset + lineHeight / 2;
 
-        textStyle(NORMAL);
-        pop();
+            let color, em;
+            if (line.type === 'header') { color = '#1e1e1e'; em = 13; }
+            else if (line.type === 'best')   { color = '#2e7d32'; em = 11; }
+            else if (line.type === 'result') { color = '#19507a'; em = 12; }
+            else                             { color = '#505050'; em = 11; }
+
+            mathRenderer.draw(drawingContext, line.text, boxX + 8, ly,
+                { color, em, alpha: a, alignX: 'left', alignY: 'middle' });
+        });
     }
 
     /** Draw action diamond nodes fanning out from the active state */
@@ -433,24 +412,17 @@ class ValueIterationView {
                 if (labelP > 0) {
                     const labelX = (action.x + t.toX) / 2;
                     const labelY = (action.y + t.toY) / 2 - 8;
-                    push();
-                    noStroke();
-                    textSize(9);
-                    textAlign(CENTER, CENTER);
-                    textFont('Calibri, "Segoe UI", Tahoma, sans-serif');
-
-                    fill(60, 60, 60, 200 * labelP);
-                    text(`p=${t.probability.toFixed(2)}`, labelX, labelY);
-
+                    const aVal = Math.round(200 * labelP);
+                    mathRenderer.draw(drawingContext, `p = ${t.probability.toFixed(2)}`,
+                        labelX, labelY, { color: '#3c3c3c', em: 9, alpha: aVal });
                     if (isComputed || showRewardForAction) {
                         const gamma = detail.gamma || 0.9;
-                        fill(80, 80, 80, 200 * labelP);
-                        text(`r=${t.reward.toFixed(1)}`, labelX, labelY + 11);
-                        fill(100, 100, 100, 180 * labelP);
-                        textSize(8);
-                        text(`${t.probability.toFixed(2)}\u00B7[${t.reward.toFixed(1)}+${gamma}\u00B7${t.nextValue.toFixed(1)}] = ${t.term.toFixed(2)}`, labelX, labelY + 22);
+                        mathRenderer.draw(drawingContext, `r = ${t.reward.toFixed(1)}`,
+                            labelX, labelY + 11, { color: '#505050', em: 9, alpha: aVal });
+                        const term = `${t.probability.toFixed(2)}\\cdot[${t.reward.toFixed(1)}+${gamma}\\cdot${t.nextValue.toFixed(1)}]=${t.term.toFixed(2)}`;
+                        mathRenderer.draw(drawingContext, term,
+                            labelX, labelY + 22, { color: '#646464', em: 8, alpha: Math.round(180 * labelP) });
                     }
-                    pop();
                 }
             });
         });
@@ -463,17 +435,10 @@ class ValueIterationView {
         const count = detail.visibleActionCount !== undefined ? detail.visibleActionCount : detail.actions.length;
 
         detail.actions.slice(0, count).forEach(action => {
-            push();
-            noStroke();
             const isBest = action.actionId === detail.bestActionId;
-            fill(isBest ? color(46, 125, 50) : color(80, 80, 80));
-            textAlign(CENTER, TOP);
-            textSize(10);
-            textFont('Calibri, "Segoe UI", Tahoma, sans-serif');
-            textStyle(isBest ? BOLD : NORMAL);
-            text(`Q = ${action.qValue.toFixed(2)}`, action.x, action.y + this.ACTION_NODE_RADIUS + 4);
-            textStyle(NORMAL);
-            pop();
+            mathRenderer.draw(drawingContext, `Q = ${action.qValue.toFixed(2)}`,
+                action.x, action.y + this.ACTION_NODE_RADIUS + 4,
+                { color: isBest ? '#2ea043' : '#505050', em: 10, alignX: 'center', alignY: 'top' });
         });
     }
 
@@ -580,23 +545,16 @@ class ValueIterationView {
         strokeWeight(1);
         line(tableX, tableY + headerH, tableX + tableW, tableY + headerH);
 
-        // Header text
-        noStroke();
-        fill(100, 100, 100);
-        textSize(10);
-        textAlign(CENTER, CENTER);
-
-        // Action column header (empty)
-        // Transition column headers
+        // Header text — use MathRenderer for math strings
+        const hcy = tableY + headerH / 2;
         for (let ti = 0; ti < maxTrans; ti++) {
             const cx = tableX + actionColW + ti * transColW + transColW / 2;
-            text(`s'${ti + 1}, (p, r)`, cx, tableY + headerH / 2);
+            mathRenderer.draw(drawingContext, `s'_{${ti + 1}},\\;(p,\\,r)`,
+                cx, hcy, { color: '#646464', em: 10 });
         }
-        // Q column header
-        fill(60, 60, 60);
-        textStyle(BOLD);
-        text('Q(s, a)', tableX + actionColW + maxTrans * transColW + qColW / 2, tableY + headerH / 2);
-        textStyle(NORMAL);
+        mathRenderer.draw(drawingContext, 'Q(s, a)',
+            tableX + actionColW + maxTrans * transColW + qColW / 2, hcy,
+            { color: '#3c3c3c', em: 10 });
 
         // Vertical separator lines
         stroke(230, 230, 230);
@@ -674,14 +632,11 @@ class ValueIterationView {
                     text('...', cx, cy);
                 } else if (showTerms) {
                     // Show full term: p·[r + γ·V] = term
-                    fill(70, 70, 70);
-                    textSize(9);
-                    text(`${t.probability.toFixed(2)}\u00B7[${t.reward.toFixed(0)}+${gamma}\u00B7${t.nextValue.toFixed(0)}]=${t.term.toFixed(2)}`, cx, cy);
+                    const term = `${t.probability.toFixed(2)}\\cdot[${t.reward.toFixed(0)}+${gamma}\\cdot${t.nextValue.toFixed(0)}]=${t.term.toFixed(2)}`;
+                    mathRenderer.draw(drawingContext, term, cx, cy, { color: '#464646', em: 9 });
                 } else {
-                    // Show just p label (transition shown but not computed yet)
-                    fill(130, 130, 130);
-                    textSize(10);
-                    text(`p=${t.probability.toFixed(2)}`, cx, cy);
+                    mathRenderer.draw(drawingContext, `p = ${t.probability.toFixed(2)}`,
+                        cx, cy, { color: '#828282', em: 10 });
                 }
             }
 
@@ -695,28 +650,25 @@ class ValueIterationView {
 
             // Q(s, a) column
             const qx = tableX + actionColW + maxTrans * transColW + qColW / 2;
+            const qcy = rowY + rowH / 2;
             if (rowCompleted) {
                 const isBest = action.actionId === detail.bestActionId;
-                fill(isBest ? color(46, 125, 50) : color(60, 60, 60));
-                textStyle(BOLD);
-                textSize(11);
-                text(action.qValue.toFixed(2), qx, rowY + rowH / 2);
-                textStyle(NORMAL);
+                mathRenderer.draw(drawingContext, action.qValue.toFixed(2), qx, qcy,
+                    { color: isBest ? '#2e7d32' : '#3c3c3c', em: 11 });
             } else if (rowVisible && showTerms) {
-                // Show running sum
                 let runningSum = 0;
                 for (let ti = 0; ti < showTransUpTo; ti++) {
                     runningSum += action.transitions[ti].term;
                 }
-                fill(130, 130, 130);
-                textSize(10);
-                textStyle(ITALIC);
-                text(runningSum.toFixed(2), qx, rowY + rowH / 2);
-                textStyle(NORMAL);
+                mathRenderer.draw(drawingContext, runningSum.toFixed(2), qx, qcy,
+                    { color: '#828282', em: 10 });
             } else {
                 fill(200, 200, 200);
+                noStroke();
                 textSize(10);
-                text('—', qx, rowY + rowH / 2);
+                textAlign(CENTER, CENTER);
+                textFont('Calibri, "Segoe UI", Tahoma, sans-serif');
+                text('—', qx, qcy);
             }
         }
 
@@ -727,14 +679,10 @@ class ValueIterationView {
             strokeWeight(1);
             line(tableX, vRowY, tableX + tableW, vRowY);
 
-            noStroke();
-            fill(25, 80, 170);
-            textStyle(BOLD);
-            textSize(12);
-            textAlign(RIGHT, CENTER);
-            text(`V(${detail.stateName}) = max = ${detail.value.toFixed(2)}`,
-                tableX + tableW - 10, vRowY + rowH / 2);
-            textStyle(NORMAL);
+            const vMaxLatex = `V(\\text{${detail.stateName}}) = \\max = ${detail.value.toFixed(2)}`;
+            mathRenderer.draw(drawingContext, vMaxLatex,
+                tableX + tableW - 10, vRowY + rowH / 2,
+                { color: '#19507a', em: 12, alignX: 'right', alignY: 'middle' });
         }
 
         pop();
@@ -780,25 +728,18 @@ class ValueIterationView {
             if (labelP > 0) {
                 const labelX = (action.x + t.toX) / 2;
                 const labelY = (action.y + t.toY) / 2 - 8;
-                push();
-                noStroke();
-                textSize(9);
-                textAlign(CENTER, CENTER);
-                textFont('Calibri, "Segoe UI", Tahoma, sans-serif');
-
-                fill(60, 60, 60, 200 * labelP);
-                text(`p=${t.probability.toFixed(2)}`, labelX, labelY);
-
+                const aVal = Math.round(200 * labelP);
+                mathRenderer.draw(drawingContext, `p = ${t.probability.toFixed(2)}`,
+                    labelX, labelY, { color: '#3c3c3c', em: 9, alpha: aVal });
                 const isComputed = showReward && (ti < transCount);
                 if (isComputed) {
                     const gamma = detail.gamma || 0.9;
-                    fill(80, 80, 80, 200 * labelP);
-                    text(`r=${t.reward.toFixed(1)}`, labelX, labelY + 11);
-                    fill(100, 100, 100, 180 * labelP);
-                    textSize(8);
-                    text(`${t.probability.toFixed(2)}\u00B7[${t.reward.toFixed(1)}+${gamma}\u00B7${t.nextValue.toFixed(1)}] = ${t.term.toFixed(2)}`, labelX, labelY + 22);
+                    mathRenderer.draw(drawingContext, `r = ${t.reward.toFixed(1)}`,
+                        labelX, labelY + 11, { color: '#505050', em: 9, alpha: aVal });
+                    const term = `${t.probability.toFixed(2)}\\cdot[${t.reward.toFixed(1)}+${gamma}\\cdot${t.nextValue.toFixed(1)}]=${t.term.toFixed(2)}`;
+                    mathRenderer.draw(drawingContext, term,
+                        labelX, labelY + 22, { color: '#646464', em: 8, alpha: Math.round(180 * labelP) });
                 }
-                pop();
             }
         });
     }
@@ -814,40 +755,25 @@ class ValueIterationView {
 
             const labelX = (action.x + t.toX) / 2;
             const labelY = (action.y + t.toY) / 2 - 8;
-            push();
-            noStroke();
-            textSize(9);
-            textAlign(CENTER, CENTER);
-            textFont('Calibri, "Segoe UI", Tahoma, sans-serif');
-
-            fill(60, 60, 60, 200);
-            text(`p=${t.probability.toFixed(2)}`, labelX, labelY);
-
+            mathRenderer.draw(drawingContext, `p = ${t.probability.toFixed(2)}`,
+                labelX, labelY, { color: '#3c3c3c', em: 9 });
             if (showRewards) {
                 const gamma = detail.gamma || 0.9;
-                fill(80, 80, 80, 200);
-                text(`r=${t.reward.toFixed(1)}`, labelX, labelY + 11);
-                fill(100, 100, 100, 180);
-                textSize(8);
-                text(`${t.probability.toFixed(2)}\u00B7[${t.reward.toFixed(1)}+${gamma}\u00B7${t.nextValue.toFixed(1)}] = ${t.term.toFixed(2)}`, labelX, labelY + 22);
+                mathRenderer.draw(drawingContext, `r = ${t.reward.toFixed(1)}`,
+                    labelX, labelY + 11, { color: '#505050', em: 9 });
+                const term = `${t.probability.toFixed(2)}\\cdot[${t.reward.toFixed(1)}+${gamma}\\cdot${t.nextValue.toFixed(1)}]=${t.term.toFixed(2)}`;
+                mathRenderer.draw(drawingContext, term,
+                    labelX, labelY + 22, { color: '#646464', em: 8 });
             }
-            pop();
         });
     }
 
     /** Draw Q-value for a single action */
     _drawSingleActionQValue(detail, action) {
-        push();
-        noStroke();
         const isBest = action.actionId === detail.bestActionId;
-        fill(isBest ? color(46, 125, 50) : color(80, 80, 80));
-        textAlign(CENTER, TOP);
-        textSize(10);
-        textFont('Calibri, "Segoe UI", Tahoma, sans-serif');
-        textStyle(isBest ? BOLD : NORMAL);
-        text(`Q = ${action.qValue.toFixed(2)}`, action.x, action.y + this.ACTION_NODE_RADIUS + 4);
-        textStyle(NORMAL);
-        pop();
+        mathRenderer.draw(drawingContext, `Q = ${action.qValue.toFixed(2)}`,
+            action.x, action.y + this.ACTION_NODE_RADIUS + 4,
+            { color: isBest ? '#2ea043' : '#505050', em: 10, alignX: 'center', alignY: 'top' });
     }
 
     /** Draw a small diamond shape for an action node. fillColor is a pre-computed p5 color. */
@@ -972,23 +898,20 @@ class ValueIterationView {
     // --- V badge helpers ---
 
     _drawStaticVBadge(detail, alpha = 220) {
-        push();
-        const vText = `V${detail.timestep}(${detail.stateName}) = ${detail.value.toFixed(2)}`;
-        noStroke();
-        textSize(13);
-        textFont('Calibri, "Segoe UI", Tahoma, sans-serif');
-        textStyle(BOLD);
-        const tw = textWidth(vText) + 16;
-        const th = 24;
+        const latex = `V_{${detail.timestep}}(\\text{${detail.stateName}}) = ${detail.value.toFixed(2)}`;
+        const color = '#19507a';
+        const em = 13;
         const vx = detail.stateX;
         const vy = detail.stateY + detail.stateRadius + 16;
+        const sz = mathRenderer.getCachedSize(latex, color, em);
+        const tw = sz ? sz.w + 16 : 80;
+        const th = 24;
+        push();
+        noStroke();
         fill(25, 80, 170, alpha);
         rect(vx - tw / 2, vy - th / 2, tw, th, 12);
-        fill(255, 255, 255, alpha);
-        textAlign(CENTER, CENTER);
-        text(vText, vx, vy);
-        textStyle(NORMAL);
         pop();
+        mathRenderer.draw(drawingContext, latex, vx, vy, { color, em, alpha });
     }
 
     _drawRevealingValueOverlay(detail) {
@@ -1009,31 +932,32 @@ class ValueIterationView {
         if (badgeP <= 0) return;
 
         const displayValue = detail.value * countP;
-        const finalText = `V${detail.timestep}(${detail.stateName}) = ${detail.value.toFixed(2)}`;
-        const vText = `V${detail.timestep}(${detail.stateName}) = ${displayValue.toFixed(2)}`;
+        const finalLatex  = `V_{${detail.timestep}}(\\text{${detail.stateName}}) = ${detail.value.toFixed(2)}`;
+        const currentLatex = `V_{${detail.timestep}}(\\text{${detail.stateName}}) = ${displayValue.toFixed(2)}`;
+        const badgeColor = '#19507a';
+        const em = 13;
         const vx = detail.stateX;
         const vy = detail.stateY + detail.stateRadius + 16;
 
-        push();
-        noStroke();
-        textSize(13);
-        textFont('Calibri, "Segoe UI", Tahoma, sans-serif');
-        textStyle(BOLD);
-        const fullTw = textWidth(finalText) + 16;
+        const sz = mathRenderer.getCachedSize(finalLatex, badgeColor, em);
+        const fullTw = sz ? sz.w + 16 : 80;
         const th = 24;
 
-        // Scale badge horizontally from center
+        push();
+        // Scale badge width from center
         translate(vx, vy);
         scale(badgeP, 1);
         translate(-vx, -vy);
-
+        noStroke();
         fill(25, 80, 170, 220);
         rect(vx - fullTw / 2, vy - th / 2, fullTw, th, 12);
-        fill(255);
-        textAlign(CENTER, CENTER);
-        text(vText, vx, vy);
-        textStyle(NORMAL);
         pop();
+
+        // Draw text at full scale (only when badge is mostly open)
+        if (badgeP > 0.5) {
+            mathRenderer.draw(drawingContext, currentLatex, vx, vy,
+                { color: '#ffffff', em, alpha: Math.round(220 * Math.min((badgeP - 0.5) * 2, 1)) });
+        }
     }
 
     // --- Animation infrastructure ---
