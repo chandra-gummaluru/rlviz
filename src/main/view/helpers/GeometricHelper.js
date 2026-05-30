@@ -122,35 +122,21 @@ class GeometricHelper {
     }
 
     /**
-     * Check if point is near a curved (bidirectional) edge
+     * Check if point is near a curved (bidirectional) edge.
+     * Samples the visible curve (startPoint → arrowBaseCenter) built by buildCurvedEdgeGeometry.
      */
     static isPointNearCurvedEdge(from, to, x, y, threshold = 10) {
-        const controlPoint = this.calculateCurveControlPoint(from, to);
+        const geom = this.buildCurvedEdgeGeometry(from, to, 5);
+        if (!geom) return false;
 
-        // Sample points along the curve and find minimum distance
         let minDistance = Infinity;
         const samples = 20;
-
         for (let i = 0; i <= samples; i++) {
             const t = i / samples;
-
-            // Quadratic Bezier formula
-            const curveX = (1 - t) * (1 - t) * from.x + 2 * (1 - t) * t * controlPoint.x + t * t * to.x;
-            const curveY = (1 - t) * (1 - t) * from.y + 2 * (1 - t) * t * controlPoint.y + t * t * to.y;
-
-            // Check if this point on the curve is outside both node circles (visible)
-            const distFromStart = Math.sqrt((curveX - from.x) ** 2 + (curveY - from.y) ** 2);
-            const distFromEnd = Math.sqrt((curveX - to.x) ** 2 + (curveY - to.y) ** 2);
-
-            // Only check distance if this curve point is visible
-            if (distFromStart > from.size && distFromEnd > to.size) {
-                const dist = Math.sqrt((x - curveX) ** 2 + (y - curveY) ** 2);
-                minDistance = Math.min(minDistance, dist);
-            }
+            const pt = this.getQuadraticBezierPoint(geom.startPoint, geom.visibleControl, geom.arrowBaseCenter, t);
+            const dist = Math.sqrt((x - pt.x) ** 2 + (y - pt.y) ** 2);
+            minDistance = Math.min(minDistance, dist);
         }
-
-        // If no visible points were found (nodes overlap), return false
-        if (minDistance === Infinity) return false;
 
         return minDistance <= threshold;
     }
@@ -172,6 +158,113 @@ class GeometricHelper {
         return {
             x: (from.x + to.x) / 2 + perpX * offset,
             y: (from.y + to.y) / 2 + perpY * offset
+        };
+    }
+
+    /** Point on a quadratic Bezier at parameter t */
+    static getQuadraticBezierPoint(p0, p1, p2, t) {
+        const mt = 1 - t;
+        return {
+            x: mt * mt * p0.x + 2 * mt * t * p1.x + t * t * p2.x,
+            y: mt * mt * p0.y + 2 * mt * t * p1.y + t * t * p2.y
+        };
+    }
+
+    /** Normalized tangent on a quadratic Bezier at parameter t */
+    static getQuadraticBezierTangent(p0, p1, p2, t) {
+        const tx = 2 * (1 - t) * (p1.x - p0.x) + 2 * t * (p2.x - p1.x);
+        const ty = 2 * (1 - t) * (p1.y - p0.y) + 2 * t * (p2.y - p1.y);
+        const len = Math.sqrt(tx * tx + ty * ty);
+        return len > 0 ? { x: tx / len, y: ty / len } : { x: 1, y: 0 };
+    }
+
+    /**
+     * Build all geometry needed to draw and interact with a curved (bidirectional) edge.
+     * Returns null if nodes are too close to render.
+     *
+     * Returns:
+     *   startPoint      — source node circumference point (visible curve start)
+     *   arrowTip        — target node circumference point (arrowhead tip)
+     *   arrowDir        — normalized tangent at arrowTip
+     *   arrowSize       — arrowhead size in px (clamped for short edges)
+     *   arrowBaseCenter — where the visible curve terminates (slightly inside arrowhead)
+     *   visibleControl  — control point for the visible quadratic Bezier
+     *   midpoint        — midpoint of the visible curve (for labels)
+     *   guideControl    — original center-to-center control point
+     *   tStart, arrowT  — parameter values on the guide curve
+     */
+    static buildCurvedEdgeGeometry(from, to, weight, curveOffset = 0.15) {
+        const dx = to.x - from.x;
+        const dy = to.y - from.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        if (distance < 1) return null;
+
+        const p0 = { x: from.x, y: from.y };
+        const p2 = { x: to.x, y: to.y };
+
+        // Guide curve control point (perpendicular offset from midpoint)
+        const perpX = -dy / distance;
+        const perpY = dx / distance;
+        const p1 = {
+            x: (from.x + to.x) / 2 + perpX * distance * curveOffset,
+            y: (from.y + to.y) / 2 + perpY * distance * curveOffset
+        };
+
+        // Binary-search tStart: where guide curve exits the from-node circumference
+        let tStartMin = 0.0, tStartMax = 0.5;
+        for (let i = 0; i < 10; i++) {
+            const t = (tStartMin + tStartMax) / 2;
+            const pt = this.getQuadraticBezierPoint(p0, p1, p2, t);
+            const d = Math.sqrt((pt.x - from.x) ** 2 + (pt.y - from.y) ** 2);
+            if (d < from.size) tStartMin = t; else tStartMax = t;
+        }
+        const tStart = (tStartMin + tStartMax) / 2;
+        const startPoint = this.getQuadraticBezierPoint(p0, p1, p2, tStart);
+
+        // Binary-search arrowT: where guide curve enters the to-node circumference
+        let tMin = 0.5, tMax = 1.0;
+        for (let i = 0; i < 10; i++) {
+            const t = (tMin + tMax) / 2;
+            const pt = this.getQuadraticBezierPoint(p0, p1, p2, t);
+            const d = Math.sqrt((pt.x - to.x) ** 2 + (pt.y - to.y) ** 2);
+            if (d > to.size) tMin = t; else tMax = t;
+        }
+        const arrowT = (tMin + tMax) / 2;
+        const arrowTip = this.getQuadraticBezierPoint(p0, p1, p2, arrowT);
+        const arrowDir = this.getQuadraticBezierTangent(p0, p1, p2, arrowT);
+
+        // Clamp arrowhead size on very short edges
+        const arrowSize = Math.min(8 + weight * 1.5, distance * 0.25);
+
+        // Terminate the visible curve slightly inside the arrowhead to prevent subpixel gaps
+        const overlap = weight * 0.5;
+        const arrowBaseCenter = {
+            x: arrowTip.x - arrowDir.x * Math.max(0, arrowSize - overlap),
+            y: arrowTip.y - arrowDir.y * Math.max(0, arrowSize - overlap)
+        };
+
+        // Fit visibleControl so the visible Bezier passes through the guide-curve midpoint.
+        // For quadratic: B(0.5) = 0.25*P0 + 0.5*P1 + 0.25*P2  =>  P1 = 2*B - 0.5*P0 - 0.5*P2
+        const guideMid = this.getQuadraticBezierPoint(p0, p1, p2, 0.5);
+        const visibleControl = {
+            x: 2 * guideMid.x - 0.5 * startPoint.x - 0.5 * arrowBaseCenter.x,
+            y: 2 * guideMid.y - 0.5 * startPoint.y - 0.5 * arrowBaseCenter.y
+        };
+
+        // Midpoint of the actual visible curve (for labels)
+        const midpoint = this.getQuadraticBezierPoint(startPoint, visibleControl, arrowBaseCenter, 0.5);
+
+        return {
+            guideControl: p1,
+            tStart,
+            arrowT,
+            startPoint,
+            arrowTip,
+            arrowDir,
+            arrowSize,
+            arrowBaseCenter,
+            visibleControl,
+            midpoint
         };
     }
 
@@ -215,19 +308,11 @@ class GeometricHelper {
             let labelX, labelY;
 
             if (isBidirectional) {
-                // Curved edge - label on curve at t=0.5
-                const dx = to.x - from.x;
-                const dy = to.y - from.y;
-                const distance = Math.sqrt(dx * dx + dy * dy);
-                const perpX = -dy / distance;
-                const perpY = dx / distance;
-                const curveOffset = distance * 0.15;
-                const controlX = (from.x + to.x) / 2 + perpX * curveOffset;
-                const controlY = (from.y + to.y) / 2 + perpY * curveOffset;
-
-                const t = 0.5;
-                labelX = (1 - t) * (1 - t) * from.x + 2 * (1 - t) * t * controlX + t * t * to.x + edge.labelOffset.x;
-                labelY = (1 - t) * (1 - t) * from.y + 2 * (1 - t) * t * controlY + t * t * to.y + edge.labelOffset.y;
+                // Curved edge - label at midpoint of visible curve
+                const geom = this.buildCurvedEdgeGeometry(from, to, 5);
+                if (!geom) continue;
+                labelX = geom.midpoint.x + edge.labelOffset.x;
+                labelY = geom.midpoint.y + edge.labelOffset.y;
             } else {
                 // Straight edge - label at midpoint
                 labelX = (from.x + to.x) / 2 + edge.labelOffset.x;

@@ -423,112 +423,13 @@ class MainView {
     }
 
     drawCurvedEdge(from, to, weight, edgeColor, edge) {
-        // Calculate perpendicular offset for the curve
-        // Curve is based on center-to-center to maintain proper shape
-        const dx = to.x - from.x;
-        const dy = to.y - from.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
+        const geom = GeometricHelper.buildCurvedEdgeGeometry(from, to, weight);
+        if (!geom) return;
 
-        // Perpendicular vector (rotate 90 degrees)
-        const perpX = -dy / distance;
-        const perpY = dx / distance;
-
-        // Control point offset (adjust this value to change curve intensity)
-        const curveOffset = distance * 0.15;
-        const controlX = (from.x + to.x) / 2 + perpX * curveOffset;
-        const controlY = (from.y + to.y) / 2 + perpY * curveOffset;
-
-        // Find where the center-to-center curve intersects the 'from' node's circumference (curve start)
-        const fromRadius = from.size;
-        let tStartMin = 0.0;
-        let tStartMax = 0.5;
-        for (let i = 0; i < 10; i++) {
-            const t = (tStartMin + tStartMax) / 2;
-            const x = (1 - t) * (1 - t) * from.x + 2 * (1 - t) * t * controlX + t * t * to.x;
-            const y = (1 - t) * (1 - t) * from.y + 2 * (1 - t) * t * controlY + t * t * to.y;
-            const distToFromCenter = Math.sqrt((x - from.x) * (x - from.x) + (y - from.y) * (y - from.y));
-
-            if (distToFromCenter < fromRadius) {
-                tStartMin = t;
-            } else {
-                tStartMax = t;
-            }
-        }
-        const tStart = (tStartMin + tStartMax) / 2;
-
-        // Find where the center-to-center curve intersects the 'to' node's circumference
-        const toRadius = to.size;
-        const arrowSize = 8 + weight * 1.5;
-
-        // Binary search for intersection point at node circumference
-        let tMin = 0.5;
-        let tMax = 1.0;
-        for (let i = 0; i < 10; i++) {
-            const t = (tMin + tMax) / 2;
-            const x = (1 - t) * (1 - t) * from.x + 2 * (1 - t) * t * controlX + t * t * to.x;
-            const y = (1 - t) * (1 - t) * from.y + 2 * (1 - t) * t * controlY + t * t * to.y;
-            const distToCenter = Math.sqrt((x - to.x) * (x - to.x) + (y - to.y) * (y - to.y));
-
-            if (distToCenter > toRadius) {
-                tMin = t;
-            } else {
-                tMax = t;
-            }
-        }
-        const arrowT = (tMin + tMax) / 2;
-        const arrowX = (1 - arrowT) * (1 - arrowT) * from.x + 2 * (1 - arrowT) * arrowT * controlX + arrowT * arrowT * to.x;
-        const arrowY = (1 - arrowT) * (1 - arrowT) * from.y + 2 * (1 - arrowT) * arrowT * controlY + arrowT * arrowT * to.y;
-
-        // Calculate tangent at the intersection point for arrowhead direction
-        const tangentDx = 2 * (1 - arrowT) * (controlX - from.x) + 2 * arrowT * (to.x - controlX);
-        const tangentDy = 2 * (1 - arrowT) * (controlY - from.y) + 2 * arrowT * (to.y - controlY);
-        const tangentDist = Math.sqrt(tangentDx * tangentDx + tangentDy * tangentDy);
-        const normalizedTangentDx = tangentDx / tangentDist;
-        const normalizedTangentDy = tangentDy / tangentDist;
-
-        // Calculate where to stop the line (arrowSize pixels before the arrow tip)
-        const lineEndX = arrowX - normalizedTangentDx * arrowSize;
-        const lineEndY = arrowY - normalizedTangentDy * arrowSize;
-
-        // Draw the curved line from edge of from node to arrowhead base
-        // We need to find the t value where the curve reaches lineEnd (arrowhead base)
-        // Use binary search to find the exact t value
-        let tLineMin = tStart;
-        let tLineMax = arrowT;
-        for (let i = 0; i < 10; i++) {
-            const t = (tLineMin + tLineMax) / 2;
-            const x = (1 - t) * (1 - t) * from.x + 2 * (1 - t) * t * controlX + t * t * to.x;
-            const y = (1 - t) * (1 - t) * from.y + 2 * (1 - t) * t * controlY + t * t * to.y;
-            const distToLineEnd = Math.sqrt((x - lineEndX) * (x - lineEndX) + (y - lineEndY) * (y - lineEndY));
-
-            if (distToLineEnd > 0.5) {
-                tLineMin = t;
-            } else {
-                tLineMax = t;
-            }
-        }
-        const tLineEnd = (tLineMin + tLineMax) / 2;
-
-        // Get spinning arrow render info (dashed + alpha + optional color override)
         const renderInfo = this.getSpinningArrowRenderInfo(from, to);
         const baseColor = renderInfo.colorOverride || edgeColor;
         const alphaEdgeColor = this.applyAlphaToColor(baseColor, renderInfo.alpha);
 
-        // Calculate midpoint on curve (t=0.5)
-        const tMid = 0.5;
-        const curveMidX = (1 - tMid) * (1 - tMid) * from.x + 2 * (1 - tMid) * tMid * controlX + tMid * tMid * to.x;
-        const curveMidY = (1 - tMid) * (1 - tMid) * from.y + 2 * (1 - tMid) * tMid * controlY + tMid * tMid * to.y;
-
-        // Calculate tangent at midpoint for flap/squiggly direction
-        const midTangentDx = 2 * (1 - tMid) * (controlX - from.x) + 2 * tMid * (to.x - controlX);
-        const midTangentDy = 2 * (1 - tMid) * (controlY - from.y) + 2 * tMid * (to.y - controlY);
-        const midTangentDist = Math.sqrt(midTangentDx * midTangentDx + midTangentDy * midTangentDy);
-        const midDirX = midTangentDx / midTangentDist;
-        const midDirY = midTangentDy / midTangentDist;
-        const midPerpX = -midDirY;
-        const midPerpY = midDirX;
-
-        // Draw the curved line from tStart (edge of from node) to tLineEnd (arrowhead base)
         strokeWeight(weight);
         stroke(alphaEdgeColor);
         noFill();
@@ -537,30 +438,17 @@ class MainView {
             drawingContext.setLineDash([8, 4]);
         }
 
-        // Sample points along the curve from tStart to tLineEnd
+        // Visible quadratic Bezier: startPoint → arrowBaseCenter, shaped to match guide curve
         beginShape();
-        const startX = (1 - tStart) * (1 - tStart) * from.x + 2 * (1 - tStart) * tStart * controlX + tStart * tStart * to.x;
-        const startY = (1 - tStart) * (1 - tStart) * from.y + 2 * (1 - tStart) * tStart * controlY + tStart * tStart * to.y;
-        vertex(startX, startY);
-
-        const step = 0.02;
-        for (let t = tStart + step; t < tLineEnd; t += step) {
-            const x = (1 - t) * (1 - t) * from.x + 2 * (1 - t) * t * controlX + t * t * to.x;
-            const y = (1 - t) * (1 - t) * from.y + 2 * (1 - t) * t * controlY + t * t * to.y;
-            vertex(x, y);
-        }
-
-        const finalX = (1 - tLineEnd) * (1 - tLineEnd) * from.x + 2 * (1 - tLineEnd) * tLineEnd * controlX + tLineEnd * tLineEnd * to.x;
-        const finalY = (1 - tLineEnd) * (1 - tLineEnd) * from.y + 2 * (1 - tLineEnd) * tLineEnd * controlY + tLineEnd * tLineEnd * to.y;
-        vertex(finalX, finalY);
+        vertex(geom.startPoint.x, geom.startPoint.y);
+        quadraticVertex(geom.visibleControl.x, geom.visibleControl.y, geom.arrowBaseCenter.x, geom.arrowBaseCenter.y);
         endShape();
 
         if (renderInfo.dashed) {
-            drawingContext.setLineDash([]);  // Reset to solid
+            drawingContext.setLineDash([]);
         }
 
-        // Draw arrowhead at the intersection point
-        this.drawArrowhead(arrowX, arrowY, normalizedTangentDx, normalizedTangentDy, alphaEdgeColor, weight);
+        this.drawArrowhead(geom.arrowTip.x, geom.arrowTip.y, geom.arrowDir.x, geom.arrowDir.y, alphaEdgeColor, weight);
     }
 
     drawArrowhead(x, y, dirX, dirY, color, lineWeight) {
@@ -791,38 +679,22 @@ class MainView {
 
         let ballX, ballY;
         if (hasReverse) {
-            // Quadratic Bezier path (same control point as drawCurvedEdge)
-            const perpX = -dy / dist;
-            const perpY = dx / dist;
-            const curveOffset = dist * 0.15;
-            const cx = (from.x + to.x) / 2 + perpX * curveOffset;
-            const cy = (from.y + to.y) / 2 + perpY * curveOffset;
-
-            // Find tStart (curve exits from-node circumference)
-            let tStartMin = 0.0, tStartMax = 0.5;
-            for (let i = 0; i < 10; i++) {
-                const tm = (tStartMin + tStartMax) / 2;
-                const bx = (1-tm)*(1-tm)*from.x + 2*(1-tm)*tm*cx + tm*tm*to.x;
-                const by = (1-tm)*(1-tm)*from.y + 2*(1-tm)*tm*cy + tm*tm*to.y;
-                const d = Math.sqrt((bx-from.x)**2 + (by-from.y)**2);
-                if (d < from.size) tStartMin = tm; else tStartMax = tm;
+            // Use the same visible curve geometry as drawCurvedEdge
+            const edgeObj = this.viewModel.graph.edges.find(e =>
+                e.getFromNode().id === fromId && e.getToNode().id === toId
+            );
+            let edgeWeight = 2;
+            if (edgeObj && from.type === 'action' && to.type === 'state') {
+                edgeWeight = 1 + 4 * edgeObj.getProbability();
             }
-            const tStart = (tStartMin + tStartMax) / 2;
+            const geom = GeometricHelper.buildCurvedEdgeGeometry(from, to, edgeWeight);
+            if (!geom) return;
 
-            // Find tEnd (curve enters to-node circumference)
-            let tEndMin = 0.5, tEndMax = 1.0;
-            for (let i = 0; i < 10; i++) {
-                const tm = (tEndMin + tEndMax) / 2;
-                const bx = (1-tm)*(1-tm)*from.x + 2*(1-tm)*tm*cx + tm*tm*to.x;
-                const by = (1-tm)*(1-tm)*from.y + 2*(1-tm)*tm*cy + tm*tm*to.y;
-                const d = Math.sqrt((bx-to.x)**2 + (by-to.y)**2);
-                if (d > to.size) tEndMin = tm; else tEndMax = tm;
-            }
-            const tEnd = (tEndMin + tEndMax) / 2;
-
-            const tb = lerp(tStart, tEnd, t);
-            ballX = (1-tb)*(1-tb)*from.x + 2*(1-tb)*tb*cx + tb*tb*to.x;
-            ballY = (1-tb)*(1-tb)*from.y + 2*(1-tb)*tb*cy + tb*tb*to.y;
+            const pt = GeometricHelper.getQuadraticBezierPoint(
+                geom.startPoint, geom.visibleControl, geom.arrowBaseCenter, t
+            );
+            ballX = pt.x;
+            ballY = pt.y;
         } else {
             // Straight edge
             const startX = from.x + nx * from.size;
