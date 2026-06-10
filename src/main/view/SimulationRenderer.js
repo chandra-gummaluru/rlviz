@@ -1,0 +1,141 @@
+// Handles simulation-specific canvas rendering decisions.
+// Reads from viewModel (simulationState, graph, interaction mode); never writes.
+// Depends on: EasingUtils, GeometricHelper, ColorUtils (loaded before this file),
+//             and p5 globals: noStroke, fill, circle, stroke, strokeWeight, noFill, lerp.
+class SimulationRenderer {
+
+    constructor(viewModel) {
+        this._vm = viewModel;
+
+        this._ALPHA_FULL  = 255;
+        this._ALPHA_DIM   = 80;
+        this._ALPHA_FADED = 40;
+
+        this._BALL_RADIUS    = 7;
+        this._BALL_FILL_ALPHA = 230;
+        this._BALL_RING_ALPHA = 120;
+    }
+
+    // Returns { dashed, alpha, colorOverride } for an edge during sim phases.
+    getEdgeRenderInfo(from, to) {
+        const full  = { dashed: false, alpha: this._ALPHA_FULL,  colorOverride: null };
+        const faded = { dashed: false, alpha: this._ALPHA_FADED, colorOverride: null };
+
+        if (this._vm.interaction.mode !== 'simulate') return full;
+        if (!this._vm.simulationState) return full;
+        const simState = this._vm.simulationState;
+        const cur = simState.currentNode;
+        if (!cur) return full;
+
+        if (simState.phase === 'spinning_arrow' && cur.type === 'action') {
+            if (from.id === cur.id && from.type === 'action' && to.type === 'state') {
+                const hi = simState.getHighlightedEdgeByArrow();
+                const an = this._vm.graph.getNodeById(cur.id);
+                if (!an || !an.sas) return { dashed: true, alpha: this._ALPHA_DIM, colorOverride: null };
+                const ht = an.sas[hi];
+                if (ht && to.id === ht.nextState) return full;
+                return { dashed: true, alpha: this._ALPHA_DIM, colorOverride: null };
+            }
+            if (to.id === cur.id) return full;
+            return faded;
+        }
+
+        if (simState.phase === 'reveal' && cur.type === 'state') {
+            const sn = this._vm.graph.getNodeById(cur.id);
+            if (!sn || !sn.actions) return faded;
+            if (from.id === cur.id && from.type === 'state' && to.type === 'action') {
+                if (sn.actions.includes(to.id)) return full;
+            }
+            return faded;
+        }
+
+        return full;
+    }
+
+    // Returns alpha (0-255) for a node during sim phases.
+    getNodeAlpha(node) {
+        if (this._vm.interaction.mode !== 'simulate') return this._ALPHA_FULL;
+        if (!this._vm.simulationState) return this._ALPHA_FULL;
+        const simState = this._vm.simulationState;
+        const cur = simState.currentNode;
+        if (!cur) return this._ALPHA_FULL;
+
+        if (simState.phase === 'spinning_arrow' && cur.type === 'action') {
+            if (node.id === cur.id) return this._ALPHA_FULL;
+            if (simState.currentIndex > 0) {
+                const prev = simState.visited[simState.currentIndex - 1];
+                if (prev && node.id === prev.id && node.type === 'state') return this._ALPHA_FULL;
+            }
+            const an = this._vm.graph.getNodeById(cur.id);
+            if (!an || !an.sas) return this._ALPHA_FADED;
+            if (!an.sas.some(t => t.nextState === node.id)) return this._ALPHA_FADED;
+            const hi = simState.getHighlightedEdgeByArrow();
+            const ht = an.sas[hi];
+            return (ht && node.id === ht.nextState) ? this._ALPHA_FULL : this._ALPHA_DIM;
+        }
+
+        if (simState.phase === 'reveal' && cur.type === 'state') {
+            if (node.id === cur.id) return this._ALPHA_FULL;
+            const sn = this._vm.graph.getNodeById(cur.id);
+            if (!sn || !sn.actions) return this._ALPHA_FADED;
+            return sn.actions.includes(node.id) ? this._ALPHA_FULL : this._ALPHA_FADED;
+        }
+
+        return this._ALPHA_FULL;
+    }
+
+    // Draws the gold travel ball along the highlighted edge during the 'highlight' phase.
+    drawTravelBall() {
+        const simState = this._vm.simulationState;
+        if (!simState || simState.phase !== 'highlight' || !simState.highlightedEdge) return;
+
+        const { fromId, toId } = simState.highlightedEdge;
+        const from = this._vm.graph.getNodeById(fromId);
+        const to   = this._vm.graph.getNodeById(toId);
+        if (!from || !to) return;
+
+        const elapsed = Date.now() - simState.phaseStartTime;
+        const t = EasingUtils.easeInOut(Math.min(1, elapsed / simState.phaseDuration));
+
+        const dx = to.x - from.x, dy = to.y - from.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist === 0) return;
+        const nx = dx / dist, ny = dy / dist;
+
+        const hasReverse = this._vm.graph.edges.some(
+            e => e.getFromNode().id === toId && e.getToNode().id === fromId
+        );
+
+        let ballX, ballY;
+        if (hasReverse) {
+            const edgeObj = this._vm.graph.edges.find(
+                e => e.getFromNode().id === fromId && e.getToNode().id === toId
+            );
+            let edgeWeight = 2;
+            if (edgeObj && from.type === 'action' && to.type === 'state') {
+                edgeWeight = 1 + 4 * edgeObj.getProbability();
+            }
+            const geom = GeometricHelper.buildCurvedEdgeGeometry(from, to, edgeWeight);
+            if (!geom) return;
+            const pt = GeometricHelper.getQuadraticBezierPoint(
+                geom.startPoint, geom.visibleControl, geom.arrowBaseCenter, t
+            );
+            ballX = pt.x;
+            ballY = pt.y;
+        } else {
+            ballX = lerp(from.x + nx * from.size, to.x - nx * to.size, t);
+            ballY = lerp(from.y + ny * from.size, to.y - ny * to.size, t);
+        }
+
+        const r = this._BALL_RADIUS;
+        noStroke();
+        fill(255, 215, 0, this._BALL_FILL_ALPHA);
+        circle(ballX, ballY, r * 2);
+        noFill();
+        stroke(255, 215, 0, Math.round(this._BALL_RING_ALPHA * (1 - t)));
+        strokeWeight(2);
+        circle(ballX, ballY, r * 3);
+        // ensure solid dash state after drawing
+        if (typeof drawingContext !== 'undefined') drawingContext.setLineDash([]);
+    }
+}

@@ -22,13 +22,6 @@ const MV_ARROW_BASE          = 8;    // px base size of arrowhead
 const MV_ARROW_WEIGHT_MULT   = 1.5;  // arrowhead size scales with line weight
 const MV_ARROW_ANGLE         = Math.PI / 6;  // 30 degrees
 
-const MV_ALPHA_FULL          = 255;
-const MV_ALPHA_DIM           = 80;
-const MV_ALPHA_FADED         = 40;
-
-const MV_BALL_RADIUS         = 7;
-const MV_BALL_FILL_ALPHA     = 230;
-const MV_BALL_RING_ALPHA     = 120;
 // --- End constants ---
 
 class MainView {
@@ -38,6 +31,8 @@ class MainView {
         this.menuBar = menuBar;
         this.toolBar = toolBar;
         this.rightPanel = rightPanel;
+
+        this.simRenderer = new SimulationRenderer(canvasViewModel);
 
         this.MENU_BAR_HEIGHT = menuBar ? menuBar.getHeight() : 0;
         this.TOOL_BAR_HEIGHT = toolBar ? toolBar.getHeight() : 0;
@@ -539,169 +534,16 @@ class MainView {
         return ColorUtils.applyAlpha(c, alpha);
     }
 
-    // Get rendering info for an edge during spinning arrow phase
-    // Returns { dashed: bool, alpha: number, colorOverride: string|null }
     getSpinningArrowRenderInfo(from, to) {
-        const defaultInfo = { dashed: false, alpha: MV_ALPHA_FULL, colorOverride: null };
-        const fadedInfo = { dashed: false, alpha: MV_ALPHA_FADED, colorOverride: null };
-
-        if (this.viewModel.interaction.mode !== 'simulate') return defaultInfo;
-        if (!this.viewModel.simulationState) return defaultInfo;
-
-        const simState = this.viewModel.simulationState;
-        const currentNode = simState.currentNode;
-        if (!currentNode) return defaultInfo;
-
-        // === SPINNING ARROW phase: action node selecting next state ===
-        if (simState.phase === 'spinning_arrow' && currentNode.type === 'action') {
-            // Edges FROM the current action node to state nodes → highlighted/faded logic
-            if (from.id === currentNode.id && from.type === 'action' && to.type === 'state') {
-                const highlightedEdgeIndex = simState.getHighlightedEdgeByArrow();
-                const actionNode = this.viewModel.graph.getNodeById(currentNode.id);
-                if (!actionNode || !actionNode.sas) return { dashed: true, alpha: MV_ALPHA_DIM, colorOverride: null };
-
-                const highlightedTransition = actionNode.sas[highlightedEdgeIndex];
-                if (highlightedTransition && to.id === highlightedTransition.nextState) {
-                    return { dashed: false, alpha: MV_ALPHA_FULL, colorOverride: null };
-                }
-                return { dashed: true, alpha: MV_ALPHA_DIM, colorOverride: null };
-            }
-
-            // Edge incoming to the current action node → keep visible
-            if (to.id === currentNode.id) return defaultInfo;
-
-            // All other edges → very faded
-            return fadedInfo;
-        }
-
-        // === REVEAL phase: state node selecting action ===
-        if (simState.phase === 'reveal' && currentNode.type === 'state') {
-            const stateNode = this.viewModel.graph.getNodeById(currentNode.id);
-            if (!stateNode || !stateNode.actions) return fadedInfo;
-
-            // Edges FROM the current state to its action nodes → full opacity
-            if (from.id === currentNode.id && from.type === 'state' && to.type === 'action') {
-                if (stateNode.actions.includes(to.id)) return defaultInfo;
-            }
-
-            // All other edges → very faded
-            return fadedInfo;
-        }
-
-        return defaultInfo;
+        return this.simRenderer.getEdgeRenderInfo(from, to);
     }
 
-    // Get alpha for a node during decision phases (spinning arrow or reveal)
     getNodeSpinningArrowAlpha(node) {
-        if (this.viewModel.interaction.mode !== 'simulate') return MV_ALPHA_FULL;
-        if (!this.viewModel.simulationState) return MV_ALPHA_FULL;
-
-        const simState = this.viewModel.simulationState;
-        const currentNode = simState.currentNode;
-        if (!currentNode) return MV_ALPHA_FULL;
-
-        // === SPINNING ARROW phase: action node selecting next state ===
-        if (simState.phase === 'spinning_arrow' && currentNode.type === 'action') {
-            // The action node itself stays fully visible
-            if (node.id === currentNode.id) return MV_ALPHA_FULL;
-
-            if (simState.currentIndex > 0) {
-                const prevEntry = simState.visited[simState.currentIndex - 1];
-                if (prevEntry && node.id === prevEntry.id && node.type === 'state') return MV_ALPHA_FULL;
-            }
-
-            const actionNode = this.viewModel.graph.getNodeById(currentNode.id);
-            if (!actionNode || !actionNode.sas) return MV_ALPHA_FADED;
-
-            const isDestination = actionNode.sas.some(t => t.nextState === node.id);
-            if (!isDestination) return MV_ALPHA_FADED;
-
-            const highlightedEdgeIndex = simState.getHighlightedEdgeByArrow();
-            const highlightedTransition = actionNode.sas[highlightedEdgeIndex];
-            if (highlightedTransition && node.id === highlightedTransition.nextState) {
-                return MV_ALPHA_FULL;
-            }
-            return MV_ALPHA_DIM;
-        }
-
-        // === REVEAL phase: state node selecting action ===
-        if (simState.phase === 'reveal' && currentNode.type === 'state') {
-            if (node.id === currentNode.id) return MV_ALPHA_FULL;
-
-            const stateNode = this.viewModel.graph.getNodeById(currentNode.id);
-            if (!stateNode || !stateNode.actions) return MV_ALPHA_FADED;
-
-            if (stateNode.actions.includes(node.id)) return MV_ALPHA_FULL;
-
-            return MV_ALPHA_FADED;
-        }
-
-        return MV_ALPHA_FULL;
+        return this.simRenderer.getNodeAlpha(node);
     }
 
     drawHighlightedEdgeTravelBall() {
-        const simState = this.viewModel.simulationState;
-        if (!simState || simState.phase !== 'highlight') return;
-        if (!simState.highlightedEdge) return;
-
-        const { fromId, toId } = simState.highlightedEdge;
-        const from = this.viewModel.graph.getNodeById(fromId);
-        const to = this.viewModel.graph.getNodeById(toId);
-        if (!from || !to) return;
-
-        const elapsed = Date.now() - simState.phaseStartTime;
-        const t = EasingUtils.easeInOut(Math.min(1, elapsed / simState.phaseDuration));
-
-        const dx = to.x - from.x;
-        const dy = to.y - from.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist === 0) return;
-        const nx = dx / dist, ny = dy / dist;
-
-        // Check if bidirectional (curved edge)
-        const hasReverse = this.viewModel.graph.edges.some(e =>
-            e.getFromNode().id === toId && e.getToNode().id === fromId
-        );
-
-        let ballX, ballY;
-        if (hasReverse) {
-            // Use the same visible curve geometry as drawCurvedEdge
-            const edgeObj = this.viewModel.graph.edges.find(e =>
-                e.getFromNode().id === fromId && e.getToNode().id === toId
-            );
-            let edgeWeight = 2;
-            if (edgeObj && from.type === 'action' && to.type === 'state') {
-                edgeWeight = 1 + 4 * edgeObj.getProbability();
-            }
-            const geom = GeometricHelper.buildCurvedEdgeGeometry(from, to, edgeWeight);
-            if (!geom) return;
-
-            const pt = GeometricHelper.getQuadraticBezierPoint(
-                geom.startPoint, geom.visibleControl, geom.arrowBaseCenter, t
-            );
-            ballX = pt.x;
-            ballY = pt.y;
-        } else {
-            // Straight edge
-            const startX = from.x + nx * from.size;
-            const startY = from.y + ny * from.size;
-            const endX = to.x - nx * to.size;
-            const endY = to.y - ny * to.size;
-            ballX = lerp(startX, endX, t);
-            ballY = lerp(startY, endY, t);
-        }
-
-        const r = MV_BALL_RADIUS;
-        noStroke();
-        fill(255, 215, 0, MV_BALL_FILL_ALPHA);
-        circle(ballX, ballY, r * 2);
-
-        noFill();
-        stroke(255, 215, 0, Math.round(MV_BALL_RING_ALPHA * (1 - t)));
-        strokeWeight(2);
-        circle(ballX, ballY, r * 3);
-
-        drawingContext.setLineDash([]);
+        this.simRenderer.drawTravelBall();
     }
 
     // Draw a shaft+head arrow polygon in local (already-translated/rotated) coordinates.
