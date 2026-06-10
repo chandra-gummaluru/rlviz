@@ -217,6 +217,12 @@ class CanvasController {
     // ===== Keyboard Input Handling =====
 
     handleKeyPress(key) {
+        // Don't intercept keys while a text input has focus
+        const active = document.activeElement;
+        if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) {
+            return true;
+        }
+
         // Delete key
         if (key === 'Delete' || key === 'Backspace') {
             this.deleteSelected();

@@ -60,17 +60,19 @@ class MathRenderer {
 
     async _renderAsync(key, latex, color, em) {
         try {
-            // MathJax CDN loads async — delete and let the next draw retry rather
-            // than leaving the entry stuck as 'loading' indefinitely.
-            if (typeof MathJax === 'undefined' || typeof MathJax.tex2svgPromise !== 'function') {
+            // MathJax CDN loads async — no startup object yet means not ready; delete and retry next draw.
+            if (typeof MathJax === 'undefined' || !MathJax.startup) {
                 this._cache.delete(key);
                 return;
             }
 
+            await MathJax.startup.promise; // wait for full initialization
+
+            // tex2svg is synchronous after startup; returns a wrapper — SVG is at .firstChild
             const ex = em * 0.45;
-            const node = await MathJax.tex2svgPromise(latex, { em, ex });
-            const svgEl = node.querySelector('svg');
-            if (!svgEl) { this._cache.delete(key); return; }
+            const node = MathJax.tex2svg(latex, { em, ex });
+            const svgEl = node.firstChild;
+            if (!svgEl || svgEl.tagName?.toLowerCase() !== 'svg') { this._cache.delete(key); return; }
 
             // Compute pixel dimensions from MathJax's ex-unit attributes
             const wEx = parseFloat(svgEl.getAttribute('width'))  || 5;

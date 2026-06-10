@@ -129,6 +129,7 @@ const onImportGraph = () => {
             // Pass the JSON string directly to importGraph
             // The interactor will handle parsing and validation
             canvasController.importGraph(event.target.result);
+            if (rightPanel) rightPanel.updateContent();
             redraw();
         };
         reader.readAsText(file);
