@@ -407,24 +407,12 @@ class RightPanel {
             connRow.style('gap', '6px');
             connRow.style('margin-top', '6px');
 
-            const fromBadge = createSpan(from.name);
-            fromBadge.parent(connRow);
-            fromBadge.style('background', from.type === 'state' ? '#2d6a4f' : '#1565c0');
-            fromBadge.style('color', 'white');
-            fromBadge.style('padding', '2px 8px');
-            fromBadge.style('border-radius', '4px');
-            fromBadge.style('font-size', '13px');
+            RightPanelBuilder.nodeBadge(from.name, from.type, connRow);
 
             const arrow = createSpan('→');
             arrow.parent(connRow);
 
-            const toBadge = createSpan(to.name);
-            toBadge.parent(connRow);
-            toBadge.style('background', to.type === 'state' ? '#2d6a4f' : '#1565c0');
-            toBadge.style('color', 'white');
-            toBadge.style('padding', '2px 8px');
-            toBadge.style('border-radius', '4px');
-            toBadge.style('font-size', '13px');
+            RightPanelBuilder.nodeBadge(to.name, to.type, connRow);
         });
 
         if (isTransition) {
@@ -547,17 +535,9 @@ class RightPanel {
                         probLabel.parent(transitionContainer);
                         probLabel.addClass('panel-label');
 
-                        const probInputContainer = createDiv();
-                        probInputContainer.parent(transitionContainer);
-                        probInputContainer.addClass('panel-slider-row');
-
-                        const probSlider = createSlider(0, 1, transition.probability, RP_PROB_SLIDER_STEP);
-                        probSlider.parent(probInputContainer);
-                        probSlider.addClass('panel-slider');
-
-                        const probValue = createDiv(transition.probability.toFixed(3));
-                        probValue.parent(probInputContainer);
-                        probValue.addClass('panel-slider-value');
+                        const { slider: probSlider, valueDisplay: probValue } =
+                            RightPanelBuilder.sliderRow(transitionContainer, 0, 1, transition.probability, RP_PROB_SLIDER_STEP);
+                        probValue.html(transition.probability.toFixed(3));
 
                         probSlider.input(() => {
                             const newProb = parseFloat(probSlider.value());
@@ -566,27 +546,15 @@ class RightPanel {
                             redraw();
                         });
 
-                        probSlider.elt.addEventListener('mousedown', (e) => e.stopPropagation());
-                        probSlider.elt.addEventListener('click', (e) => e.stopPropagation());
-
                         // Editable reward slider
                         const rewardLabel = createDiv('Reward:');
                         rewardLabel.parent(transitionContainer);
                         rewardLabel.addClass('panel-label');
 
-                        const rewardInputContainer = createDiv();
-                        rewardInputContainer.parent(transitionContainer);
-                        rewardInputContainer.addClass('panel-slider-row');
-
-                        const rewardSlider = createSlider(RP_REWARD_SLIDER_MIN, RP_REWARD_SLIDER_MAX, transition.reward, 1);
-                        rewardSlider.parent(rewardInputContainer);
-                        rewardSlider.addClass('panel-slider');
-
-                        const rewardValue = createDiv(transition.reward.toFixed(2));
-                        rewardValue.parent(rewardInputContainer);
-                        rewardValue.addClass('panel-slider-value');
+                        const { slider: rewardSlider, valueDisplay: rewardValue } =
+                            RightPanelBuilder.sliderRow(transitionContainer, RP_REWARD_SLIDER_MIN, RP_REWARD_SLIDER_MAX, transition.reward, 1);
+                        rewardValue.html(transition.reward.toFixed(2));
                         rewardValue.addClass('panel-slider-value--reward');
-
                         this._applyRewardColor(rewardValue, transition.reward);
 
                         rewardSlider.input(() => {
@@ -596,9 +564,6 @@ class RightPanel {
                             this._applyRewardColor(rewardValue, newReward);
                             redraw();
                         });
-
-                        rewardSlider.elt.addEventListener('mousedown', (e) => e.stopPropagation());
-                        rewardSlider.elt.addEventListener('click', (e) => e.stopPropagation());
                     }
                 });
 
