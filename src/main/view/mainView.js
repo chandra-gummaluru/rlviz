@@ -229,7 +229,7 @@ class MainView {
                         const staggerMs = idx * 60;
                         const elapsed = Date.now() - simRevealNode.phaseStartTime;
                         const tRaw = Math.max(0, Math.min(1, (elapsed - staggerMs) / 200));
-                        revealScale = VI_EASINGS.easeOutBack(tRaw);
+                        revealScale = EasingUtils.easeOutBack(tRaw);
                         if (revealScale <= 0) return;
                     }
                 }
@@ -348,7 +348,7 @@ class MainView {
                         const staggerMs = Math.max(0, idx) * 60;
                         const elapsed = Date.now() - simReveal.phaseStartTime;
                         const tRaw = Math.max(0, Math.min(1, (elapsed - staggerMs) / 250));
-                        const lineP = VI_EASINGS.easeOut(tRaw);
+                        const lineP = EasingUtils.easeOut(tRaw);
                         const headP = Math.max(0, Math.min(1, (lineP - 0.7) / 0.3));
                         this._drawPartialStraightEdge(from, to, weight, edgeColor, lineP, headP);
                         return;
@@ -506,45 +506,7 @@ class MainView {
 
     // Apply alpha to a color (supports p5 color objects, rgb(), hex strings)
     applyAlphaToColor(c, alpha) {
-        if (alpha >= 255) return c;
-
-        // Handle p5.js color objects (from color() function)
-        if (typeof c === 'object' && c !== null && typeof c.levels !== 'undefined') {
-            const r = red(c);
-            const g = green(c);
-            const b = blue(c);
-            return `rgba(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)}, ${(alpha / 255).toFixed(2)})`;
-        }
-
-        if (typeof c !== 'string') return c;
-
-        // Handle rgb(r,g,b) format
-        const rgbMatch = c.match(/^rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$/);
-        if (rgbMatch) {
-            return `rgba(${rgbMatch[1]}, ${rgbMatch[2]}, ${rgbMatch[3]}, ${(alpha / 255).toFixed(2)})`;
-        }
-
-        // Handle rgba format (update alpha)
-        const rgbaMatch = c.match(/^rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*[\d.]+\s*\)$/);
-        if (rgbaMatch) {
-            return `rgba(${rgbaMatch[1]}, ${rgbaMatch[2]}, ${rgbaMatch[3]}, ${(alpha / 255).toFixed(2)})`;
-        }
-
-        // Handle hex colors (#RRGGBB or #RGB)
-        const hexMatch = c.match(/^#([0-9a-fA-F]{3,6})$/);
-        if (hexMatch) {
-            let hex = hexMatch[1];
-            if (hex.length === 3) {
-                hex = hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2];
-            }
-            const r = parseInt(hex.substring(0, 2), 16);
-            const g = parseInt(hex.substring(2, 4), 16);
-            const b = parseInt(hex.substring(4, 6), 16);
-            return `rgba(${r}, ${g}, ${b}, ${(alpha / 255).toFixed(2)})`;
-        }
-
-        // Fallback: return as-is
-        return c;
+        return ColorUtils.applyAlpha(c, alpha);
     }
 
     // Get rendering info for an edge during spinning arrow phase
@@ -664,7 +626,7 @@ class MainView {
         if (!from || !to) return;
 
         const elapsed = Date.now() - simState.phaseStartTime;
-        const t = VI_EASINGS.easeInOut(Math.min(1, elapsed / simState.phaseDuration));
+        const t = EasingUtils.easeInOut(Math.min(1, elapsed / simState.phaseDuration));
 
         const dx = to.x - from.x;
         const dy = to.y - from.y;
@@ -718,6 +680,62 @@ class MainView {
         drawingContext.setLineDash([]);
     }
 
+    // Draw a shaft+head arrow polygon in local (already-translated/rotated) coordinates.
+    // tipY = -length (up), head spans [-shaftLength..-length], shaft spans [tailY..-shaftLength].
+    _drawArrowPolygon(length, shaftLength, shaftWidth, headWidth, opts = {}) {
+        const { fillColor, strokeColor, strokeWt, scaleFactor, tailY = 0 } = opts;
+        const tipY    = -length;
+        const headY   = -shaftLength; // where shaft meets head
+        const halfS   = shaftWidth / 2;
+        const halfH   = headWidth  / 2;
+
+        push();
+        if (scaleFactor && scaleFactor !== 1) scale(scaleFactor);
+        if (fillColor)   fill(fillColor);   else noFill();
+        if (strokeColor) { stroke(strokeColor); strokeWeight(strokeWt || 1.5); } else noStroke();
+
+        beginShape();
+        vertex(0,      tipY);   // tip
+        vertex( halfH, headY);  // right head corner
+        vertex( halfS, headY);  // right shaft top
+        vertex( halfS, tailY);  // right shaft bottom
+        vertex(-halfS, tailY);  // left shaft bottom
+        vertex(-halfS, headY);  // left shaft top
+        vertex(-halfH, headY);  // left head corner
+        endShape(CLOSE);
+        pop();
+    }
+
+    // Full spinning-arrow glyph scaled to nodeSize so tip lands at the node circumference.
+    // Call inside push/translate/rotate … pop with origin at the node center.
+    drawSpinningArrowGlyph(nodeSize) {
+        const s          = nodeSize / 32;
+        const length     = nodeSize;
+        const shaftLen   = Math.max(4, Math.round(18 * s));
+        const shaftWidth = Math.max(3, Math.round(5  * s));
+        const headWidth  = Math.max(9, Math.round(17 * s));
+
+        this._drawArrowPolygon(length, shaftLen, shaftWidth, headWidth, {
+            fillColor: color(0, 0, 0, 120),
+            strokeColor: null,
+            scaleFactor: 1.12,
+            tailY: 0
+        });
+
+        this._drawArrowPolygon(length, shaftLen, shaftWidth, headWidth, {
+            fillColor: color(255, 87, 34),
+            strokeColor: color(20, 20, 20, 220),
+            strokeWt: 1.5,
+            scaleFactor: 1,
+            tailY: 0
+        });
+
+        fill(255, 255, 255, 230);
+        stroke(20, 20, 20, 180);
+        strokeWeight(1);
+        circle(0, 0, 6);
+    }
+
     // Draw spinning arrow animation at action node during selection phase
     drawSpinningArrow() {
         const simState = this.viewModel.simulationState;
@@ -749,21 +767,7 @@ class MainView {
         push();
         translate(actionNode.x, actionNode.y);
         rotate(arrowAngle);
-
-        const arrowLength = 25;
-        const arrowWidth = 12;
-
-        // Arrow body
-        fill(255, 87, 34);  // Orange/red color #FF5722
-        noStroke();
-        triangle(0, -arrowLength, -arrowWidth / 2, 0, arrowWidth / 2, 0);
-
-        // Arrow outline for better visibility
-        stroke(0);
-        strokeWeight(1.5);
-        noFill();
-        triangle(0, -arrowLength, -arrowWidth / 2, 0, arrowWidth / 2, 0);
-
+        this.drawSpinningArrowGlyph(actionNode.size);
         pop();
 
         // Draw probability labels on each outgoing edge
