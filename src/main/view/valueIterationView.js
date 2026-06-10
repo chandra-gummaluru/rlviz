@@ -1,3 +1,33 @@
+// --- File-local rendering constants ---
+const VI_ACTION_NODE_RADIUS  = 18;
+
+const VI_ALPHA_COMPLETED     = 90;   // completed columns and inactive same-column nodes
+const VI_ALPHA_ACTIVE_SAME   = 50;   // non-active nodes within the active column
+const VI_ALPHA_NEXT_COL      = 200;  // nodes in the column immediately after the active one
+
+const VI_DUR_EQUATION        = 500;
+const VI_DUR_SA_LINE         = 200;
+const VI_DUR_SA_HEAD         = 80;
+const VI_DUR_SA_STAGGER      = 60;
+const VI_DUR_SA_HEAD_DELAY   = 170;  // delay before sa_head starts (= VI_DUR_SA_LINE - VI_DUR_SA_HEAD)
+const VI_DUR_AS_LINE         = 220;
+const VI_DUR_AS_HEAD         = 80;
+const VI_DUR_AS_STAGGER      = 60;
+const VI_DUR_AS_HEAD_DELAY   = 190;  // delay before as_head (= VI_DUR_AS_LINE - VI_DUR_AS_HEAD)
+const VI_DUR_AS_LABEL        = 180;
+const VI_DUR_AS_LABEL_DELAY  = 220;
+const VI_DUR_Q_COUNTUP       = 400;
+const VI_DUR_Q_BADGE         = 250;
+const VI_DUR_SCAN_MAX        = 500;
+const VI_DUR_SCAN_PER_ACTION = 80;
+const VI_DUR_SELECT_BURST    = 300;
+const VI_DUR_BADGE_EXPAND    = 200;
+const VI_DUR_VALUE_COUNTUP   = 400;
+const VI_DUR_NODE_PULSE      = 150;
+const VI_DUR_COL_SCALE       = 300;
+const VI_DUR_COL_STAGGER     = 40;
+// --- End constants ---
+
 class VITweenEngine {
     constructor() { this._tweens = {}; }
 
@@ -44,7 +74,7 @@ class VITweenEngine {
 class ValueIterationView {
     constructor(canvasViewModel) {
         this.viewModel = canvasViewModel;
-        this.ACTION_NODE_RADIUS = 18;
+        this.ACTION_NODE_RADIUS = VI_ACTION_NODE_RADIUS;
         this.tween = new VITweenEngine();
         this._lastPhaseKey = null;
         this._lastVisibleColumnCount = 0;
@@ -147,10 +177,10 @@ class ValueIterationView {
     _getNodeAlpha(colIdx, stateId, activeColIdx, activeStateId) {
         if (activeColIdx < 0) return 255;
         if (colIdx === activeColIdx && stateId === activeStateId) return 255;
-        if (colIdx < activeColIdx) return 90;
-        if (colIdx === activeColIdx) return 50;
-        if (colIdx === activeColIdx + 1) return 200;
-        return 90;
+        if (colIdx < activeColIdx) return VI_ALPHA_COMPLETED;
+        if (colIdx === activeColIdx) return VI_ALPHA_ACTIVE_SAME;
+        if (colIdx === activeColIdx + 1) return VI_ALPHA_NEXT_COL;
+        return VI_ALPHA_COMPLETED;
     }
 
     _drawStateNode(stateNode, colIdx, alpha) {
@@ -962,48 +992,48 @@ class ValueIterationView {
     _startTweensForPhase(detail) {
         switch (detail.subPhase) {
             case 'show_equation':
-                this.tween.start(this._phaseId(detail, 'equation'), 500, 'easeInOut');
+                this.tween.start(this._phaseId(detail, 'equation'), VI_DUR_EQUATION, 'easeInOut');
                 break;
             case 'show_actions':
                 detail.actions.forEach((action, i) => {
-                    this.tween.start(this._phaseId(detail, 'sa_line', i), 200, 'linear', i * 60);
-                    this.tween.start(this._phaseId(detail, 'sa_head', i), 80, 'easeOut', i * 60 + 170);
+                    this.tween.start(this._phaseId(detail, 'sa_line', i), VI_DUR_SA_LINE, 'linear', i * VI_DUR_SA_STAGGER);
+                    this.tween.start(this._phaseId(detail, 'sa_head', i), VI_DUR_SA_HEAD, 'easeOut', i * VI_DUR_SA_STAGGER + VI_DUR_SA_HEAD_DELAY);
                 });
                 break;
             case 'show_action':
-                this.tween.start(this._phaseId(detail, 'sa_line', detail.currentActionIndex ?? 0), 200, 'linear');
-                this.tween.start(this._phaseId(detail, 'sa_head', detail.currentActionIndex ?? 0), 80, 'easeOut', 170);
+                this.tween.start(this._phaseId(detail, 'sa_line', detail.currentActionIndex ?? 0), VI_DUR_SA_LINE, 'linear');
+                this.tween.start(this._phaseId(detail, 'sa_head', detail.currentActionIndex ?? 0), VI_DUR_SA_HEAD, 'easeOut', VI_DUR_SA_HEAD_DELAY);
                 break;
             case 'show_transitions':
                 this._forVisibleTransitions(detail, (action, t, key, i) => {
-                    this.tween.start(this._phaseId(detail, 'as_line', key), 220, 'linear', i * 60);
-                    this.tween.start(this._phaseId(detail, 'as_head', key), 80, 'easeOut', i * 60 + 190);
-                    this.tween.start(this._phaseId(detail, 'label', key), 180, 'easeOutBack', i * 60 + 220);
+                    this.tween.start(this._phaseId(detail, 'as_line', key), VI_DUR_AS_LINE, 'linear', i * VI_DUR_AS_STAGGER);
+                    this.tween.start(this._phaseId(detail, 'as_head', key), VI_DUR_AS_HEAD, 'easeOut', i * VI_DUR_AS_STAGGER + VI_DUR_AS_HEAD_DELAY);
+                    this.tween.start(this._phaseId(detail, 'label', key), VI_DUR_AS_LABEL, 'easeOutBack', i * VI_DUR_AS_STAGGER + VI_DUR_AS_LABEL_DELAY);
                 });
                 break;
             case 'show_transition': {
                 const ti = detail.currentTransitionIndex ?? 0;
-                this.tween.start(this._phaseId(detail, 'as_line', ti), 220, 'linear');
-                this.tween.start(this._phaseId(detail, 'as_head', ti), 80, 'easeOut', 190);
-                this.tween.start(this._phaseId(detail, 'label', ti), 180, 'easeOutBack', 220);
+                this.tween.start(this._phaseId(detail, 'as_line', ti), VI_DUR_AS_LINE, 'linear');
+                this.tween.start(this._phaseId(detail, 'as_head', ti), VI_DUR_AS_HEAD, 'easeOut', VI_DUR_AS_HEAD_DELAY);
+                this.tween.start(this._phaseId(detail, 'label', ti), VI_DUR_AS_LABEL, 'easeOutBack', VI_DUR_AS_LABEL_DELAY);
                 break;
             }
             case 'compute_q_values':
-                this.tween.start(this._phaseId(detail, 'q_countup'), 400, 'easeInOut');
+                this.tween.start(this._phaseId(detail, 'q_countup'), VI_DUR_Q_COUNTUP, 'easeInOut');
                 break;
             case 'show_q_result':
-                this.tween.start(this._phaseId(detail, 'q_badge'), 250, 'easeOutBack');
+                this.tween.start(this._phaseId(detail, 'q_badge'), VI_DUR_Q_BADGE, 'easeOutBack');
                 break;
             case 'select_max': {
-                const scanDur = Math.min(500, detail.actions.length * 80);
+                const scanDur = Math.min(VI_DUR_SCAN_MAX, detail.actions.length * VI_DUR_SCAN_PER_ACTION);
                 this.tween.start(this._phaseId(detail, 'scan'), scanDur, 'linear');
-                this.tween.start(this._phaseId(detail, 'select_burst'), 300, 'easeOut', scanDur);
+                this.tween.start(this._phaseId(detail, 'select_burst'), VI_DUR_SELECT_BURST, 'easeOut', scanDur);
                 break;
             }
             case 'revealing_value':
-                this.tween.start(this._phaseId(detail, 'badge_expand'), 200, 'easeOut');
-                this.tween.start(this._phaseId(detail, 'value_countup'), 400, 'easeInOut');
-                this.tween.start(this._phaseId(detail, 'node_pulse'), 150, 'easeOut');
+                this.tween.start(this._phaseId(detail, 'badge_expand'), VI_DUR_BADGE_EXPAND, 'easeOut');
+                this.tween.start(this._phaseId(detail, 'value_countup'), VI_DUR_VALUE_COUNTUP, 'easeInOut');
+                this.tween.start(this._phaseId(detail, 'node_pulse'), VI_DUR_NODE_PULSE, 'easeOut');
                 break;
         }
     }
@@ -1020,7 +1050,7 @@ class ValueIterationView {
             const col = this.viViewModel.columns[colIdx];
             if (!col) continue;
             col.states.forEach((state, i) => {
-                this.tween.start(`column:${colIdx}:state:${state.id}:scale`, 300, 'easeOutBack', i * 40);
+                this.tween.start(`column:${colIdx}:state:${state.id}:scale`, VI_DUR_COL_SCALE, 'easeOutBack', i * VI_DUR_COL_STAGGER);
             });
         }
         this._lastVisibleColumnCount = current;

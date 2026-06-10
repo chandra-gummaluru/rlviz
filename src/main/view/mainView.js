@@ -1,3 +1,36 @@
+// --- File-local rendering constants ---
+const MV_MSG_TIMEOUT_MS      = 3000;
+const MV_MSG_X               = 10;
+const MV_MSG_Y_OFFSET        = 50;
+const MV_MSG_WIDTH           = 400;
+const MV_MSG_HEIGHT          = 40;
+const MV_MSG_RADIUS          = 5;
+const MV_MSG_TEXT_SIZE       = 14;
+
+const MV_REVEAL_NODE_STAGGER = 60;   // ms stagger per node index during reveal
+const MV_REVEAL_NODE_DUR     = 200;  // ms total node scale-in duration
+const MV_REVEAL_EDGE_STAGGER = 60;   // ms stagger per edge index
+const MV_REVEAL_EDGE_DUR     = 250;  // ms total edge draw duration
+const MV_REVEAL_HEAD_THRESH  = 0.7;  // lineP at which arrowhead starts appearing
+
+const MV_DASH_LINE           = 8;
+const MV_DASH_GAP            = 4;
+const MV_DASH_NODE_LINE      = 6;    // shorter dash for faded node outlines
+const MV_DASH_NODE_GAP       = 3;
+
+const MV_ARROW_BASE          = 8;    // px base size of arrowhead
+const MV_ARROW_WEIGHT_MULT   = 1.5;  // arrowhead size scales with line weight
+const MV_ARROW_ANGLE         = Math.PI / 6;  // 30 degrees
+
+const MV_ALPHA_FULL          = 255;
+const MV_ALPHA_DIM           = 80;
+const MV_ALPHA_FADED         = 40;
+
+const MV_BALL_RADIUS         = 7;
+const MV_BALL_FILL_ALPHA     = 230;
+const MV_BALL_RING_ALPHA     = 120;
+// --- End constants ---
+
 class MainView {
     constructor(canvasViewModel, canvasController, menuBar, toolBar, rightPanel) {
         this.viewModel = canvasViewModel;
@@ -118,18 +151,17 @@ class MainView {
             push();
             fill(0, 150, 0, 200);
             noStroke();
-            rect(10, height - 50, 400, 40, 5);
+            rect(MV_MSG_X, height - MV_MSG_Y_OFFSET, MV_MSG_WIDTH, MV_MSG_HEIGHT, MV_MSG_RADIUS);
             fill(255);
             textAlign(LEFT, CENTER);
-            textSize(14);
-            text(this.viewModel.infoMessage, 20, height - 30);
+            textSize(MV_MSG_TEXT_SIZE);
+            text(this.viewModel.infoMessage, MV_MSG_X + 10, height - MV_MSG_Y_OFFSET / 2);
             pop();
 
-            // Clear message after 3 seconds
             setTimeout(() => {
                 this.viewModel.infoMessage = null;
                 redraw();
-            }, 3000);
+            }, MV_MSG_TIMEOUT_MS);
         }
 
         // Display error message if set
@@ -137,18 +169,17 @@ class MainView {
             push();
             fill(200, 0, 0, 200);
             noStroke();
-            rect(10, height - 50, 400, 40, 5);
+            rect(MV_MSG_X, height - MV_MSG_Y_OFFSET, MV_MSG_WIDTH, MV_MSG_HEIGHT, MV_MSG_RADIUS);
             fill(255);
             textAlign(LEFT, CENTER);
-            textSize(14);
-            text(this.viewModel.errorMessage, 20, height - 30);
+            textSize(MV_MSG_TEXT_SIZE);
+            text(this.viewModel.errorMessage, MV_MSG_X + 10, height - MV_MSG_Y_OFFSET / 2);
             pop();
 
-            // Clear message after 3 seconds
             setTimeout(() => {
                 this.viewModel.errorMessage = null;
                 redraw();
-            }, 3000);
+            }, MV_MSG_TIMEOUT_MS);
         }
     }
 
@@ -226,9 +257,9 @@ class MainView {
                         idx = srcNode && srcNode.sas ? srcNode.sas.findIndex(t => t.nextState === node.id) : -1;
                     }
                     if (idx >= 0) {
-                        const staggerMs = idx * 60;
+                        const staggerMs = idx * MV_REVEAL_NODE_STAGGER;
                         const elapsed = Date.now() - simRevealNode.phaseStartTime;
-                        const tRaw = Math.max(0, Math.min(1, (elapsed - staggerMs) / 200));
+                        const tRaw = Math.max(0, Math.min(1, (elapsed - staggerMs) / MV_REVEAL_NODE_DUR));
                         revealScale = EasingUtils.easeOutBack(tRaw);
                         if (revealScale <= 0) return;
                     }
@@ -251,9 +282,8 @@ class MainView {
             stroke(this.applyAlphaToColor('rgb(0,0,0)', nodeAlpha));
             strokeWeight(2);
 
-            // Apply dashed stroke for faded destination nodes
             if (isNodeFaded) {
-                drawingContext.setLineDash([6, 3]);
+                drawingContext.setLineDash([MV_DASH_NODE_LINE, MV_DASH_NODE_GAP]);
             }
 
             circle(node.x, node.y, node.size * 2);
@@ -345,11 +375,11 @@ class MainView {
                         const idx = cur.type === 'state'
                             ? (srcNode && srcNode.actions ? srcNode.actions.indexOf(to.id) : 0)
                             : (srcNode && srcNode.sas ? srcNode.sas.findIndex(t => t.nextState === to.id) : 0);
-                        const staggerMs = Math.max(0, idx) * 60;
+                        const staggerMs = Math.max(0, idx) * MV_REVEAL_EDGE_STAGGER;
                         const elapsed = Date.now() - simReveal.phaseStartTime;
-                        const tRaw = Math.max(0, Math.min(1, (elapsed - staggerMs) / 250));
+                        const tRaw = Math.max(0, Math.min(1, (elapsed - staggerMs) / MV_REVEAL_EDGE_DUR));
                         const lineP = EasingUtils.easeOut(tRaw);
-                        const headP = Math.max(0, Math.min(1, (lineP - 0.7) / 0.3));
+                        const headP = Math.max(0, Math.min(1, (lineP - MV_REVEAL_HEAD_THRESH) / (1 - MV_REVEAL_HEAD_THRESH)));
                         this._drawPartialStraightEdge(from, to, weight, edgeColor, lineP, headP);
                         return;
                     }
@@ -386,7 +416,7 @@ class MainView {
         const perpX = -normalizedDy;
         const perpY = normalizedDx;
 
-        const arrowSize = 8 + weight * 1.5;
+        const arrowSize = MV_ARROW_BASE + weight * MV_ARROW_WEIGHT_MULT;
 
         // Calculate the point on the circumference of the 'to' node
         const toRadius = to.size;
@@ -409,7 +439,7 @@ class MainView {
         stroke(alphaEdgeColor);
 
         if (renderInfo.dashed) {
-            drawingContext.setLineDash([8, 4]);
+            drawingContext.setLineDash([MV_DASH_LINE, MV_DASH_GAP]);
         }
 
         line(from.x, from.y, lineEndX, lineEndY);
@@ -435,7 +465,7 @@ class MainView {
         noFill();
 
         if (renderInfo.dashed) {
-            drawingContext.setLineDash([8, 4]);
+            drawingContext.setLineDash([MV_DASH_LINE, MV_DASH_GAP]);
         }
 
         // Visible quadratic Bezier: startPoint → arrowBaseCenter, shaped to match guide curve
@@ -454,7 +484,7 @@ class MainView {
     drawArrowhead(x, y, dirX, dirY, color, lineWeight) {
         // Arrow size proportional to line weight
         const arrowSize = 8 + lineWeight * 1.5;
-        const arrowAngle = Math.PI / 6; // 30 degrees
+        const arrowAngle = MV_ARROW_ANGLE;
 
         // Calculate the two points of the arrowhead
         // Rotate the direction vector by +/- arrowAngle
@@ -481,7 +511,7 @@ class MainView {
         if (dist === 0) return;
         const nx = dx / dist, ny = dy / dist;
 
-        const arrowSize = 8 + weight * 1.5;
+        const arrowSize = MV_ARROW_BASE + weight * MV_ARROW_WEIGHT_MULT;
         const startX = from.x + nx * from.size;
         const startY = from.y + ny * from.size;
         const fullEndX = to.x - nx * to.size;
@@ -512,8 +542,8 @@ class MainView {
     // Get rendering info for an edge during spinning arrow phase
     // Returns { dashed: bool, alpha: number, colorOverride: string|null }
     getSpinningArrowRenderInfo(from, to) {
-        const defaultInfo = { dashed: false, alpha: 255, colorOverride: null };
-        const fadedInfo = { dashed: false, alpha: 40, colorOverride: null };
+        const defaultInfo = { dashed: false, alpha: MV_ALPHA_FULL, colorOverride: null };
+        const fadedInfo = { dashed: false, alpha: MV_ALPHA_FADED, colorOverride: null };
 
         if (this.viewModel.interaction.mode !== 'simulate') return defaultInfo;
         if (!this.viewModel.simulationState) return defaultInfo;
@@ -528,13 +558,13 @@ class MainView {
             if (from.id === currentNode.id && from.type === 'action' && to.type === 'state') {
                 const highlightedEdgeIndex = simState.getHighlightedEdgeByArrow();
                 const actionNode = this.viewModel.graph.getNodeById(currentNode.id);
-                if (!actionNode || !actionNode.sas) return { dashed: true, alpha: 80, colorOverride: null };
+                if (!actionNode || !actionNode.sas) return { dashed: true, alpha: MV_ALPHA_DIM, colorOverride: null };
 
                 const highlightedTransition = actionNode.sas[highlightedEdgeIndex];
                 if (highlightedTransition && to.id === highlightedTransition.nextState) {
-                    return { dashed: false, alpha: 255, colorOverride: null };
+                    return { dashed: false, alpha: MV_ALPHA_FULL, colorOverride: null };
                 }
-                return { dashed: true, alpha: 80, colorOverride: null };
+                return { dashed: true, alpha: MV_ALPHA_DIM, colorOverride: null };
             }
 
             // Edge incoming to the current action node → keep visible
@@ -563,56 +593,50 @@ class MainView {
 
     // Get alpha for a node during decision phases (spinning arrow or reveal)
     getNodeSpinningArrowAlpha(node) {
-        if (this.viewModel.interaction.mode !== 'simulate') return 255;
-        if (!this.viewModel.simulationState) return 255;
+        if (this.viewModel.interaction.mode !== 'simulate') return MV_ALPHA_FULL;
+        if (!this.viewModel.simulationState) return MV_ALPHA_FULL;
 
         const simState = this.viewModel.simulationState;
         const currentNode = simState.currentNode;
-        if (!currentNode) return 255;
+        if (!currentNode) return MV_ALPHA_FULL;
 
         // === SPINNING ARROW phase: action node selecting next state ===
         if (simState.phase === 'spinning_arrow' && currentNode.type === 'action') {
             // The action node itself stays fully visible
-            if (node.id === currentNode.id) return 255;
+            if (node.id === currentNode.id) return MV_ALPHA_FULL;
 
-            // The parent state node (that led to this action) stays visible
             if (simState.currentIndex > 0) {
                 const prevEntry = simState.visited[simState.currentIndex - 1];
-                if (prevEntry && node.id === prevEntry.id && node.type === 'state') return 255;
+                if (prevEntry && node.id === prevEntry.id && node.type === 'state') return MV_ALPHA_FULL;
             }
 
             const actionNode = this.viewModel.graph.getNodeById(currentNode.id);
-            if (!actionNode || !actionNode.sas) return 40;
+            if (!actionNode || !actionNode.sas) return MV_ALPHA_FADED;
 
-            // Check if this node is a destination of the current action node
             const isDestination = actionNode.sas.some(t => t.nextState === node.id);
-            if (!isDestination) return 40;
+            if (!isDestination) return MV_ALPHA_FADED;
 
-            // Check if this node is the highlighted destination
             const highlightedEdgeIndex = simState.getHighlightedEdgeByArrow();
             const highlightedTransition = actionNode.sas[highlightedEdgeIndex];
             if (highlightedTransition && node.id === highlightedTransition.nextState) {
-                return 255;
+                return MV_ALPHA_FULL;
             }
-            return 80;
+            return MV_ALPHA_DIM;
         }
 
         // === REVEAL phase: state node selecting action ===
         if (simState.phase === 'reveal' && currentNode.type === 'state') {
-            // The state node itself stays fully visible
-            if (node.id === currentNode.id) return 255;
+            if (node.id === currentNode.id) return MV_ALPHA_FULL;
 
             const stateNode = this.viewModel.graph.getNodeById(currentNode.id);
-            if (!stateNode || !stateNode.actions) return 40;
+            if (!stateNode || !stateNode.actions) return MV_ALPHA_FADED;
 
-            // Action nodes connected to the current state → full opacity
-            if (stateNode.actions.includes(node.id)) return 255;
+            if (stateNode.actions.includes(node.id)) return MV_ALPHA_FULL;
 
-            // Everything else → very faded
-            return 40;
+            return MV_ALPHA_FADED;
         }
 
-        return 255;
+        return MV_ALPHA_FULL;
     }
 
     drawHighlightedEdgeTravelBall() {
@@ -667,13 +691,13 @@ class MainView {
             ballY = lerp(startY, endY, t);
         }
 
-        const r = 7;
+        const r = MV_BALL_RADIUS;
         noStroke();
-        fill(255, 215, 0, 230);
+        fill(255, 215, 0, MV_BALL_FILL_ALPHA);
         circle(ballX, ballY, r * 2);
 
         noFill();
-        stroke(255, 215, 0, Math.round(120 * (1 - t)));
+        stroke(255, 215, 0, Math.round(MV_BALL_RING_ALPHA * (1 - t)));
         strokeWeight(2);
         circle(ballX, ballY, r * 3);
 

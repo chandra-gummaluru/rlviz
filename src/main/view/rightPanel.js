@@ -1,4 +1,31 @@
+// --- File-local constants ---
+const RP_SET_DISPLAY_LIMIT   = 5;      // max states/actions shown inline before ellipsis
+const RP_DEFAULT_DISCOUNT    = 0.9;
+const RP_REWARD_SLIDER_MIN   = -100;
+const RP_REWARD_SLIDER_MAX   = 100;
+const RP_PROB_SLIDER_STEP    = 0.01;
+const RP_VI_TABLE_MAX_H      = 400;    // px max height of the V(s) table
+const RP_REWARD_BAR_MAX      = 100;    // reward clamped to ±this for bar width
+const RP_REWARD_BAR_HALF_PCT = 50;     // percent representing one full half of bar
+// --- End constants ---
+
 // Right panel displaying MDP information and node editing
+
+function latexEscapeText(value) {
+    return String(value)
+        .replace(/\\/g, '\\textbackslash{}')
+        .replace(/[{}]/g, match => `\\${match}`)
+        .replace(/_/g, '\\_')
+        .replace(/%/g, '\\%')
+        .replace(/&/g, '\\&')
+        .replace(/#/g, '\\#')
+        .replace(/\$/g, '\\$');
+}
+
+function latexNodeName(name) {
+    return `\\text{${latexEscapeText(name)}}`;
+}
+
 class RightPanel {
     constructor(viewModel, controller) {
         this.viewModel = viewModel;
@@ -8,7 +35,10 @@ class RightPanel {
         this.contentContainer = null;
 
         // Discount factor (gamma) for MDP - editable
-        this.discountFactor = 0.9;
+        this.discountFactor = RP_DEFAULT_DISCOUNT;
+
+        // Sequence counter to cancel stale async MathJax renders
+        this.mathJaxRenderSeq = 0;
 
         // Callbacks for spinning arrow animation
         this.callbacks = {
@@ -32,16 +62,14 @@ class RightPanel {
         this.panelElement.size(this.width, windowHeight - topOffset);
         this.panelElement.addClass('panel');
 
-        // Create content container (will be regenerated on updates)
-        this.contentContainer = createDiv();
-        this.contentContainer.parent(this.panelElement);
-
         this.updateContent();
     }
 
     updateContent() {
-        // Clear existing content
-        this.contentContainer.html('');
+        // Replace container with a fresh element so MathJax always sees an unprocessed root
+        if (this.contentContainer) this.contentContainer.remove();
+        this.contentContainer = createDiv();
+        this.contentContainer.parent(this.panelElement);
 
         const selectedNode = this.viewModel.selection.selectedNode;
         const selectedEdge = this.viewModel.selection.selectedEdge;
@@ -65,6 +93,26 @@ class RightPanel {
         } else {
             this.renderMDPInfoPanel();
         }
+
+        this._typesetMath();
+    }
+
+    _typesetMath() {
+        if (!window.MathJax || !MathJax.startup || !MathJax.typesetPromise || !this.contentContainer) {
+            return;
+        }
+
+        const target = this.contentContainer.elt;
+        const seq = ++this.mathJaxRenderSeq;
+
+        MathJax.startup.promise
+            .then(() => {
+                if (seq !== this.mathJaxRenderSeq || !document.body.contains(target)) {
+                    return null;
+                }
+                return MathJax.typesetPromise([target]);
+            })
+            .catch(e => console.error('[MJ] typesetPromise failed:', e));
     }
 
     renderMDPInfoPanel() {
@@ -83,10 +131,6 @@ class RightPanel {
         latex.html('$$\\langle \\mathcal{S}, s_0, \\mathcal{A}, P, r, \\gamma \\rangle$$');
         latex.addClass('panel-latex');
 
-        if (window.MathJax) {
-            MathJax.typesetPromise([latex.elt]).catch(() => {});
-        }
-
         // State Space Section
         this.createSection('State Space', () => {
             const states = this.viewModel.graph.nodes.filter(n => n.type === 'state');
@@ -101,8 +145,8 @@ class RightPanel {
                 setNotation.addClass('panel-set-notation');
             } else {
                 let stateNames;
-                if (states.length > 5) {
-                    const firstFive = states.slice(0, 5).map((s, index) => `s_{${index}}`).join(', ');
+                if (states.length > RP_SET_DISPLAY_LIMIT) {
+                    const firstFive = states.slice(0, RP_SET_DISPLAY_LIMIT).map((s, index) => `s_{${index}}`).join(', ');
                     stateNames = `${firstFive}, \\ldots`;
                 } else {
                     stateNames = states.map((s, index) => `s_{${index}}`).join(', ');
@@ -114,9 +158,6 @@ class RightPanel {
                 setNotation.addClass('panel-set-notation--wrap');
             }
 
-            if (window.MathJax) {
-                MathJax.typesetPromise([stateList.elt]).catch(() => {});
-            }
         });
 
         // Action Space Section
@@ -133,11 +174,11 @@ class RightPanel {
                 setNotation.addClass('panel-set-notation');
             } else {
                 let actionNames;
-                if (actions.length > 5) {
-                    const firstFive = actions.slice(0, 5).map((a, index) => `a_{${index}}`).join(', ');
+                if (actions.length > RP_SET_DISPLAY_LIMIT) {
+                    const firstFive = actions.slice(0, RP_SET_DISPLAY_LIMIT).map(a => latexNodeName(a.name)).join(', ');
                     actionNames = `${firstFive}, \\ldots`;
                 } else {
-                    actionNames = actions.map((a, index) => `a_{${index}}`).join(', ');
+                    actionNames = actions.map(a => latexNodeName(a.name)).join(', ');
                 }
                 const setNotation = createDiv();
                 setNotation.parent(actionList);
@@ -146,9 +187,6 @@ class RightPanel {
                 setNotation.addClass('panel-set-notation--wrap');
             }
 
-            if (window.MathJax) {
-                MathJax.typesetPromise([actionList.elt]).catch(() => {});
-            }
         });
 
         // Probability Section
@@ -174,9 +212,6 @@ class RightPanel {
                 descDiv.html('$$P[s][a][s\'] = \\text{probability}$$');
                 descDiv.addClass('panel-description');
 
-                if (window.MathJax) {
-                    MathJax.typesetPromise([dimensionsDiv.elt, descDiv.elt]).catch(() => {});
-                }
             }
         });
 
@@ -203,9 +238,6 @@ class RightPanel {
                 descDiv.html('$$R[s][a][s\'] = \\text{reward}$$');
                 descDiv.addClass('panel-description');
 
-                if (window.MathJax) {
-                    MathJax.typesetPromise([dimensionsDiv.elt, descDiv.elt]).catch(() => {});
-                }
             }
         });
 
@@ -448,25 +480,17 @@ class RightPanel {
                 latexDiv.html(`$$A(s_{${stateIndex}}) = \\{\\}$$`);
                 latexDiv.addClass('panel-latex-content');
 
-                if (window.MathJax) {
-                    MathJax.typesetPromise([latexDiv.elt]).catch(() => {});
-                }
             } else {
-                const actions = this.viewModel.graph.nodes.filter(n => n.type === 'action');
-                const actionIndices = stateNode.actions.map(actionId => {
-                    const actionNode = actions.find(n => n.id === actionId);
-                    return actionNode ? actions.indexOf(actionNode) : -1;
-                }).filter(idx => idx !== -1);
-
-                const actionSet = actionIndices.map(idx => `a_{${idx}}`).join(', ');
+                const actionSet = stateNode.actions
+                    .map(actionId => this.viewModel.graph.getNodeById(actionId))
+                    .filter(n => n && n.type === 'action')
+                    .map(n => latexNodeName(n.name))
+                    .join(', ');
                 const latexDiv = createDiv();
                 latexDiv.parent(connectionsDiv);
                 latexDiv.html(`$$A(s_{${stateIndex}}) = \\{${actionSet}\\}$$`);
                 latexDiv.addClass('panel-latex-content');
 
-                if (window.MathJax) {
-                    MathJax.typesetPromise([latexDiv.elt]).catch(() => {});
-                }
             }
         });
     }
@@ -527,7 +551,7 @@ class RightPanel {
                         probInputContainer.parent(transitionContainer);
                         probInputContainer.addClass('panel-slider-row');
 
-                        const probSlider = createSlider(0, 1, transition.probability, 0.01);
+                        const probSlider = createSlider(0, 1, transition.probability, RP_PROB_SLIDER_STEP);
                         probSlider.parent(probInputContainer);
                         probSlider.addClass('panel-slider');
 
@@ -554,7 +578,7 @@ class RightPanel {
                         rewardInputContainer.parent(transitionContainer);
                         rewardInputContainer.addClass('panel-slider-row');
 
-                        const rewardSlider = createSlider(-100, 100, transition.reward, 1);
+                        const rewardSlider = createSlider(RP_REWARD_SLIDER_MIN, RP_REWARD_SLIDER_MAX, transition.reward, 1);
                         rewardSlider.parent(rewardInputContainer);
                         rewardSlider.addClass('panel-slider');
 
@@ -612,10 +636,6 @@ class RightPanel {
         const gammaLine = createDiv(`<strong>Discount (\\(\\gamma\\)):</strong> ${this.discountFactor}`);
         gammaLine.parent(paramsDiv);
         gammaLine.style('margin-bottom', '4px');
-        if (window.MathJax) {
-            MathJax.typesetPromise([gammaLine.elt]).catch(() => {});
-        }
-
         if (viState && viState.initialized) {
             const tLine = createDiv(`<strong>Horizon (T):</strong> ${viState.T}`);
             tLine.parent(paramsDiv);
@@ -636,7 +656,7 @@ class RightPanel {
             const tableContainer = createDiv();
             tableContainer.parent(this.contentContainer);
             tableContainer.addClass('panel-section-content');
-            tableContainer.style('max-height', '400px');
+            tableContainer.style('max-height', RP_VI_TABLE_MAX_H + 'px');
             tableContainer.style('overflow-y', 'auto');
 
             // Show values for the most recently completed column
@@ -680,10 +700,6 @@ class RightPanel {
             }
         }
 
-        // Re-typeset MathJax
-        if (typeof MathJax !== 'undefined' && MathJax.typeset) {
-            try { MathJax.typeset(); } catch (e) { /* ignore */ }
-        }
     }
 
     renderSimulationPanel() {
@@ -747,16 +763,16 @@ class RightPanel {
 
             // Scale: map reward to 0-100% of half-width
             // Clamp so the bar doesn't overflow
-            const maxReward = 100;
+            const maxReward = RP_REWARD_BAR_MAX;
             const clampedReward = Math.max(-maxReward, Math.min(maxReward, stats.totalReward));
-            const pct = Math.abs(clampedReward) / maxReward * 50; // 50% = full half
+            const pct = Math.abs(clampedReward) / maxReward * RP_REWARD_BAR_HALF_PCT;
 
             if (stats.totalReward > 0) {
-                barFill.style('left', '50%');
+                barFill.style('left', RP_REWARD_BAR_HALF_PCT + '%');
                 barFill.style('width', pct + '%');
                 barFill.style('background', '#4CAF50');
             } else if (stats.totalReward < 0) {
-                barFill.style('left', (50 - pct) + '%');
+                barFill.style('left', (RP_REWARD_BAR_HALF_PCT - pct) + '%');
                 barFill.style('width', pct + '%');
                 barFill.style('background', 'var(--reward-negative)');
             } else {
