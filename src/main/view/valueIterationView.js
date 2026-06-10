@@ -1,14 +1,3 @@
-// Easing functions for VI animations
-const VI_EASINGS = {
-    linear: t => t,
-    easeOut: t => 1 - (1 - t) * (1 - t),
-    easeInOut: t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2,
-    easeOutBack: t => {
-        const c1 = 1.70158, c3 = c1 + 1;
-        return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
-    }
-};
-
 class VITweenEngine {
     constructor() { this._tweens = {}; }
 
@@ -30,7 +19,7 @@ class VITweenEngine {
         const now = Date.now();
         if (now < tween.startMs) return 0;
         const raw = Math.min((now - tween.startMs) / tween.durationMs, 1);
-        const fn = VI_EASINGS[tween.easing] || VI_EASINGS.linear;
+        const fn = EasingUtils[tween.easing] || EasingUtils.linear;
         const eased = fn(raw);
         if (raw >= 1) this._complete(id, tween);
         return eased;
