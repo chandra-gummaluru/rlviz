@@ -392,15 +392,6 @@ class VIAnimator {
     }
 
     waitForPhase() {
-        return new Promise(resolve => {
-            const checkComplete = () => {
-                if (this.viState.isPhaseComplete()) {
-                    resolve();
-                } else {
-                    setTimeout(checkComplete, 50);
-                }
-            };
-            checkComplete();
-        });
+        return AnimationUtils.waitForPhase(this.viState);
     }
 }

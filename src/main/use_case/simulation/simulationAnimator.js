@@ -176,16 +176,7 @@ class SimulationAnimator {
      * Wait for current phase to complete
      */
     waitForPhase() {
-        return new Promise(resolve => {
-            const checkComplete = () => {
-                if (this.simulationState.isPhaseComplete()) {
-                    resolve();
-                } else {
-                    setTimeout(checkComplete, 50);
-                }
-            };
-            checkComplete();
-        });
+        return AnimationUtils.waitForPhase(this.simulationState);
     }
 
     // --- Private helpers ---
