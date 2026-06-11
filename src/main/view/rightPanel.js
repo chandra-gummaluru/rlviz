@@ -1,5 +1,5 @@
 // --- File-local constants ---
-const RP_SET_DISPLAY_LIMIT   = 5;      // max states/actions shown inline before ellipsis
+const RP_SET_CHAR_LIMIT      = 40;     // max combined plain-text chars before truncation
 const RP_DEFAULT_DISCOUNT    = 0.9;
 const RP_REWARD_SLIDER_MIN   = -100;
 const RP_REWARD_SLIDER_MAX   = 100;
@@ -24,6 +24,21 @@ function latexEscapeText(value) {
 
 function latexNodeName(name) {
     return `\\text{${latexEscapeText(name)}}`;
+}
+
+function buildSetLatex(nodes, charLimit) {
+    const parts = [];
+    let charCount = 0;
+    for (const node of nodes) {
+        const name = node.name;
+        if (parts.length > 0 && charCount + name.length > charLimit) {
+            parts.push('\\ldots');
+            break;
+        }
+        parts.push(latexNodeName(name));
+        charCount += name.length + 2; // +2 for ", " separator
+    }
+    return parts.join(', ');
 }
 
 class RightPanel {
@@ -144,13 +159,7 @@ class RightPanel {
                 setNotation.html('$$\\mathcal{S} = \\{\\}$$');
                 setNotation.addClass('panel-set-notation');
             } else {
-                let stateNames;
-                if (states.length > RP_SET_DISPLAY_LIMIT) {
-                    const firstFive = states.slice(0, RP_SET_DISPLAY_LIMIT).map((s, index) => `s_{${index}}`).join(', ');
-                    stateNames = `${firstFive}, \\ldots`;
-                } else {
-                    stateNames = states.map((s, index) => `s_{${index}}`).join(', ');
-                }
+                const stateNames = buildSetLatex(states, RP_SET_CHAR_LIMIT);
                 const setNotation = createDiv();
                 setNotation.parent(stateList);
                 setNotation.html(`$$\\mathcal{S} = \\{${stateNames}\\}$$`);
@@ -173,13 +182,7 @@ class RightPanel {
                 setNotation.html('$$\\mathcal{A} = \\{\\}$$');
                 setNotation.addClass('panel-set-notation');
             } else {
-                let actionNames;
-                if (actions.length > RP_SET_DISPLAY_LIMIT) {
-                    const firstFive = actions.slice(0, RP_SET_DISPLAY_LIMIT).map(a => latexNodeName(a.name)).join(', ');
-                    actionNames = `${firstFive}, \\ldots`;
-                } else {
-                    actionNames = actions.map(a => latexNodeName(a.name)).join(', ');
-                }
+                const actionNames = buildSetLatex(actions, RP_SET_CHAR_LIMIT);
                 const setNotation = createDiv();
                 setNotation.parent(actionList);
                 setNotation.html(`$$\\mathcal{A} = \\{${actionNames}\\}$$`);

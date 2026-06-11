@@ -44,6 +44,8 @@ class MainView {
         // Track previous selection to detect changes
         this.previousSelectedNode = null;
         this.previousSimulationIndex = -1; // Track simulation position for right panel updates
+        this.previousNodesCount = 0;
+        this.previousEdgesCount = 0;
 
         // Touch handling for pinch zoom
         this.touches = [];
@@ -117,18 +119,23 @@ class MainView {
         // Draw info/error messages
         this.drawMessages();
 
-        // Update right panel if selection changed or simulation state changed
+        // Update right panel if selection, simulation state, or graph structure changed
         if (this.rightPanel) {
             const currentSelection = this.viewModel.selection.selectedNode;
             const isSimulating = this.viewModel.simulationState && this.viewModel.simulationState.replayInitialized;
             const simulationIndex = isSimulating ? this.viewModel.simulationState.currentIndex : -1;
+            const currentNodesCount = this.viewModel.graph.nodes.length;
+            const currentEdgesCount = this.viewModel.graph.edges.length;
 
-            // Update if selection changed OR if simulating and position changed
             if (currentSelection !== this.previousSelectedNode ||
-                (isSimulating && simulationIndex !== this.previousSimulationIndex)) {
+                (isSimulating && simulationIndex !== this.previousSimulationIndex) ||
+                currentNodesCount !== this.previousNodesCount ||
+                currentEdgesCount !== this.previousEdgesCount) {
                 this.rightPanel.updateContent();
                 this.previousSelectedNode = currentSelection;
                 this.previousSimulationIndex = simulationIndex;
+                this.previousNodesCount = currentNodesCount;
+                this.previousEdgesCount = currentEdgesCount;
             }
         }
 
