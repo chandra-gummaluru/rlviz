@@ -47,10 +47,14 @@ class GeometricHelper {
             );
             const isBidirectional = reverseEdge !== undefined && reverseEdge !== null;
 
+            const weight = (from.type === 'state' && to.type === 'action')
+                ? 2
+                : 1 + 4 * edge.getProbability();
+
             if (isBidirectional) {
-                return this.isPointNearCurvedEdge(from, to, x, y, threshold);
+                return this.isPointNearCurvedEdge(from, to, x, y, weight, threshold);
             } else {
-                return this.isPointNearStraightEdge(from, to, x, y, threshold);
+                return this.isPointNearStraightEdge(from, to, x, y, weight, threshold);
             }
         });
     }
@@ -58,7 +62,7 @@ class GeometricHelper {
     /**
      * Check if point is near a straight line edge (visible portion only)
      */
-    static isPointNearStraightEdge(from, to, x, y, threshold = 10) {
+    static isPointNearStraightEdge(from, to, x, y, weight, threshold = 10) {
         const dx = to.x - from.x;
         const dy = to.y - from.y;
         const distance = Math.sqrt(dx * dx + dy * dy);
@@ -68,15 +72,7 @@ class GeometricHelper {
         const normalizedDx = dx / distance;
         const normalizedDy = dy / distance;
 
-        // Calculate arrow size (must match mainView.js)
-        let weight;
-        if (from.type === 'state' && to.type === 'action') {
-            weight = 2;
-        } else {
-            // For action->state, use default weight
-            weight = 5;
-        }
-        const arrowSize = 8 + weight * 0.5;
+        const arrowSize = 8 + weight * 1.5;
 
         // Calculate where the line actually ends (just before arrowhead)
         const toRadius = to.size;
@@ -125,8 +121,8 @@ class GeometricHelper {
      * Check if point is near a curved (bidirectional) edge.
      * Samples the visible curve (startPoint → arrowBaseCenter) built by buildCurvedEdgeGeometry.
      */
-    static isPointNearCurvedEdge(from, to, x, y, threshold = 10) {
-        const geom = this.buildCurvedEdgeGeometry(from, to, 5);
+    static isPointNearCurvedEdge(from, to, x, y, weight, threshold = 10) {
+        const geom = this.buildCurvedEdgeGeometry(from, to, weight);
         if (!geom) return false;
 
         let minDistance = Infinity;
