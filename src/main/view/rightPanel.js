@@ -1,5 +1,5 @@
 // --- File-local constants ---
-const RP_SET_CHAR_LIMIT      = 40;     // max combined plain-text chars before truncation
+const RP_SET_CHAR_LIMIT      = 22;     // max combined plain-text chars before truncation
 const RP_DEFAULT_DISCOUNT    = 0.9;
 const RP_REWARD_SLIDER_MIN   = -100;
 const RP_REWARD_SLIDER_MAX   = 100;
@@ -308,7 +308,7 @@ class RightPanel {
                 saveBtn.addClass('panel-btn');
                 saveBtn.addClass('panel-btn--primary');
 
-                saveBtn.mousePressed(() => {
+                const saveName = () => {
                     const newName = input.value();
                     if (newName && newName.trim() !== '') {
                         if (this.controller.interactors.renameNode) {
@@ -318,6 +318,12 @@ class RightPanel {
                             redraw();
                         }
                     }
+                };
+
+                saveBtn.mousePressed(saveName);
+
+                input.elt.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') saveName();
                 });
             });
 
@@ -638,7 +644,7 @@ class RightPanel {
                 colHeader.parent(tableContainer);
                 colHeader.style('margin-top', '8px');
                 colHeader.style('margin-bottom', '4px');
-                colHeader.style('color', '#333');
+                colHeader.style('color', AppPalette.text.primary);
 
                 viState.stateIds.forEach(stateId => {
                     const isRevealed = viViewModel.isValueRevealed(colIdx, stateId);
@@ -659,10 +665,10 @@ class RightPanel {
                     valSpan.parent(row);
                     if (isRevealed) {
                         const numVal = values[stateId] ?? 0;
-                        valSpan.style('color', numVal > 0 ? '#2e7d32' : numVal < 0 ? '#c62828' : '#666');
+                        valSpan.style('color', numVal > 0 ? AppPalette.reward.positive : numVal < 0 ? AppPalette.reward.negative : AppPalette.reward.zeroMuted);
                         valSpan.style('font-weight', 'bold');
                     } else {
-                        valSpan.style('color', '#999');
+                        valSpan.style('color', AppPalette.text.placeholder);
                     }
                 });
             }
@@ -738,7 +744,7 @@ class RightPanel {
             if (stats.totalReward > 0) {
                 barFill.style('left', RP_REWARD_BAR_HALF_PCT + '%');
                 barFill.style('width', pct + '%');
-                barFill.style('background', '#4CAF50');
+                barFill.style('background', AppPalette.reward.positiveBright);
             } else if (stats.totalReward < 0) {
                 barFill.style('left', (RP_REWARD_BAR_HALF_PCT - pct) + '%');
                 barFill.style('width', pct + '%');

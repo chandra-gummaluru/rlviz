@@ -29,7 +29,7 @@ class RewardParticleSystem {
 
         this.ensureOverlay();
 
-        const color = reward > 0 ? '#4CAF50' : '#F44336';
+        const color = reward > 0 ? AppPalette.reward.positiveBright : AppPalette.reward.negativeBright;
         const text = reward > 0 ? `+${reward.toFixed(1)}` : reward.toFixed(1);
         const animState = { cancelled: false, particlesRemaining: 0 };
         this.activeAnimations.push(animState);

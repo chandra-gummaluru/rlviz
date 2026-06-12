@@ -162,7 +162,7 @@ class ValueIterationView {
             const col = this.viViewModel.columns[i];
             if (col) {
                 mathRenderer.draw(drawingContext, `t = ${col.timestep}`, col.x, 10,
-                    { color: '#505050', em: 14, alignX: 'center', alignY: 'top' });
+                    { color: AppPalette.text.medium, em: 14, alignX: 'center', alignY: 'top' });
             }
         }
     }
@@ -216,7 +216,7 @@ class ValueIterationView {
             if (isRevealed) {
                 mathRenderer.draw(drawingContext, `V = ${stateNode.value.toFixed(2)}`,
                     stateNode.x, stateNode.y + 10,
-                    { color: '#000000', em: 11, alpha, alignX: 'center', alignY: 'middle' });
+                    { color: AppPalette.text.black, em: 11, alpha, alignX: 'center', alignY: 'middle' });
             }
         }
 
@@ -276,9 +276,9 @@ class ValueIterationView {
                     const midX = (sx + ex) / 2;
                     const midY = (sy + ey) / 2 - 10;
                     mathRenderer.draw(drawingContext, `p = ${probability.toFixed(2)}`,
-                        midX, midY, { color: '#3c3c3c', em: 10, alpha, alignX: 'center', alignY: 'middle' });
+                        midX, midY, { color: AppPalette.border.canvasDark, em: 10, alpha, alignX: 'center', alignY: 'middle' });
                     if (reward !== 0) {
-                        const rColor = reward > 0 ? '#2e7d32' : '#c62828';
+                        const rColor = reward > 0 ? AppPalette.reward.positive : AppPalette.reward.negative;
                         mathRenderer.draw(drawingContext, `r = ${reward.toFixed(1)}`,
                             midX, midY + 12, { color: rColor, em: 10, alpha, alignX: 'center', alignY: 'middle' });
                     }
@@ -368,10 +368,10 @@ class ValueIterationView {
             const ly = boxY + 8 + i * lineHeight + yOffset + lineHeight / 2;
 
             let color, em;
-            if (line.type === 'header') { color = '#1e1e1e'; em = 13; }
-            else if (line.type === 'best')   { color = '#2e7d32'; em = 11; }
-            else if (line.type === 'result') { color = '#19507a'; em = 12; }
-            else                             { color = '#505050'; em = 11; }
+            if (line.type === 'header') { color = AppPalette.text.nearBlack; em = 13; }
+            else if (line.type === 'best')   { color = AppPalette.reward.positive; em = 11; }
+            else if (line.type === 'result') { color = AppPalette.valueIteration.result; em = 12; }
+            else                             { color = AppPalette.text.medium; em = 11; }
 
             mathRenderer.draw(drawingContext, line.text, boxX + 8, ly,
                 { color, em, alpha: a, alignX: 'left', alignY: 'middle' });
@@ -433,14 +433,14 @@ class ValueIterationView {
                     const labelY = (action.y + t.toY) / 2 - 8;
                     const aVal = Math.round(200 * labelP);
                     mathRenderer.draw(drawingContext, `p = ${t.probability.toFixed(2)}`,
-                        labelX, labelY, { color: '#3c3c3c', em: 9, alpha: aVal });
+                        labelX, labelY, { color: AppPalette.border.canvasDark, em: 9, alpha: aVal });
                     if (isComputed || showRewardForAction) {
                         const gamma = detail.gamma || 0.9;
                         mathRenderer.draw(drawingContext, `r = ${t.reward.toFixed(1)}`,
-                            labelX, labelY + 11, { color: '#505050', em: 9, alpha: aVal });
+                            labelX, labelY + 11, { color: AppPalette.text.medium, em: 9, alpha: aVal });
                         const term = `${t.probability.toFixed(2)}\\cdot[${t.reward.toFixed(1)}+${gamma}\\cdot${t.nextValue.toFixed(1)}]=${t.term.toFixed(2)}`;
                         mathRenderer.draw(drawingContext, term,
-                            labelX, labelY + 22, { color: '#646464', em: 8, alpha: Math.round(180 * labelP) });
+                            labelX, labelY + 22, { color: AppPalette.text.mediumLight, em: 8, alpha: Math.round(180 * labelP) });
                     }
                 }
             });
@@ -457,7 +457,7 @@ class ValueIterationView {
             const isBest = action.actionId === detail.bestActionId;
             mathRenderer.draw(drawingContext, `Q = ${action.qValue.toFixed(2)}`,
                 action.x, action.y + this.ACTION_NODE_RADIUS + 4,
-                { color: isBest ? '#2ea043' : '#505050', em: 10, alignX: 'center', alignY: 'top' });
+                { color: isBest ? AppPalette.valueIteration.best : AppPalette.text.medium, em: 10, alignX: 'center', alignY: 'top' });
         });
     }
 
@@ -569,11 +569,11 @@ class ValueIterationView {
         for (let ti = 0; ti < maxTrans; ti++) {
             const cx = tableX + actionColW + ti * transColW + transColW / 2;
             mathRenderer.draw(drawingContext, `s'_{${ti + 1}},\\;(p,\\,r)`,
-                cx, hcy, { color: '#646464', em: 10 });
+                cx, hcy, { color: AppPalette.text.mediumLight, em: 10 });
         }
         mathRenderer.draw(drawingContext, 'Q(s, a)',
             tableX + actionColW + maxTrans * transColW + qColW / 2, hcy,
-            { color: '#3c3c3c', em: 10 });
+            { color: AppPalette.border.canvasDark, em: 10 });
 
         // Vertical separator lines
         stroke(230, 230, 230);
@@ -652,10 +652,10 @@ class ValueIterationView {
                 } else if (showTerms) {
                     // Show full term: p·[r + γ·V] = term
                     const term = `${t.probability.toFixed(2)}\\cdot[${t.reward.toFixed(0)}+${gamma}\\cdot${t.nextValue.toFixed(0)}]=${t.term.toFixed(2)}`;
-                    mathRenderer.draw(drawingContext, term, cx, cy, { color: '#464646', em: 9 });
+                    mathRenderer.draw(drawingContext, term, cx, cy, { color: AppPalette.text.mediumDark, em: 9 });
                 } else {
                     mathRenderer.draw(drawingContext, `p = ${t.probability.toFixed(2)}`,
-                        cx, cy, { color: '#828282', em: 10 });
+                        cx, cy, { color: AppPalette.text.light, em: 10 });
                 }
             }
 
@@ -673,14 +673,14 @@ class ValueIterationView {
             if (rowCompleted) {
                 const isBest = action.actionId === detail.bestActionId;
                 mathRenderer.draw(drawingContext, action.qValue.toFixed(2), qx, qcy,
-                    { color: isBest ? '#2e7d32' : '#3c3c3c', em: 11 });
+                    { color: isBest ? AppPalette.reward.positive : AppPalette.border.canvasDark, em: 11 });
             } else if (rowVisible && showTerms) {
                 let runningSum = 0;
                 for (let ti = 0; ti < showTransUpTo; ti++) {
                     runningSum += action.transitions[ti].term;
                 }
                 mathRenderer.draw(drawingContext, runningSum.toFixed(2), qx, qcy,
-                    { color: '#828282', em: 10 });
+                    { color: AppPalette.text.light, em: 10 });
             } else {
                 fill(200, 200, 200);
                 noStroke();
@@ -701,7 +701,7 @@ class ValueIterationView {
             const vMaxLatex = `V(\\text{${detail.stateName}}) = \\max = ${detail.value.toFixed(2)}`;
             mathRenderer.draw(drawingContext, vMaxLatex,
                 tableX + tableW - 10, vRowY + rowH / 2,
-                { color: '#19507a', em: 12, alignX: 'right', alignY: 'middle' });
+                { color: AppPalette.valueIteration.result, em: 12, alignX: 'right', alignY: 'middle' });
         }
 
         pop();
@@ -749,15 +749,15 @@ class ValueIterationView {
                 const labelY = (action.y + t.toY) / 2 - 8;
                 const aVal = Math.round(200 * labelP);
                 mathRenderer.draw(drawingContext, `p = ${t.probability.toFixed(2)}`,
-                    labelX, labelY, { color: '#3c3c3c', em: 9, alpha: aVal });
+                    labelX, labelY, { color: AppPalette.border.canvasDark, em: 9, alpha: aVal });
                 const isComputed = showReward && (ti < transCount);
                 if (isComputed) {
                     const gamma = detail.gamma || 0.9;
                     mathRenderer.draw(drawingContext, `r = ${t.reward.toFixed(1)}`,
-                        labelX, labelY + 11, { color: '#505050', em: 9, alpha: aVal });
+                        labelX, labelY + 11, { color: AppPalette.text.medium, em: 9, alpha: aVal });
                     const term = `${t.probability.toFixed(2)}\\cdot[${t.reward.toFixed(1)}+${gamma}\\cdot${t.nextValue.toFixed(1)}]=${t.term.toFixed(2)}`;
                     mathRenderer.draw(drawingContext, term,
-                        labelX, labelY + 22, { color: '#646464', em: 8, alpha: Math.round(180 * labelP) });
+                        labelX, labelY + 22, { color: AppPalette.text.mediumLight, em: 8, alpha: Math.round(180 * labelP) });
                 }
             }
         });
@@ -775,14 +775,14 @@ class ValueIterationView {
             const labelX = (action.x + t.toX) / 2;
             const labelY = (action.y + t.toY) / 2 - 8;
             mathRenderer.draw(drawingContext, `p = ${t.probability.toFixed(2)}`,
-                labelX, labelY, { color: '#3c3c3c', em: 9 });
+                labelX, labelY, { color: AppPalette.border.canvasDark, em: 9 });
             if (showRewards) {
                 const gamma = detail.gamma || 0.9;
                 mathRenderer.draw(drawingContext, `r = ${t.reward.toFixed(1)}`,
-                    labelX, labelY + 11, { color: '#505050', em: 9 });
+                    labelX, labelY + 11, { color: AppPalette.text.medium, em: 9 });
                 const term = `${t.probability.toFixed(2)}\\cdot[${t.reward.toFixed(1)}+${gamma}\\cdot${t.nextValue.toFixed(1)}]=${t.term.toFixed(2)}`;
                 mathRenderer.draw(drawingContext, term,
-                    labelX, labelY + 22, { color: '#646464', em: 8 });
+                    labelX, labelY + 22, { color: AppPalette.text.mediumLight, em: 8 });
             }
         });
     }
@@ -792,7 +792,7 @@ class ValueIterationView {
         const isBest = action.actionId === detail.bestActionId;
         mathRenderer.draw(drawingContext, `Q = ${action.qValue.toFixed(2)}`,
             action.x, action.y + this.ACTION_NODE_RADIUS + 4,
-            { color: isBest ? '#2ea043' : '#505050', em: 10, alignX: 'center', alignY: 'top' });
+            { color: isBest ? AppPalette.valueIteration.best : AppPalette.text.medium, em: 10, alignX: 'center', alignY: 'top' });
     }
 
     /** Draw a small diamond shape for an action node. fillColor is a pre-computed p5 color. */
@@ -918,7 +918,7 @@ class ValueIterationView {
 
     _drawStaticVBadge(detail, alpha = 220) {
         const latex = `V_{${detail.timestep}}(\\text{${detail.stateName}}) = ${detail.value.toFixed(2)}`;
-        const color = '#19507a';
+        const color = AppPalette.valueIteration.badge;
         const em = 13;
         const vx = detail.stateX;
         const vy = detail.stateY + detail.stateRadius + 16;
@@ -953,7 +953,7 @@ class ValueIterationView {
         const displayValue = detail.value * countP;
         const finalLatex  = `V_{${detail.timestep}}(\\text{${detail.stateName}}) = ${detail.value.toFixed(2)}`;
         const currentLatex = `V_{${detail.timestep}}(\\text{${detail.stateName}}) = ${displayValue.toFixed(2)}`;
-        const badgeColor = '#19507a';
+        const badgeColor = AppPalette.valueIteration.badge;
         const em = 13;
         const vx = detail.stateX;
         const vy = detail.stateY + detail.stateRadius + 16;
@@ -975,7 +975,7 @@ class ValueIterationView {
         // Draw text at full scale (only when badge is mostly open)
         if (badgeP > 0.5) {
             mathRenderer.draw(drawingContext, currentLatex, vx, vy,
-                { color: '#ffffff', em, alpha: Math.round(220 * Math.min((badgeP - 0.5) * 2, 1)) });
+                { color: AppPalette.text.inverse, em, alpha: Math.round(220 * Math.min((badgeP - 0.5) * 2, 1)) });
         }
     }
 

@@ -24,6 +24,7 @@ class ImportGraphPresenter extends ImportGraphOutputBoundary {
         if (responseModel.success) {
             // Clear any active selections
             this.viewModel.clearSelection();
+            this.viewModel.interaction.clearEditorFocus();
             
             // The graph has already been updated by the interactor
             // Could trigger a UI notification here if needed

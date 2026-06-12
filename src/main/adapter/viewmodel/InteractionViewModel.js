@@ -59,6 +59,11 @@ class InteractionViewModel {
         // Hover state
         this.hoveredNode = null;
         this.hoveredEdge = null;
+
+        // Editor neighborhood focus state
+        this.editorFocusNode = null;
+        this.editorFocusNodeIds = new Set();
+        this.editorFocusEdgeIds = new Set();
     }
 
     reset() {
@@ -74,6 +79,43 @@ class InteractionViewModel {
         this.textLabelRequested = false;
         this.hoveredNode = null;
         this.hoveredEdge = null;
+        this.clearEditorFocus();
+    }
+
+    setEditorFocus(sourceNode, graph) {
+        this.editorFocusNode = sourceNode;
+        this.editorFocusNodeIds = new Set([sourceNode.id]);
+        this.editorFocusEdgeIds = new Set();
+        graph.edges.forEach(edge => {
+            const from = edge.getFromNode();
+            const to   = edge.getToNode();
+            if (from.id === sourceNode.id || to.id === sourceNode.id) {
+                this.editorFocusEdgeIds.add(`${from.id}-${to.id}`);
+                this.editorFocusNodeIds.add(from.id);
+                this.editorFocusNodeIds.add(to.id);
+            }
+        });
+    }
+
+    clearEditorFocus() {
+        this.editorFocusNode = null;
+        this.editorFocusNodeIds = new Set();
+        this.editorFocusEdgeIds = new Set();
+    }
+
+    hasEditorFocus() {
+        return this.editorFocusNode !== null;
+    }
+
+    isNodeInEditorFocus(node) {
+        return !this.hasEditorFocus() || this.editorFocusNodeIds.has(node.id);
+    }
+
+    isEdgeInEditorFocus(edge) {
+        if (!this.hasEditorFocus()) return true;
+        const from = edge.getFromNode();
+        const to   = edge.getToNode();
+        return this.editorFocusEdgeIds.has(`${from.id}-${to.id}`);
     }
 
     isInteracting() {

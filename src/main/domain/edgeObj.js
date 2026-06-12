@@ -94,14 +94,4 @@ class EdgeObj {
         this.labelSize = Math.max(8, Math.min(24, size)); // Clamp between 8 and 24
     }
 
-    getLabelColor() {
-        const reward = this.getReward();
-        if (reward > 0) {
-            return 'rgb(0, 100, 0)'; // Dark green for positive
-        } else if (reward < 0) {
-            return 'rgb(139, 0, 0)'; // Dark red for negative
-        } else {
-            return 'rgb(0, 0, 0)'; // Black for zero
-        }
-    }
 }

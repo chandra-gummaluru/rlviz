@@ -1,5 +1,5 @@
 // Converts any color value to rgba() with the given alpha (0-255).
-// Handles p5.js color objects, rgb(), rgba(), #RRGGBB, and #RGB strings.
+// Handles p5.js color objects, rgb(), rgba(), hsl(), hsla(), #RRGGBB, and #RGB strings.
 // Depends on p5.js globals: red(), green(), blue().
 class ColorUtils {
     static applyAlpha(c, alpha) {
@@ -22,6 +22,16 @@ class ColorUtils {
         const rgbaMatch = c.match(/^rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*[\d.]+\s*\)$/);
         if (rgbaMatch) {
             return `rgba(${rgbaMatch[1]}, ${rgbaMatch[2]}, ${rgbaMatch[3]}, ${(alpha / 255).toFixed(2)})`;
+        }
+
+        const hslMatch = c.match(/^hsl\(\s*([\d.]+)\s*,\s*([\d.]+)%\s*,\s*([\d.]+)%\s*\)$/);
+        if (hslMatch) {
+            return `hsla(${hslMatch[1]}, ${hslMatch[2]}%, ${hslMatch[3]}%, ${(alpha / 255).toFixed(2)})`;
+        }
+
+        const hslaMatch = c.match(/^hsla\(\s*([\d.]+)\s*,\s*([\d.]+)%\s*,\s*([\d.]+)%\s*,\s*[\d.]+\s*\)$/);
+        if (hslaMatch) {
+            return `hsla(${hslaMatch[1]}, ${hslaMatch[2]}%, ${hslaMatch[3]}%, ${(alpha / 255).toFixed(2)})`;
         }
 
         const hexMatch = c.match(/^#([0-9a-fA-F]{3,6})$/);

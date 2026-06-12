@@ -129,10 +129,10 @@ class SimulationRenderer {
 
         const r = this._BALL_RADIUS;
         noStroke();
-        fill(255, 215, 0, this._BALL_FILL_ALPHA);
+        fill(ColorUtils.applyAlpha(AppPalette.simulation.travelBall, this._BALL_FILL_ALPHA));
         circle(ballX, ballY, r * 2);
         noFill();
-        stroke(255, 215, 0, Math.round(this._BALL_RING_ALPHA * (1 - t)));
+        stroke(ColorUtils.applyAlpha(AppPalette.simulation.travelBall, Math.round(this._BALL_RING_ALPHA * (1 - t))));
         strokeWeight(2);
         circle(ballX, ballY, r * 3);
         // ensure solid dash state after drawing

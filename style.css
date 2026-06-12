@@ -316,6 +316,7 @@ canvas {
   font-size: 16px;
   color: var(--text-muted);
   padding: 10px 0;
+  overflow-x: hidden;
 }
 
 .panel-set-notation--wrap {

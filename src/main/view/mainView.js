@@ -22,6 +22,9 @@ const MV_ARROW_BASE          = 8;    // px base size of arrowhead
 const MV_ARROW_WEIGHT_MULT   = 1.5;  // arrowhead size scales with line weight
 const MV_ARROW_ANGLE         = Math.PI / 6;  // 30 degrees
 
+const MV_EDITOR_FOCUS_ALPHA_FULL  = 255;
+const MV_EDITOR_FOCUS_ALPHA_FADED = 45;
+
 // --- End constants ---
 
 class MainView {
@@ -272,7 +275,9 @@ class MainView {
             const color = nodeVM.color;
 
             // Get spinning arrow alpha for this node
-            const nodeAlpha = this.getNodeSpinningArrowAlpha(node);
+            const spinAlpha  = this.getNodeSpinningArrowAlpha(node);
+            const focusAlpha = this.getEditorFocusNodeAlpha(node);
+            const nodeAlpha  = Math.min(spinAlpha, focusAlpha);
             const isNodeFaded = nodeAlpha < 255;
 
             const scaleActive = revealScale !== 1;
@@ -281,7 +286,7 @@ class MainView {
             // Apply alpha to node fill color
             const nodeColor = this.applyAlphaToColor(color, nodeAlpha);
             fill(nodeColor);
-            stroke(this.applyAlphaToColor('rgb(0,0,0)', nodeAlpha));
+            stroke(this.applyAlphaToColor(AppPalette.text.black, nodeAlpha));
             strokeWeight(2);
 
             if (isNodeFaded) {
@@ -431,10 +436,12 @@ class MainView {
 
         // Get spinning arrow render info (dashed + alpha + optional color override)
         const renderInfo = this.getSpinningArrowRenderInfo(from, to);
+        const focusAlpha = this.getEditorFocusEdgeAlpha(edge);
+        const finalAlpha = Math.min(renderInfo.alpha, focusAlpha);
 
         // Use color override (blue tint from ring) if available, otherwise default edge color
         const baseColor = renderInfo.colorOverride || edgeColor;
-        const alphaEdgeColor = this.applyAlphaToColor(baseColor, renderInfo.alpha);
+        const alphaEdgeColor = this.applyAlphaToColor(baseColor, finalAlpha);
 
         // Draw the edge line
         strokeWeight(weight);
@@ -459,8 +466,10 @@ class MainView {
         if (!geom) return;
 
         const renderInfo = this.getSpinningArrowRenderInfo(from, to);
+        const focusAlpha = this.getEditorFocusEdgeAlpha(edge);
+        const finalAlpha = Math.min(renderInfo.alpha, focusAlpha);
         const baseColor = renderInfo.colorOverride || edgeColor;
-        const alphaEdgeColor = this.applyAlphaToColor(baseColor, renderInfo.alpha);
+        const alphaEdgeColor = this.applyAlphaToColor(baseColor, finalAlpha);
 
         strokeWeight(weight);
         stroke(alphaEdgeColor);
@@ -547,6 +556,24 @@ class MainView {
 
     getNodeSpinningArrowAlpha(node) {
         return this.simRenderer.getNodeAlpha(node);
+    }
+
+    getEditorFocusNodeAlpha(node) {
+        if (this.viewModel.mode !== 'editor') return 255;
+        const interaction = this.viewModel.interaction;
+        if (!interaction.hasEditorFocus()) return 255;
+        return interaction.isNodeInEditorFocus(node)
+            ? MV_EDITOR_FOCUS_ALPHA_FULL
+            : MV_EDITOR_FOCUS_ALPHA_FADED;
+    }
+
+    getEditorFocusEdgeAlpha(edge) {
+        if (this.viewModel.mode !== 'editor') return 255;
+        const interaction = this.viewModel.interaction;
+        if (!interaction.hasEditorFocus()) return 255;
+        return interaction.isEdgeInEditorFocus(edge)
+            ? MV_EDITOR_FOCUS_ALPHA_FULL
+            : MV_EDITOR_FOCUS_ALPHA_FADED;
     }
 
     drawHighlightedEdgeTravelBall() {
@@ -666,7 +693,7 @@ class MainView {
             pop();
 
             mathRenderer.draw(drawingContext, probLatex, midX, midY, {
-                color: isHighlighted ? '#000000' : '#505050',
+                color: isHighlighted ? AppPalette.text.black : AppPalette.edge.label,
                 em: isHighlighted ? 14 : 12,
                 alpha: isHighlighted ? 255 : 80
             });
@@ -683,7 +710,7 @@ class MainView {
 
         labels.forEach(label => {
             // Simple color logic: yellow if selected
-            const color = this.viewModel.selection.selectedTextLabel === label ? '#FFC107' : '#000000';
+            const color = this.viewModel.selection.selectedTextLabel === label ? AppPalette.node.selected : AppPalette.text.black;
             fill(color);
             noStroke();
             textAlign(CENTER, CENTER);

@@ -67,7 +67,7 @@ class CanvasController {
         const prevEdge = interaction.hoveredEdge;
 
         interaction.hoveredNode = entity.type === 'node' ? entity.entity : null;
-        interaction.hoveredEdge = entity.type === 'edge' ? entity.entity : null;
+        interaction.hoveredEdge = (entity.type === 'edge' || entity.type === 'edgeLabel') ? entity.entity : null;
 
         return interaction.hoveredNode !== prevNode || interaction.hoveredEdge !== prevEdge;
     }
@@ -281,6 +281,7 @@ class CanvasController {
                 const node = this.viewModel.graph.nodes[this.viewModel.graph.nodes.length - 1];
                 this.viewModel.interaction.heldNode = node;
                 this.viewModel.interaction.placingMode = type;
+                this.viewModel.interaction.clearEditorFocus();
             }
         }
     }
@@ -314,6 +315,7 @@ class CanvasController {
             }
 
             if (inputData) {
+                this.viewModel.interaction.clearEditorFocus();
                 this.interactors.deleteNode.execute(inputData);
             }
         }
@@ -338,6 +340,7 @@ class CanvasController {
         }
         this.viewModel.selection.clearSelection();
         this.viewModel.interaction.startNode = null;
+        this.viewModel.interaction.clearEditorFocus();
     }
 
     /**
@@ -425,11 +428,8 @@ class CanvasController {
 
     _handleDoubleClick(node) {
         if (this.viewModel.mode === 'editor') {
-            // Request rename
-            if (this.interactors.renameNode) {
-                const inputData = RenameNodeInputData.forRequest(node.id);
-                this.interactors.renameNode.requestRename(inputData);
-            }
+            this.viewModel.interaction.setEditorFocus(node, this.viewModel.graph);
+            return;
         } else if (this.viewModel.mode === 'simulate') {
             // Set as start node and center camera
             this.viewModel.interaction.startNode = node;
@@ -513,6 +513,7 @@ class CanvasController {
 
     _handleCanvasClick() {
         // Clear all interaction states when clicking empty canvas
+        this.viewModel.interaction.clearEditorFocus();
         this.viewModel.interaction.resizingNode = null;
         this.viewModel.interaction.draggingNode = null;
         this.viewModel.interaction.draggingTextLabel = null;

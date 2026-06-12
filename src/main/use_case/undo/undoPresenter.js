@@ -24,6 +24,7 @@ class UndoPresenter extends UndoOutputBoundary {
         if (responseModel.success) {
             // Clear any active selections after undo
             this.viewModel.clearSelection();
+            this.viewModel.interaction.clearEditorFocus();
 
             // Update undo/redo button states
             this.viewModel.updateUndoRedoState(

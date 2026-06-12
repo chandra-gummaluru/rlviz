@@ -14,20 +14,19 @@ class NodeViewModel {
             this.simulationState.replayInitialized) {
             const currentNode = this.simulationState.currentNode;
             if (currentNode && currentNode.id === this.node.id) {
-                return '#FF9800'; // Orange
+                return AppPalette.node.activeInitial;
             }
         }
 
-        // Editor mode: existing colors
         if (this.selectionViewModel.selectedNode === this.node) {
-            return '#FFC107'; // Yellow for selected
+            return AppPalette.node.selected;
         }
 
         if (this.interactionViewModel.heldNode === this.node) {
-            return '#9CCC65'; // Light green for held
+            return AppPalette.node.held;
         }
 
-        return this.node.type === 'state' ? '#BDBDBD' : '#424242';
+        return this.node.type === 'state' ? AppPalette.node.state : AppPalette.node.action;
     }
 
     get isVisible() {

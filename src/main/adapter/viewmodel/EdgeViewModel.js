@@ -16,16 +16,14 @@ class EdgeViewModel {
             const from = this.edge.getFromNode();
             const to = this.edge.getToNode();
             if (this.simulationState.isEdgeHighlighted(from.id, to.id)) {
-                return '#FF5722'; // Red for highlighted edge
+                return AppPalette.edge.highlighted;
             }
         }
 
-        // Selected edge: keep highlight color
         if (this.selectionViewModel.selectedEdge === this.edge) {
-            return '#FF5722';
+            return AppPalette.edge.highlighted;
         }
 
-        // Get reward-based color for Action -> State edges
         const from = this.edge.getFromNode();
         const to = this.edge.getToNode();
 
@@ -33,8 +31,7 @@ class EdgeViewModel {
             return this._getRewardColor();
         }
 
-        // Default color for State -> Action edges
-        return '#666666';
+        return AppPalette.edge.default;
     }
 
     get isBidirectional() {
@@ -51,7 +48,7 @@ class EdgeViewModel {
         const { minReward, maxReward } = this._getRewardRange();
 
         if (reward === 0) {
-            return '#000000'; // Black for zero reward
+            return AppPalette.reward.zero;
         }
 
         if (reward > 0) {

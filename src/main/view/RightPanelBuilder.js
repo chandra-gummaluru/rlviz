@@ -4,7 +4,7 @@ class RightPanelBuilder {
 
     // Creates a styled node-type badge (coloured pill span) parented to container.
     static nodeBadge(text, nodeType, container) {
-        const bg = nodeType === 'state' ? '#2d6a4f' : '#1565c0';
+        const bg = nodeType === 'state' ? AppPalette.node.badgeState : AppPalette.node.badgeAction;
         const badge = createSpan(text);
         badge.parent(container);
         badge.style('background', bg);
