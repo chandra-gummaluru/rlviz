@@ -1,4 +1,4 @@
-// Shared MathJax-to-canvas renderer (used by ValueIterationView and MainView)
+// Shared canvas text renderer (used by ValueIterationView and MainView)
 const mathRenderer = new MathRenderer(() => { if (typeof redraw === 'function') redraw(); });
 
 // Domain
@@ -169,9 +169,10 @@ const onExportGraph = () => {
 const onModeChange = (mode) => {
     const prevMode = canvasViewModel.interaction.mode;
     canvasController.setMode(mode);
-    // Clear cached MathJax renders when leaving VI mode — values change each run
     if (prevMode === 'value_iteration' && mode !== 'value_iteration') {
         mathRenderer.clear();
+        valueIterationViewModel?.clearExplanationDetail();
+        if (rightPanel) rightPanel.updateContent();
     }
     redraw();
 };
@@ -276,7 +277,7 @@ function checkAndRenormalizeIfNeeded() {
 
 // Value Iteration callbacks
 const getVICanvasDimensions = () => ({
-    width: windowWidth - 300,
+    width: windowWidth - rightPanel.getWidth(),
     height: windowHeight - 90
 });
 
@@ -479,6 +480,12 @@ function setup() {
             if (valueIterationViewModel) {
                 valueIterationViewModel.perActionMode = enabled;
             }
+        },
+        onVIShowCalcsToggle: (enabled) => {
+            if (valueIterationViewModel) {
+                valueIterationViewModel.showCalculations = enabled;
+                redraw();
+            }
         }
     }, canvasViewModel);
     toolBar.setup(menuBar.getHeight());
@@ -491,6 +498,7 @@ function setup() {
     setModePresenter.setRightPanel(rightPanel);
 
     mainView = new MainView(canvasViewModel, canvasController, menuBar, toolBar, rightPanel);
+    rightPanel.onPanelResize = (w) => mainView.onPanelResize(w);
 
     // Create simulation presenter and interactors
     simulationPresenter = new SimulationPresenter(canvasViewModel);
@@ -512,6 +520,7 @@ function setup() {
     // Create Value Iteration presenter and interactors
     viPresenter = new VIPresenter(canvasViewModel);
     viPresenter.setToolBar(toolBar);
+    viPresenter.setRightPanel(rightPanel);
 
     runVIInteractor = new RunVIInteractor(graph, valueIterationState, viPresenter);
     viPlayInteractor = new VIPlayInteractor(valueIterationState, viPresenter, valueIterationViewModel);
@@ -524,6 +533,85 @@ function setup() {
     const valueIterationView = new ValueIterationView(canvasViewModel);
     mainView.valueIterationView = valueIterationView;
 
+    // VI explanation phase constants (local to setup; labels/counts passed into buildExplanationDetail)
+    const VI_EXPLAIN_PHASES = [
+        'show_equation',
+        'show_actions',
+        'show_transitions',
+        'compute_q_values',
+        'select_max',
+        'revealing_value'
+    ];
+    const VI_EXPLAIN_LABELS = ['Equation', 'Actions', 'Transitions', 'Q-Values', 'Select Max', 'Final Value'];
+
+    const onVICellClick = (columnIndex, stateId, actionId) => {
+        if (!viPresenter || !valueIterationViewModel) return;
+
+        const existing = valueIterationViewModel.explanationDetail;
+        if (existing &&
+            existing.columnIndex === columnIndex &&
+            existing.stateId === stateId &&
+            existing.actionId === actionId) {
+            valueIterationViewModel.clearExplanationDetail();
+            rightPanel.updateContent();
+            redraw();
+            return;
+        }
+
+        if (valueIterationState.isPlaying) {
+            viPauseInteractor.execute(new VIPauseInputData());
+        }
+
+        const stepIndex = 0; // open at Equation (step 1)
+        const detail = viPresenter.buildExplanationDetail({
+            columnIndex,
+            stateId,
+            actionId,
+            subPhase: VI_EXPLAIN_PHASES[stepIndex],
+            stepIndex,
+            stepLabel: VI_EXPLAIN_LABELS[stepIndex],
+            totalSteps: VI_EXPLAIN_PHASES.length
+        });
+
+        if (detail) {
+            valueIterationViewModel.setExplanationDetail(detail);
+            rightPanel.updateContent();
+            redraw();
+        }
+    };
+
+    rightPanel.callbacks.onVICellClick = onVICellClick;
+
+    rightPanel.callbacks.onVIExplainClose = () => {
+        valueIterationViewModel?.clearExplanationDetail();
+        rightPanel.updateContent();
+        redraw();
+    };
+
+    rightPanel.callbacks.onVIExplainStep = (direction) => {
+        const detail = valueIterationViewModel?.explanationDetail;
+        if (!detail) return;
+        const currentIndex = detail.stepIndex ?? VI_EXPLAIN_PHASES.indexOf(detail.subPhase);
+        const nextIndex = direction === 'next'
+            ? Math.min(currentIndex + 1, VI_EXPLAIN_PHASES.length - 1)
+            : Math.max(currentIndex - 1, 0);
+        if (nextIndex === currentIndex) return;
+        const nextDetail = viPresenter.buildExplanationDetail({
+            columnIndex: detail.columnIndex,
+            stateId: detail.stateId,
+            actionId: detail.actionId,
+            subPhase: VI_EXPLAIN_PHASES[nextIndex],
+            stepIndex: nextIndex,
+            stepLabel: VI_EXPLAIN_LABELS[nextIndex],
+            totalSteps: VI_EXPLAIN_PHASES.length
+        });
+        if (nextDetail) {
+            valueIterationViewModel.setExplanationDetail(nextDetail);
+            rightPanel.updateContent();
+            redraw();
+        }
+    };
+
     // Initialize
     mainView.setup();
 }
@@ -533,30 +621,37 @@ function draw() {
 }
 
 function mousePressed() {
+    if (!mainView) return;
     mainView.mousePressed();
 }
 
 function mouseDragged() {
+    if (!mainView) return;
     mainView.mouseDragged();
 }
 
 function mouseReleased() {
+    if (!mainView) return;
     mainView.mouseReleased();
 }
 
 function mouseMoved() {
+    if (!mainView) return;
     mainView.mouseMoved();
 }
 
 function keyPressed() {
+    if (!mainView) return;
     mainView.keyPressed();
 }
 
 function keyReleased() {
+    if (!mainView) return;
     return mainView.keyReleased();
 }
 
 function mouseWheel(event) {
+    if (!mainView) return;
     return mainView.mouseWheel(event);
 }
 

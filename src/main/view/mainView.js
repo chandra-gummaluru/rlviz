@@ -996,11 +996,14 @@ class MainView {
     }
 
     windowResized() {
+        if (this.rightPanel) this.RIGHT_PANEL_WIDTH = this.rightPanel.getWidth();
+
         const canvasWidth = windowWidth - this.RIGHT_PANEL_WIDTH;
         const canvasHeight = windowHeight - this.TOP_BARS_HEIGHT;
 
         resizeCanvas(canvasWidth, canvasHeight);
         this.canvas.position(0, this.TOP_BARS_HEIGHT);
+        this._relayoutValueIterationIfActive(canvasWidth, canvasHeight);
 
         // Update menu bar width
         if (this.menuBar) {
@@ -1019,5 +1022,57 @@ class MainView {
         }
 
         redraw();
+    }
+
+    onPanelResize(newPanelWidth) {
+        this.RIGHT_PANEL_WIDTH = newPanelWidth;
+        const canvasWidth = windowWidth - newPanelWidth;
+        const canvasHeight = windowHeight - this.TOP_BARS_HEIGHT;
+        resizeCanvas(canvasWidth, canvasHeight);
+        this.canvas.position(0, this.TOP_BARS_HEIGHT);
+        this._relayoutValueIterationIfActive(canvasWidth, canvasHeight);
+        redraw();
+    }
+
+    _relayoutValueIterationIfActive(canvasWidth, canvasHeight) {
+        if (this.viewModel.interaction.mode !== 'value_iteration') return;
+        const viState = this.viewModel.valueIterationState;
+        const viViewModel = this.viewModel.valueIterationViewModel;
+        if (!viState || !viViewModel || !viState.initialized) return;
+
+        const visibleCount = viViewModel.visibleColumnCount;
+
+        // Save reveal state — computeLayout clears both objects
+        const savedRevealedValues = {};
+        const savedRevealedQValues = {};
+        for (const colIdx of Object.keys(viViewModel.revealedValues || {})) {
+            savedRevealedValues[colIdx] = new Set(viViewModel.revealedValues[colIdx]);
+        }
+        for (const colIdx of Object.keys(viViewModel.revealedQValues || {})) {
+            savedRevealedQValues[colIdx] = {};
+            for (const stateId of Object.keys(viViewModel.revealedQValues[colIdx] || {})) {
+                savedRevealedQValues[colIdx][stateId] = new Set(viViewModel.revealedQValues[colIdx][stateId]);
+            }
+        }
+
+        viViewModel.computeLayout(viState, canvasWidth, canvasHeight);
+        for (let i = 0; i < visibleCount; i++) {
+            viViewModel.showNextColumn();
+        }
+
+        // Restore reveal state so right-panel table stays populated
+        viViewModel.revealedValues = savedRevealedValues;
+        viViewModel.revealedQValues = savedRevealedQValues;
+
+        // backupDetail has stale absolute positions — clear it
+        // (animator regenerates it on next step via _callPresenterForSubPhase)
+        viViewModel.clearBackupDetail();
+
+        // Clear explanation: documented design clears explanationDetail on layout recompute
+        // (action diamond/transition positions in the detail are all stale after x-shift)
+        viViewModel.clearExplanationDetail();
+
+        // Refresh right panel HTML (reveal state changed, explanation cleared)
+        if (this.rightPanel) this.rightPanel.updateContent();
     }
 }

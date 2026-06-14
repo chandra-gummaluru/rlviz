@@ -116,9 +116,13 @@ class VIAnimator {
             this.viState.currentTransitionIndex = 0;
         }
 
+        const effectiveTiming = this.viViewModel.showCalculations
+            ? timing
+            : { ...this.SKIP_TIMING, revealing_value: timing.revealing_value ?? this.TIMING.revealing_value };
+
         for (let i = startIdx; i < phases.length; i++) {
             const entry = phases[i];
-            const duration = timing[entry.phase] ?? 500;
+            const duration = effectiveTiming[entry.phase] ?? 500;
 
             this.viState.subPhase = entry.phase;
             if (entry.actionIndex !== undefined) this.viState.currentActionIndex = entry.actionIndex;
@@ -184,7 +188,9 @@ class VIAnimator {
         }
 
         const nextPhase = applicablePhases[nextIdx];
-        const duration = this.TIMING[nextPhase.phase] || 500;
+        const duration = this.viViewModel.showCalculations
+            ? (this.TIMING[nextPhase.phase] || 500)
+            : (nextPhase.phase === 'revealing_value' ? (this.TIMING.revealing_value || 500) : 0);
 
         this.viState.subPhase = nextPhase.phase;
         if (nextPhase.actionIndex !== undefined) {

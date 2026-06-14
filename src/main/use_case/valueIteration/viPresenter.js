@@ -30,6 +30,10 @@ class VIPresenter extends VIOutputBoundary {
         this.toolBar = toolBar;
     }
 
+    setRightPanel(rightPanel) {
+        this.rightPanel = rightPanel;
+    }
+
     presentLayoutNeeded(canvasWidth, canvasHeight) {
         if (this.viViewModel) {
             const viState = this.viewModel.valueIterationState;
@@ -132,6 +136,18 @@ class VIPresenter extends VIOutputBoundary {
     presentQValuesComputed(columnIndex, stateId) {
         this._buildBackupDetail(columnIndex, stateId, this.viState.subPhase);
         this._redraw();
+
+        if (this.viViewModel) {
+            const subPhase = this.viState.subPhase;
+            const qVals = this.viState.getQValues(columnIndex, stateId);
+            if (subPhase === 'compute_q_values') {
+                qVals.forEach(q => this.viViewModel.revealQValue(columnIndex, stateId, q.actionId));
+            } else if (subPhase === 'show_q_result') {
+                const aq = qVals[this.viState.currentActionIndex];
+                if (aq) this.viViewModel.revealQValue(columnIndex, stateId, aq.actionId);
+            }
+        }
+        this._updateRightPanel();
     }
 
     presentMaxSelected(columnIndex, stateId) {
@@ -146,23 +162,30 @@ class VIPresenter extends VIOutputBoundary {
 
     // --- Internal helpers ---
 
-    /**
-     * Build the backupDetail object for the view, with positions computed
-     * from the current column layout. Progressive: each subPhase includes
-     * all data from earlier phases.
-     */
     _buildBackupDetail(columnIndex, stateId, subPhase) {
-        if (!this.viViewModel || !this.viState) return;
+        const detail = this._computeBackupDetail(columnIndex, stateId, subPhase);
+        if (detail && this.viViewModel) {
+            this.viViewModel.setBackupDetail(detail);
+        }
+    }
+
+    /**
+     * Compute the backupDetail object (positions from current column layout).
+     * Returns the object; does not call setBackupDetail.
+     * Pass options.explanationMode = true to add explanation metadata and override visibility.
+     */
+    _computeBackupDetail(columnIndex, stateId, subPhase, options = {}) {
+        if (!this.viViewModel || !this.viState) return null;
 
         const col = this.viViewModel.getColumn(columnIndex);
-        if (!col) return;
+        if (!col) return null;
         const stateNode = col.states.find(s => s.id === stateId);
-        if (!stateNode) return;
+        if (!stateNode) return null;
 
         const detail = this.viState.getBackupDetail(columnIndex, stateId);
         if (!detail) {
             // Terminal column or state with no actions
-            this.viViewModel.setBackupDetail({
+            return {
                 subPhase,
                 stateId,
                 columnIndex,
@@ -174,12 +197,14 @@ class VIPresenter extends VIOutputBoundary {
                 actions: [],
                 bestActionId: null,
                 value: 0,
-                equationLines: [this._formatEquationHeader(stateNode.name, col.timestep)],
+                equationLines: [{ text: this._formatEquationHeader(stateNode.name, col.timestep), type: 'header' }],
                 gamma: this.viState.gamma,
                 phaseDuration: this.viState.phaseDuration,
-                phaseStartTime: this.viState.phaseStartTime
-            });
-            return;
+                phaseStartTime: this.viState.phaseStartTime,
+                selectedActionId: options.actionId ?? null,
+                explanationMode: options.explanationMode === true,
+                stepIndex: options.stepIndex ?? 0,
+            };
         }
 
         // Get next column for positioning transitions
@@ -223,9 +248,9 @@ class VIPresenter extends VIOutputBoundary {
         const isPerActionPhase = perAction && perActionPhases.includes(subPhase);
 
         let visibleActionCount;
-        let visibleTransitionCount; // how many transitions of the current action to show
+        let visibleTransitionCount;
         if (isPerActionPhase) {
-            visibleActionCount = 1; // only show current action
+            visibleActionCount = 1;
             if (subPhase === 'show_action') {
                 visibleTransitionCount = 0;
             } else if (subPhase === 'show_transition') {
@@ -240,13 +265,19 @@ class VIPresenter extends VIOutputBoundary {
             visibleTransitionCount = 0;
         } else {
             visibleActionCount = actionsWithPositions.length;
-            visibleTransitionCount = -1; // show all
+            visibleTransitionCount = -1;
+        }
+
+        // Explanation mode always shows all actions regardless of perActionMode
+        if (options.explanationMode) {
+            visibleActionCount = actionsWithPositions.length;
+            visibleTransitionCount = -1;
         }
 
         // Build equation lines
         const equationLines = this._formatEquationLines(stateNode.name, col.timestep, detail, subPhase, actionIdx, transIdx);
 
-        this.viViewModel.setBackupDetail({
+        return {
             subPhase,
             stateId,
             columnIndex,
@@ -266,8 +297,43 @@ class VIPresenter extends VIOutputBoundary {
             equationLines,
             gamma: this.viState.gamma,
             phaseDuration: this.viState.phaseDuration,
-            phaseStartTime: this.viState.phaseStartTime
+            phaseStartTime: this.viState.phaseStartTime,
+            selectedActionId: options.actionId ?? null,
+            explanationMode: options.explanationMode === true,
+            stepIndex: options.stepIndex ?? 0,
+        };
+    }
+
+    /**
+     * Build an explanation detail for a specific Q(s,a,t) cell.
+     * Called from main.js when a user clicks a revealed Q-value cell.
+     */
+    buildExplanationDetail({
+        columnIndex,
+        stateId,
+        actionId,
+        subPhase = 'select_max',
+        stepIndex = 4,
+        stepLabel = subPhase,
+        totalSteps = 6
+    }) {
+        const detail = this._computeBackupDetail(columnIndex, stateId, subPhase, {
+            actionId,
+            explanationMode: true,
+            stepIndex
         });
+        if (!detail) return null;
+        return {
+            ...detail,
+            actionId,
+            selectedActionId: actionId,
+            explanationMode: true,
+            stepIndex,
+            stepLabel,
+            totalSteps,
+            phaseDuration: 700,
+            phaseStartTime: Date.now()
+        };
     }
 
     _formatEquationHeader(stateName, timestep) {
@@ -348,7 +414,7 @@ class VIPresenter extends VIOutputBoundary {
     }
 
     _updateRightPanel() {
-        // Signal that right panel content needs refresh
+        if (this.rightPanel) this.rightPanel.updateContent();
     }
 
     _updateButtonStates() {

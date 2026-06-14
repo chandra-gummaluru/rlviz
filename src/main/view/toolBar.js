@@ -26,6 +26,10 @@ class ToolBar {
         this.viResetBtn = null;
         this.viTInput = null;
         this.viTLabel = null;
+        this.viPerActionLabel = null;
+        this.viPerActionToggle = null;
+        this.viShowCalcsLabel = null;
+        this.viShowCalcsToggle = null;
 
         // Mode toggle
         this.editToggleBtn = null;
@@ -124,6 +128,20 @@ class ToolBar {
                 this.callbacks.onVIPerActionToggle(this.viPerActionToggle.checked());
             }
         });
+
+        // Show calcs toggle
+        this.viShowCalcsLabel = createSpan('Show calcs');
+        this.viShowCalcsLabel.parent(this.leftButtonsContainer);
+        this.viShowCalcsLabel.addClass('toolbar-t-label');
+
+        this.viShowCalcsToggle = createCheckbox('', true);
+        this.viShowCalcsToggle.parent(this.leftButtonsContainer);
+        this.viShowCalcsToggle.addClass('toolbar-checkbox');
+        this.viShowCalcsToggle.changed(() => {
+            if (this.callbacks.onVIShowCalcsToggle) {
+                this.callbacks.onVIShowCalcsToggle(this.viShowCalcsToggle.checked());
+            }
+        });
     }
 
     handleVIPlayPauseClick() {
@@ -215,6 +233,8 @@ class ToolBar {
         this.viTInput.hide();
         this.viPerActionLabel.hide();
         this.viPerActionToggle.hide();
+        this.viShowCalcsLabel.hide();
+        this.viShowCalcsToggle.hide();
 
         // Clear all toggle active states
         this.editToggleBtn.removeClass('toolbar-toggle--active');
@@ -244,6 +264,8 @@ class ToolBar {
             this.viTInput.show();
             this.viPerActionLabel.show();
             this.viPerActionToggle.show();
+            this.viShowCalcsLabel.show();
+            this.viShowCalcsToggle.show();
             this.setVIPlayPauseMode('play');
             this.viToggleBtn.addClass('toolbar-toggle--active');
         }

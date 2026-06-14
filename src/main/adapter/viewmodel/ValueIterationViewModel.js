@@ -10,10 +10,17 @@ class ValueIterationViewModel {
         this.activeStateId = null;
         this.animationPhase = 'idle';
         this.revealedValues = {};   // columnIndex -> Set of stateIds with revealed values
+        this.revealedQValues = {};  // columnIndex -> { stateId -> Set(actionIds) }
         this.visibleColumnCount = 0; // How many columns are currently shown
         this.backupDetail = null;   // Current Bellman backup animation detail for view rendering
-        // perActionMode is NOT reset — it's a user preference toggle
+        // perActionMode and showCalculations are NOT reset — they are user preference toggles
         if (this.perActionMode === undefined) this.perActionMode = false;
+        if (this.showCalculations === undefined) this.showCalculations = true;
+
+        // Explanation state resets with layout (tied to stale computed positions/Q-values)
+        this.explanationDetail = null;
+        this.explanationStepIndex = 0;
+        this.explanationTweenKey = null;
 
         // Layout constants
         this.COLUMN_GAP = 250;
@@ -34,6 +41,7 @@ class ValueIterationViewModel {
     computeLayout(viState, canvasWidth, canvasHeight) {
         this.columns = [];
         this.revealedValues = {};
+        this.revealedQValues = {};
         this.visibleColumnCount = 0;
         this._canvasWidth = canvasWidth;
         this._canvasHeight = canvasHeight;
@@ -118,6 +126,20 @@ class ValueIterationViewModel {
         return this.revealedValues[columnIndex]?.has(stateId) ?? false;
     }
 
+    /** Mark an individual Q-value as revealed */
+    revealQValue(columnIndex, stateId, actionId) {
+        if (!this.revealedQValues[columnIndex]) this.revealedQValues[columnIndex] = {};
+        if (!this.revealedQValues[columnIndex][stateId]) {
+            this.revealedQValues[columnIndex][stateId] = new Set();
+        }
+        this.revealedQValues[columnIndex][stateId].add(actionId);
+    }
+
+    /** Check if an individual Q-value has been revealed */
+    isQValueRevealed(columnIndex, stateId, actionId) {
+        return this.revealedQValues[columnIndex]?.[stateId]?.has(actionId) ?? false;
+    }
+
     /** Reveal all values in a column */
     revealColumn(columnIndex) {
         const col = this.columns[columnIndex];
@@ -133,6 +155,22 @@ class ValueIterationViewModel {
     /** Clear backup detail (when backup finishes or on reset) */
     clearBackupDetail() {
         this.backupDetail = null;
+    }
+
+    /** Set explanation detail for a clicked Q-cell; generates a new tween key so animations restart */
+    setExplanationDetail(detail) {
+        this.explanationDetail = detail;
+        this.explanationStepIndex = detail?.stepIndex ?? 0;
+        this.explanationTweenKey = detail
+            ? `${detail.columnIndex}:${detail.stateId}:${detail.actionId}:${detail.subPhase}:${Date.now()}`
+            : null;
+    }
+
+    /** Clear explanation detail */
+    clearExplanationDetail() {
+        this.explanationDetail = null;
+        this.explanationStepIndex = 0;
+        this.explanationTweenKey = null;
     }
 
     /** Get column data by index */

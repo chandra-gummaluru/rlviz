@@ -132,9 +132,15 @@ class ValueIterationView {
         // Draw timestep labels at top
         this._drawTimestepLabels(visibleCount);
 
-        // Draw detailed backup animation overlay if active
-        if (detail) {
+        // Draw live backup animation overlay (suppressed while explanation is open)
+        if (detail && !this.viViewModel.explanationDetail) {
             this._drawBackupAnimation(detail);
+        }
+
+        // Draw explanation overlay if a Q-cell is being explained
+        const explanationDetail = this.viViewModel.explanationDetail;
+        if (explanationDetail) {
+            this._drawExplanationOverlay(explanationDetail);
         }
 
         // Loop management — continuous during active tweens, noLoop when idle
@@ -289,7 +295,30 @@ class ValueIterationView {
 
     // --- Detailed Bellman backup animation ---
 
+    _drawExplanationOverlay(detail) {
+        this._drawExplainStateHighlight(detail);
+        this._drawBackupAnimation(detail);
+    }
+
+    _drawExplainStateHighlight(detail) {
+        push();
+        noFill();
+        stroke(33, 150, 243, 80);
+        strokeWeight(8);
+        ellipse(detail.stateX, detail.stateY, (detail.stateRadius + 8) * 2, (detail.stateRadius + 8) * 2);
+        stroke(33, 150, 243, 220);
+        strokeWeight(2.5);
+        ellipse(detail.stateX, detail.stateY, (detail.stateRadius + 5) * 2, (detail.stateRadius + 5) * 2);
+        pop();
+    }
+
     _drawBackupAnimation(detail) {
+        if (!detail?.explanationMode && !this.viViewModel.showCalculations) {
+            if (detail?.subPhase !== 'revealing_value') return;
+            this._drawRevealingValueOverlay(detail);
+            return;
+        }
+
         const bundledPhases = ['show_equation', 'show_actions', 'show_transitions', 'compute_q_values', 'select_max', 'revealing_value'];
         const phaseIdx = bundledPhases.indexOf(detail.subPhase);
         const perActionPhases = ['show_action', 'show_transition', 'compute_transition', 'show_q_result'];
@@ -1059,13 +1088,17 @@ class ValueIterationView {
 
     _getPhaseKey(detail) {
         if (!detail) return null;
-        return [
+        const base = [
             detail.columnIndex,
             detail.stateId,
             detail.subPhase,
             detail.currentActionIndex ?? -1,
             detail.currentTransitionIndex ?? -1
         ].join(':');
+        if (detail.explanationMode) {
+            return `${base}:explain:${this.viViewModel.explanationTweenKey ?? ''}`;
+        }
+        return base;
     }
 
     _phaseId(detail, name, suffix = '') {

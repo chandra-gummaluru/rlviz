@@ -48,14 +48,19 @@ class RightPanel {
         this.width = 300;
         this.panelElement = null;
         this.contentContainer = null;
+        this.onPanelResize = null;
 
         // Discount factor (gamma) for MDP - editable
         this.discountFactor = RP_DEFAULT_DISCOUNT;
 
         // Sequence counter to cancel stale async MathJax renders
         this.mathJaxRenderSeq = 0;
+        this.mathJaxRetryCount = 0;
+        this.mathJaxRetryTimer = null;
+        this.mathJaxRetryMax = 600;
+        this.mathJaxRetryDelayMs = 50;
+        this.mathJaxWarnedUnavailable = false;
 
-        // Callbacks for spinning arrow animation
         this.callbacks = {
             onSpinningArrowToggle: (enabled) => {
                 if (this.controller && this.controller.toggleSpinningArrow) {
@@ -66,7 +71,10 @@ class RightPanel {
                 if (this.controller && this.controller.setSpinningArrowDuration) {
                     this.controller.setSpinningArrowDuration(duration);
                 }
-            }
+            },
+            onVICellClick: null,       // (colIdx, stateId, actionId) => void
+            onVIExplainClose: null,    // () => void
+            onVIExplainStep: null,     // ('prev' | 'next') => void
         };
     }
 
@@ -78,6 +86,7 @@ class RightPanel {
         this.panelElement.addClass('panel');
 
         this.updateContent();
+        this._setupResizeHandle();
     }
 
     updateContent() {
@@ -114,7 +123,29 @@ class RightPanel {
 
     _typesetMath() {
         if (!window.MathJax || !MathJax.startup || !MathJax.typesetPromise || !this.contentContainer) {
+            if (!this.contentContainer) {
+                return;
+            }
+
+            if (this.mathJaxRetryCount < this.mathJaxRetryMax && !this.mathJaxRetryTimer) {
+                this.mathJaxRetryCount++;
+                this.mathJaxRetryTimer = setTimeout(() => {
+                    this.mathJaxRetryTimer = null;
+                    this._typesetMath();
+                }, this.mathJaxRetryDelayMs);
+            } else if (this.mathJaxRetryCount >= this.mathJaxRetryMax && !this.mathJaxWarnedUnavailable) {
+                this.mathJaxWarnedUnavailable = true;
+                this.mathJaxRetryCount = 0;
+                console.warn('[MJ] MathJax did not become ready for right panel typesetting.');
+            }
             return;
+        }
+
+        this.mathJaxRetryCount = 0;
+        this.mathJaxWarnedUnavailable = false;
+        if (this.mathJaxRetryTimer) {
+            clearTimeout(this.mathJaxRetryTimer);
+            this.mathJaxRetryTimer = null;
         }
 
         const target = this.contentContainer.elt;
@@ -590,6 +621,23 @@ class RightPanel {
         const viState = this.viewModel.valueIterationState;
         const viViewModel = this.viewModel.valueIterationViewModel;
 
+        // Explanation mode: show explanation + Q-table only (not the full VI panel)
+        const explanationDetail = viViewModel?.explanationDetail;
+        if (explanationDetail) {
+            this._renderExplanationPanel(explanationDetail);
+            if (viState && viState.initialized && viViewModel) {
+                const tableTitle = createDiv('Action Values');
+                tableTitle.parent(this.contentContainer);
+                tableTitle.addClass('panel-section-title');
+                tableTitle.style('margin-top', '15px');
+                const qTableContainer = createDiv();
+                qTableContainer.parent(this.contentContainer);
+                qTableContainer.addClass('q-table-scroll');
+                this._renderQTable(qTableContainer, viState, viViewModel);
+            }
+            return;
+        }
+
         // Title
         const title = createDiv('Value Iteration');
         title.parent(this.contentContainer);
@@ -620,58 +668,22 @@ class RightPanel {
             progressLine.style('margin-bottom', '4px');
         }
 
-        // V(s) table
+        // Q*(s,a;t) table
         if (viState && viState.initialized && viViewModel) {
-            const tableTitle = createDiv('State Values');
+            const tableTitle = createDiv('Action Values');
             tableTitle.parent(this.contentContainer);
             tableTitle.addClass('panel-section-title');
             tableTitle.style('margin-top', '15px');
 
-            const tableContainer = createDiv();
-            tableContainer.parent(this.contentContainer);
-            tableContainer.addClass('panel-section-content');
-            tableContainer.style('max-height', RP_VI_TABLE_MAX_H + 'px');
-            tableContainer.style('overflow-y', 'auto');
-
-            // Show values for the most recently completed column
-            const lastRevealedCol = Math.max(0, viState.currentColumnIndex - (viState.isColumnComplete() ? 0 : 1));
-
-            for (let colIdx = Math.min(lastRevealedCol, viState.totalColumns - 1); colIdx >= 0; colIdx--) {
-                const timestep = viState.getTimestep(colIdx);
-                const values = viState.getValues(colIdx);
-
-                const colHeader = createDiv(`<strong>t = ${timestep}</strong>`);
-                colHeader.parent(tableContainer);
-                colHeader.style('margin-top', '8px');
-                colHeader.style('margin-bottom', '4px');
-                colHeader.style('color', AppPalette.text.primary);
-
-                viState.stateIds.forEach(stateId => {
-                    const isRevealed = viViewModel.isValueRevealed(colIdx, stateId);
-                    const val = isRevealed ? (values[stateId] ?? 0).toFixed(3) : '?';
-                    const name = viState.stateNames[stateId] || `S${stateId}`;
-
-                    const row = createDiv();
-                    row.parent(tableContainer);
-                    row.style('display', 'flex');
-                    row.style('justify-content', 'space-between');
-                    row.style('padding', '2px 8px');
-                    row.style('font-size', '13px');
-
-                    const nameSpan = createSpan(name);
-                    nameSpan.parent(row);
-
-                    const valSpan = createSpan(`V = ${val}`);
-                    valSpan.parent(row);
-                    if (isRevealed) {
-                        const numVal = values[stateId] ?? 0;
-                        valSpan.style('color', numVal > 0 ? AppPalette.reward.positive : numVal < 0 ? AppPalette.reward.negative : AppPalette.reward.zeroMuted);
-                        valSpan.style('font-weight', 'bold');
-                    } else {
-                        valSpan.style('color', AppPalette.text.placeholder);
-                    }
-                });
-            }
+            const qTableContainer = createDiv();
+            qTableContainer.parent(this.contentContainer);
+            qTableContainer.addClass('q-table-scroll');
+            this._renderQTable(qTableContainer, viState, viViewModel);
+        } else if (viState && !viState.initialized) {
+            const hint = createDiv('Press Play, Step, or Skip to compute Q-values.');
+            hint.parent(this.contentContainer);
+            hint.addClass('panel-hint');
+            hint.style('margin-top', '10px');
         }
 
     }
@@ -836,6 +848,314 @@ class RightPanel {
 
     }
 
+    _renderQTable(container, viState, viViewModel) {
+        const tableEl = document.createElement('table');
+        tableEl.className = 'q-table';
+
+        // Header
+        const thead = document.createElement('thead');
+        const headerRow = document.createElement('tr');
+
+        const thS = document.createElement('th');
+        thS.textContent = 's';
+        headerRow.appendChild(thS);
+
+        const thA = document.createElement('th');
+        thA.textContent = 'a';
+        headerRow.appendChild(thA);
+
+        for (let colIdx = 0; colIdx < viState.totalColumns; colIdx++) {
+            const th = document.createElement('th');
+            th.textContent = `t=${viState.getTimestep(colIdx)}`;
+            headerRow.appendChild(th);
+        }
+        thead.appendChild(headerRow);
+        tableEl.appendChild(thead);
+
+        // Body
+        const tbody = document.createElement('tbody');
+        let renderedRows = 0;
+
+        for (const stateId of viState.stateIds) {
+            // colIdx=1 is first non-terminal; T>=1 enforced by toolbar
+            const actionQs = viState.getQValues(1, stateId);
+            if (actionQs.length === 0) continue;
+
+            actionQs.forEach((aq, ai) => {
+                renderedRows++;
+                const tr = document.createElement('tr');
+
+                if (ai === 0) {
+                    const tdState = document.createElement('td');
+                    tdState.textContent = viState.stateNames[stateId] || `S${stateId}`;
+                    tdState.rowSpan = actionQs.length;
+                    tdState.className = 'q-table-state';
+                    tr.appendChild(tdState);
+                }
+
+                const tdAction = document.createElement('td');
+                tdAction.textContent = aq.actionName;
+                tdAction.className = 'q-table-action';
+                tr.appendChild(tdAction);
+
+                for (let colIdx = 0; colIdx < viState.totalColumns; colIdx++) {
+                    const td = document.createElement('td');
+                    td.className = 'q-table-cell';
+
+                    if (colIdx === 0) {
+                        td.textContent = '0';
+                        td.classList.add('q-table-cell--revealed');
+                    } else if (viViewModel.isQValueRevealed(colIdx, stateId, aq.actionId)) {
+                        const qVals = viState.getQValues(colIdx, stateId);
+                        const qEntry = qVals.find(q => q.actionId === aq.actionId);
+                        const val = qEntry ? qEntry.qValue : 0;
+                        td.textContent = val.toFixed(2);
+                        td.classList.add('q-table-cell--revealed');
+                        if (viState.bestActions[colIdx] &&
+                            viState.bestActions[colIdx][stateId] === aq.actionId) {
+                            td.classList.add('q-table-cell--best');
+                        }
+                        td.classList.add('q-table-cell--clickable');
+                        const activeExplain = this.viewModel.valueIterationViewModel?.explanationDetail;
+                        if (activeExplain &&
+                            activeExplain.columnIndex === colIdx &&
+                            activeExplain.stateId === stateId &&
+                            activeExplain.actionId === aq.actionId) {
+                            td.classList.add('q-table-cell--explaining');
+                        }
+                        td.addEventListener('click', () => {
+                            if (this.callbacks.onVICellClick) {
+                                this.callbacks.onVICellClick(colIdx, stateId, aq.actionId);
+                            }
+                        });
+                    } else {
+                        td.textContent = '?';
+                        td.classList.add('q-table-cell--unknown');
+                    }
+
+                    tr.appendChild(td);
+                }
+
+                tbody.appendChild(tr);
+            });
+        }
+
+        if (renderedRows === 0) {
+            const tr = document.createElement('tr');
+            const td = document.createElement('td');
+            td.colSpan = 2 + viState.totalColumns;
+            td.textContent = 'No available actions';
+            td.className = 'q-table-cell q-table-cell--unknown';
+            tr.appendChild(td);
+            tbody.appendChild(tr);
+        }
+
+        tableEl.appendChild(tbody);
+        container.elt.appendChild(tableEl);
+    }
+
+    _buildExplainEquationLines(detail) {
+        const s = latexEscapeText(detail.stateName);
+        const t = detail.timestep;
+        const g = detail.gamma;
+
+        if (detail.stepIndex <= 0) {
+            return [{
+                type: 'header',
+                text: `V_{${t}}(\\text{${s}}) = \\max_a \\sum_{s'} P(s'|s,a)\\bigl[R + ${g}\\,V_{${t + 1}}(s')\\bigr]`
+            }];
+        }
+
+        if (detail.stepIndex === 1) {
+            const lines = [{
+                type: 'header',
+                text: `V_{${t}}(\\text{${s}}) = \\max\\{\\, Q(\\text{${s}}, a) \\,\\}`
+            }];
+            (detail.actions || []).forEach(action => {
+                const a = latexEscapeText(action.actionName);
+                lines.push({ type: 'normal', text: `Q(\\text{${s}}, \\text{${a}}) = \\;?` });
+            });
+            return lines;
+        }
+
+        if (detail.stepIndex === 2) {
+            const clicked = (detail.actions || []).find(ac => ac.actionId === detail.selectedActionId);
+            if (!clicked) {
+                return [{
+                    type: 'header',
+                    text: `V_{${t}}(\\text{${s}}) = \\max_a \\sum_{s'} P(s'|s,a)\\bigl[R + ${g}\\,V_{${t + 1}}(s')\\bigr]`
+                }];
+            }
+            const a = latexEscapeText(clicked.actionName);
+            const lines = [{
+                type: 'header',
+                text: `Q(\\text{${s}}, \\text{${a}}) = \\sum_{s'} P(s'|s,a)\\bigl[R + ${g}\\,V_{${t + 1}}(s')\\bigr]`
+            }];
+            (clicked.transitions || []).forEach(tr => {
+                const termVal = tr.term ?? (tr.probability * (tr.reward + g * (tr.nextValue ?? 0)));
+                lines.push({
+                    type: 'normal',
+                    text: `${tr.probability.toFixed(2)} \\cdot [${tr.reward.toFixed(1)} + ${g} \\cdot ${(tr.nextValue ?? 0).toFixed(2)}] = ${termVal.toFixed(2)}`
+                });
+            });
+            return lines;
+        }
+
+        return detail.equationLines || [];
+    }
+
+    _renderExplanationPanel(detail) {
+        const phaseDescriptions = {
+            'Equation':     'The Bellman equation shows how V(s) is computed from the best Q(s,a).',
+            'Actions':      'Each action available from this state fans out as a diamond node.',
+            'Transitions':  'Each action leads to successor states with probability p and reward r.',
+            'Q-Values':     'Q(s,a) sums the weighted future values across all transitions.',
+            'Select Max':   'V(s) = max over all Q(s,a). The best action is highlighted green.',
+            'Final Value':  'The final V(s) value is revealed and stored for earlier timesteps.'
+        };
+
+        // Header row
+        const headerRow = createDiv();
+        headerRow.parent(this.contentContainer);
+        headerRow.style('display', 'flex');
+        headerRow.style('justify-content', 'space-between');
+        headerRow.style('align-items', 'center');
+        headerRow.style('padding', '10px 12px 6px');
+
+        const headerText = createDiv(`Explain: ${detail.stateName} at t=${detail.timestep}`);
+        headerText.parent(headerRow);
+        headerText.addClass('panel-title');
+        headerText.style('margin', '0');
+
+        const closeBtn = createButton('✕');
+        closeBtn.parent(headerRow);
+        closeBtn.addClass('panel-btn');
+        closeBtn.addClass('panel-btn--close');
+        closeBtn.mousePressed(() => {
+            if (this.callbacks.onVIExplainClose) this.callbacks.onVIExplainClose();
+        });
+
+        // Step counter + nav
+        const stepRow = createDiv();
+        stepRow.parent(this.contentContainer);
+        stepRow.style('display', 'flex');
+        stepRow.style('align-items', 'center');
+        stepRow.style('gap', '6px');
+        stepRow.style('padding', '0 12px 8px');
+
+        const prevBtn = createButton('← Prev');
+        prevBtn.parent(stepRow);
+        prevBtn.addClass('panel-btn');
+        if (detail.stepIndex === 0) prevBtn.attribute('disabled', '');
+        prevBtn.mousePressed(() => {
+            if (this.callbacks.onVIExplainStep) this.callbacks.onVIExplainStep('prev');
+        });
+
+        const stepLabel = createDiv(`Step ${detail.stepIndex + 1} / ${detail.totalSteps}: ${detail.stepLabel}`);
+        stepLabel.parent(stepRow);
+        stepLabel.addClass('panel-explain-step');
+        stepLabel.style('flex', '1');
+        stepLabel.style('text-align', 'center');
+
+        const nextBtn = createButton('Next →');
+        nextBtn.parent(stepRow);
+        nextBtn.addClass('panel-btn');
+        if (detail.stepIndex === detail.totalSteps - 1) nextBtn.attribute('disabled', '');
+        nextBtn.mousePressed(() => {
+            if (this.callbacks.onVIExplainStep) this.callbacks.onVIExplainStep('next');
+        });
+
+        // Step-specific equations (developed per phase)
+        const eqContainer = createDiv();
+        eqContainer.parent(this.contentContainer);
+        eqContainer.style('padding', '0 12px 6px');
+        this._buildExplainEquationLines(detail).forEach(line => {
+            const d = createDiv();
+            d.parent(eqContainer);
+            d.html(`$$${line.text}$$`);
+            d.addClass('explain-eq-line');
+            d.addClass(`explain-eq-line--${line.type}`);
+        });
+
+        // Phase description
+        const desc = createDiv(phaseDescriptions[detail.stepLabel] || '');
+        desc.parent(this.contentContainer);
+        desc.addClass('panel-explain-desc');
+        desc.style('padding', '0 12px 8px');
+
+        // Clicked action callout
+        const clickedAction = detail.actions?.find(a => a.actionId === detail.selectedActionId);
+        const clickedActionName = clickedAction?.actionName ?? String(detail.selectedActionId);
+        const callout = createDiv(`Clicked: Q(${detail.stateName}, ${clickedActionName})`);
+        callout.parent(this.contentContainer);
+        callout.style('padding', '4px 12px 8px');
+        callout.style('font-size', '12px');
+        callout.style('color', 'var(--color-primary)');
+        callout.style('font-weight', '600');
+
+        // Action Q-value table (steps >= 3, i.e. Q-Values and beyond)
+        if (detail.stepIndex >= 3 && detail.actions && detail.actions.length > 0) {
+            const tableContainer = createDiv();
+            tableContainer.parent(this.contentContainer);
+            tableContainer.style('padding', '0 12px 8px');
+
+            const tableEl = document.createElement('table');
+            tableEl.className = 'q-table';
+            tableEl.style.width = '100%';
+
+            const thead = document.createElement('thead');
+            const headerRow2 = document.createElement('tr');
+            ['Action', 'Q(s,a)', ''].forEach(h => {
+                const th = document.createElement('th');
+                th.textContent = h;
+                headerRow2.appendChild(th);
+            });
+            thead.appendChild(headerRow2);
+            tableEl.appendChild(thead);
+
+            const tbody = document.createElement('tbody');
+            detail.actions.forEach(action => {
+                const tr = document.createElement('tr');
+                const isClicked = action.actionId === detail.selectedActionId;
+                const isBest = action.actionId === detail.bestActionId;
+                if (isClicked) tr.classList.add('panel-explain-action--clicked');
+
+                const tdName = document.createElement('td');
+                tdName.textContent = action.actionName;
+                tdName.className = 'q-table-action';
+                tr.appendChild(tdName);
+
+                const tdQ = document.createElement('td');
+                tdQ.textContent = action.qValue != null ? action.qValue.toFixed(2) : '—';
+                tdQ.className = 'q-table-cell q-table-cell--revealed';
+                if (isBest) tdQ.classList.add('q-table-cell--best');
+                tr.appendChild(tdQ);
+
+                const tdMarker = document.createElement('td');
+                tdMarker.style.fontSize = '11px';
+                const markers = [];
+                if (isClicked) markers.push('Clicked');
+                if (isBest) markers.push('Best');
+                tdMarker.textContent = markers.join(' / ');
+                tr.appendChild(tdMarker);
+
+                tbody.appendChild(tr);
+            });
+            tableEl.appendChild(tbody);
+            tableContainer.elt.appendChild(tableEl);
+        }
+
+        // Result line (steps >= 4, i.e. Select Max and Final Value)
+        if (detail.stepIndex >= 4 && detail.value != null) {
+            const resultLine = createDiv(`V<sub>${detail.timestep}</sub>(${detail.stateName}) = ${detail.value.toFixed(2)}`);
+            resultLine.parent(this.contentContainer);
+            resultLine.style('padding', '4px 12px 8px');
+            resultLine.style('font-size', '13px');
+            resultLine.style('font-weight', '700');
+            resultLine.style('color', 'var(--color-success)');
+        }
+    }
+
     _applyRewardColor(element, reward) {
         if (reward > 0) element.style('color', 'var(--reward-positive)');
         else if (reward < 0) element.style('color', 'var(--reward-negative)');
@@ -848,6 +1168,47 @@ class RightPanel {
         sectionTitle.addClass('panel-section-title');
 
         contentCallback();
+    }
+
+    _setupResizeHandle() {
+        const PANEL_MIN = 200;
+        const PANEL_MAX = 500;
+        const PANEL_DEFAULT = 300;
+
+        const handle = document.createElement('div');
+        handle.className = 'panel-resize-handle';
+        this.panelElement.elt.insertBefore(handle, this.panelElement.elt.firstChild);
+
+        handle.addEventListener('dblclick', () => {
+            this._setPanelWidth(PANEL_DEFAULT);
+        });
+
+        handle.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            handle.classList.add('panel-resize-handle--dragging');
+
+            const onMove = (e) => {
+                const maxWidth = Math.min(PANEL_MAX, Math.max(PANEL_MIN, window.innerWidth - 200));
+                const newWidth = Math.min(maxWidth, Math.max(PANEL_MIN, window.innerWidth - e.clientX));
+                this._setPanelWidth(newWidth);
+            };
+            const onUp = () => {
+                handle.classList.remove('panel-resize-handle--dragging');
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', onUp);
+            };
+
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('mouseup', onUp);
+        });
+    }
+
+    _setPanelWidth(newWidth) {
+        this.width = newWidth;
+        const y = this.panelElement.position().y;
+        this.panelElement.position(windowWidth - newWidth, y);
+        this.panelElement.size(newWidth, this.panelElement.elt.offsetHeight);
+        if (this.onPanelResize) this.onPanelResize(newWidth);
     }
 
     updateWidth(newWindowWidth) {
