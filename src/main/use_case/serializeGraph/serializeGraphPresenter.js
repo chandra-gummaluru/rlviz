@@ -1,4 +1,4 @@
-// Presenter for graph serialization
+
 class SerializeGraphPresenter extends SerializeGraphOutputBoundary {
     constructor(viewModel) {
         super();
@@ -7,7 +7,6 @@ class SerializeGraphPresenter extends SerializeGraphOutputBoundary {
     }
 
     presentSerializedGraph(jsonString) {
-        // Store serialized data for retrieval
         this.serializedData = jsonString;
     }
 
@@ -17,7 +16,6 @@ class SerializeGraphPresenter extends SerializeGraphOutputBoundary {
         this.serializedData = null;
     }
 
-    // Getter for serialized data (used by ViewModel)
     getSerializedData() {
         return this.serializedData;
     }

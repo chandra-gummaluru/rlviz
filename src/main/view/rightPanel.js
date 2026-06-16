@@ -1,4 +1,15 @@
 // Right panel displaying MDP information and node editing
+
+export const ACTION_LENGTH = 5;
+export const PROBABILITY_FLOATING_POINT_RANGE = 3;
+export const REWARD_FLOATING_POINT_RANGE = 2;
+export const DEFAULT_FLOATING_POINT_RANGE = 1;
+
+export const HEADER_TEXT_SIZE = 13;
+export const BEST_RESULT_TEXT_SIZE = 12;
+export const DEFAULT_TEXT_SIZE = 11;
+export const INFO_TEXT_SIZE = 10;
+
 class RightPanel {
     constructor(viewModel, controller) {
         this.viewModel = viewModel;
@@ -101,8 +112,8 @@ class RightPanel {
                 setNotation.addClass('panel-set-notation');
             } else {
                 let stateNames;
-                if (states.length > 5) {
-                    const firstFive = states.slice(0, 5).map((s, index) => `s_{${index}}`).join(', ');
+                if (states.length > ACTION_LENGTH) {
+                    const firstFive = states.slice(0, ACTION_LENGTH).map((s, index) => `s_{${index}}`).join(', ');
                     stateNames = `${firstFive}, \\ldots`;
                 } else {
                     stateNames = states.map((s, index) => `s_{${index}}`).join(', ');
@@ -133,8 +144,8 @@ class RightPanel {
                 setNotation.addClass('panel-set-notation');
             } else {
                 let actionNames;
-                if (actions.length > 5) {
-                    const firstFive = actions.slice(0, 5).map((a, index) => `a_{${index}}`).join(', ');
+                if (actions.length > ACTION_LENGTH) {
+                    const firstFive = actions.slice(0, ACTION_LENGTH).map((a, index) => `a_{${index}}`).join(', ');
                     actionNames = `${firstFive}, \\ldots`;
                 } else {
                     actionNames = actions.map((a, index) => `a_{${index}}`).join(', ');
@@ -538,7 +549,7 @@ class RightPanel {
                         probSlider.input(() => {
                             const newProb = parseFloat(probSlider.value());
                             this.controller.setTransitionProbability(actionNode.id, transition.nextState, newProb);
-                            probValue.html(newProb.toFixed(3));
+                            probValue.html(newProb.toFixed(PROBABILITY_FLOATING_POINT_RANGE));
                             redraw();
                         });
 
@@ -568,7 +579,7 @@ class RightPanel {
                         rewardSlider.input(() => {
                             const newReward = parseFloat(rewardSlider.value());
                             this.controller.setTransitionReward(actionNode.id, transition.nextState, newReward);
-                            rewardValue.html(newReward.toFixed(2));
+                            rewardValue.html(newReward.toFixed(REWARD_FLOATING_POINT_RANGE));
                             this._applyRewardColor(rewardValue, newReward);
                             redraw();
                         });
@@ -580,7 +591,7 @@ class RightPanel {
 
                 // Show total probability sum
                 const totalProb = actionNode.getTotalProbability();
-                const totalDiv = createDiv(`Total Probability: ${totalProb.toFixed(3)}`);
+                const totalDiv = createDiv(`Total Probability: ${totalProb.toFixed(PROBABILITY_FLOATING_POINT_RANGE)}`);
                 totalDiv.parent(transitionsDiv);
                 totalDiv.addClass('panel-total-prob');
                 totalDiv.addClass(totalProb === 1.0 ? 'panel-total-prob--valid' : 'panel-total-prob--invalid');
@@ -651,7 +662,7 @@ class RightPanel {
 
                 viState.stateIds.forEach(stateId => {
                     const isRevealed = viViewModel.isValueRevealed(colIdx, stateId);
-                    const val = isRevealed ? (values[stateId] ?? 0).toFixed(3) : '?';
+                    const val = isRevealed ? (values[stateId] ?? 0).toFixed(PROBABILITY_FLOATING_POINT_RANGE) : '?';
                     const name = viState.stateNames[stateId] || `S${stateId}`;
 
                     const row = createDiv();
@@ -728,7 +739,7 @@ class RightPanel {
         this.createSection('Total Reward', () => {
             const rewardDiv = createDiv();
             rewardDiv.parent(this.contentContainer);
-            const rewardValue = createDiv(stats.totalReward.toFixed(2));
+            const rewardValue = createDiv(stats.totalReward.toFixed(REWARD_FLOATING_POINT_RANGE));
             rewardValue.parent(rewardDiv);
             rewardValue.addClass('panel-stat-value--large');
             this._applyRewardColor(rewardValue, stats.totalReward);

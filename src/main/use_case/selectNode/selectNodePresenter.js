@@ -1,4 +1,3 @@
-// Presenter for SelectNode use case
 class SelectNodePresenter extends SelectNodeOutputBoundary {
     constructor(selectionViewModel) {
         super();

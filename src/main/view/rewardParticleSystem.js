@@ -1,4 +1,22 @@
 // Self-contained reward particle animation system using DOM elements
+
+STEPS = 20;
+BURST_OFFSET = 8;
+BURST_RANGE = 5;
+VISUAL_BURST_OFFSET = 40;
+
+PROB_OFFSET = 0.5;
+
+TIME = 400;
+TIME_RANGE = 200;
+STAGGER = 15;
+
+SCALE_MIN = 1.0;
+SCALE_MAX = 1.5;
+SCALE_DIFF = 0.5;
+
+ARROW_AMPLITUDE = 30;
+
 class RewardParticleSystem {
     constructor() {
         this.overlay = null;
@@ -50,15 +68,16 @@ class RewardParticleSystem {
         const animateFlash = (now) => {
             if (animState.cancelled) { flash.remove(); return; }
             const elapsed = now - flashStart;
-            if (elapsed < 400) {
+            if (elapsed < TIME) {
                 // Pop: scale 1 -> 1.5 -> 1
-                const t = elapsed / 400;
-                const scale = t < 0.5 ? 1 + t * 2 * 0.5 : 1.5 - (t - 0.5) * 2 * 0.5;
+                const t = elapsed / TIME;
+                const scale = t < 0.5 ? 1 + t * 2 * SCALE_DIFF : SCALE_MAX - (t - SCALE_DFF) * 2 * 0.5; 
+                /* Why not just multiply by 1? It makes this less confusing */
                 flash.style.transform = `translate(-50%, -50%) scale(${scale})`;
                 requestAnimationFrame(animateFlash);
             } else {
                 // Fade out flash text (400-600ms)
-                const fadeT = Math.min((elapsed - 400) / 200, 1);
+                const fadeT = Math.min((elapsed - TIME) / TIME_RANGE, 1);
                 flash.style.opacity = String(1 - fadeT);
                 if (fadeT < 1) {
                     requestAnimationFrame(animateFlash);
@@ -67,10 +86,11 @@ class RewardParticleSystem {
                 }
             }
         };
+
         requestAnimationFrame(animateFlash);
 
         // Phase 2: Burst particles at 200ms
-        const numParticles = 8 + Math.floor(Math.random() * 5); // 8-12
+        const numParticles = BURST_OFFSET + Math.floor(Math.random() * BURST_RANGE); // 8-12
         animState.particlesRemaining = numParticles;
 
         setTimeout(() => {
@@ -78,12 +98,12 @@ class RewardParticleSystem {
 
             for (let i = 0; i < numParticles; i++) {
                 this.launchParticle(
-                    startX + (Math.random() - 0.5) * 20,
-                    startY + (Math.random() - 0.5) * 20,
+                    startX + (Math.random() - SCALE_DIFF) * STEPS,
+                    startY + (Math.random() - SCALE_DIFF) * STEPS,
                     color,
                     targetElement,
                     animState,
-                    i * 15, // stagger
+                    i * STAGGER, // stagger
                     onComplete
                 );
             }
@@ -100,8 +120,8 @@ class RewardParticleSystem {
         this.overlay.appendChild(particle);
 
         // Random burst offset
-        const burstX = x + (Math.random() - 0.5) * 40;
-        const burstY = y + (Math.random() - 0.5) * 40 - 15;
+        const burstX = x + (Math.random() - SCALE_DIFF) * VISUAL_BURST_OFFSET;
+        const burstY = y + (Math.random() - SCALE_DIFF) * VISUAL_BURST_OFFSET - 15;
 
         const travelDuration = 900;
         const startTime = performance.now() + delay;
@@ -132,7 +152,7 @@ class RewardParticleSystem {
 
             // Bezier-ish path: burst position -> overshoot -> target
             const cx = burstX + (targetX - burstX) * ease;
-            const cy = burstY + (targetY - burstY) * ease - Math.sin(ease * Math.PI) * 30;
+            const cy = burstY + (targetY - burstY) * ease - Math.sin(ease * Math.PI) * ARROW_AMPLITUDE;
 
             particle.style.left = cx + 'px';
             particle.style.top = cy + 'px';
@@ -144,7 +164,7 @@ class RewardParticleSystem {
                 const fadeT = (t - 0.8) / 0.2;
                 const s = 1 - fadeT;
                 particle.style.transform = `translate(-50%, -50%) scale(${s})`;
-                particle.style.opacity = String(1 - fadeT * 0.5);
+                particle.style.opacity = String(1 - fadeT * SCALE_DIFF);
             }
 
             if (t < 1) {

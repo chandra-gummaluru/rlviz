@@ -2,6 +2,8 @@
  * Domain entity representing viewport state (zoom and pan).
  * Pure business logic with no UI dependencies.
  */
+ZOOM_FACTOR = 1.2;
+
 export class ViewportState {
     /**
      * Create viewport state.
@@ -35,7 +37,7 @@ export class ViewportState {
      * @returns {number} New zoom level
      */
     calculateZoomIn() {
-        const newZoom = this.zoom * 1.2;
+        const newZoom = this.zoom * ZOOM_FACTOR;
         return this.clampZoom(newZoom, this.minZoom, this.maxZoom);
     }
 
@@ -44,7 +46,7 @@ export class ViewportState {
      * @returns {number} New zoom level
      */
     calculateZoomOut() {
-        const newZoom = this.zoom / 1.2;
+        const newZoom = this.zoom / ZOOM_FACTOR;
         return this.clampZoom(newZoom, this.minZoom, this.maxZoom);
     }
 

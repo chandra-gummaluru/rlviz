@@ -1,4 +1,3 @@
-// Interactor for SelectNode use case
 class SelectNodeInteractor extends SelectNodeInputBoundary {
     constructor(graph, presenter) {
         super();

@@ -1,4 +1,4 @@
-// Input data for SelectNode use case
+
 class SelectNodeInputData {
     constructor(nodeId, edgeFromId, edgeToId, textLabelId) {
         this.nodeId = nodeId;

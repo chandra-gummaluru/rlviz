@@ -1,3 +1,14 @@
+import 
+{ 
+    DEFAULT_FLOATING_POINT_RANGE, 
+    PROBABILITY_FLOATING_POINT_RANGE, 
+    REWARD_FLOATING_POINT_RANGE,
+    
+    DEFAULT_TEXT_SIZE,
+    BEST_RESULT_TEXT_SIZE,
+    HEADER_TEXT_SIZE,
+} from "./rightPanel";
+
 // Easing functions for VI animations
 const VI_EASINGS = {
     linear: t => t,
@@ -8,6 +19,13 @@ const VI_EASINGS = {
         return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
     }
 };
+
+export const GAMMA_DEFAULT = 0.9;
+export const TEXT_SIZE = 13;
+export const STROKE_WEIGHT = 2;
+export const THRESHOLD = 0.2;
+export const SIN_OFFSET = 0.4;
+export const BURST_AMPLITUDE = 220;
 
 class VITweenEngine {
     constructor() { this._tweens = {}; }
@@ -186,10 +204,10 @@ class ValueIterationView {
         const fillColor = isRevealed ? color(76, 175, 80, alpha) : color(200, 200, 200, alpha);
         fill(fillColor);
         stroke(60, 60, 60, alpha);
-        strokeWeight(2);
+        strokeWeight(REWARD_FLOATING_POINT_RANGE);
         ellipse(stateNode.x, stateNode.y, r * 2, r * 2);
 
-        if (s > 0.2) {
+        if (s > THRESHOLD) {
             fill(0, 0, 0, alpha);
             noStroke();
             textAlign(CENTER, CENTER);
@@ -199,8 +217,8 @@ class ValueIterationView {
 
             if (isRevealed) {
                 fill(0, 0, 0, alpha);
-                textSize(11);
-                text(`V = ${stateNode.value.toFixed(2)}`, stateNode.x, stateNode.y + 10);
+                textSize(DEFAULT_TEXT_SIZE);
+                text(`V = ${stateNode.value.toFixed(REWARD_FLOATING_POINT_RANGE)}`, stateNode.x, stateNode.y + 10);
             }
         }
 
@@ -268,7 +286,7 @@ class ValueIterationView {
                     text(`p=${probability.toFixed(2)}`, midX, midY);
                     if (reward !== 0) {
                         fill(reward > 0 ? color(46, 125, 50, alpha) : color(198, 40, 40, alpha));
-                        text(`r=${reward.toFixed(1)}`, midX, midY + 12);
+                        text(`r=${reward.toFixed(DEFAULT_FLOATING_POINT_RANGE)}`, midX, midY + 12);
                     }
                     pop();
                 }
@@ -358,19 +376,19 @@ class ValueIterationView {
             const y = boxY + 8 + i * lineHeight + yOffset;
             if (line.type === 'header') {
                 fill(30, 30, 30, a);
-                textSize(13);
+                textSize(HEADER_TEXT_SIZE);
                 textStyle(BOLD);
             } else if (line.type === 'best') {
                 fill(46, 125, 50, a);
-                textSize(11);
+                textSize(DEFAULT_TEXT_SIZE);
                 textStyle(NORMAL);
             } else if (line.type === 'result') {
                 fill(25, 80, 170, a);
-                textSize(12);
+                textSize(BEST_RESULT_TEXT_SIZE);
                 textStyle(BOLD);
             } else {
                 fill(80, 80, 80, a);
-                textSize(11);
+                textSize(DEFAULT_TEXT_SIZE);
                 textStyle(NORMAL);
             }
             text(line.text, boxX + 8, y);
@@ -443,12 +461,16 @@ class ValueIterationView {
                     text(`p=${t.probability.toFixed(2)}`, labelX, labelY);
 
                     if (isComputed || showRewardForAction) {
-                        const gamma = detail.gamma || 0.9;
+                        const gamma = detail.gamma || GAMMA_DEFAULT;
                         fill(80, 80, 80, 200 * labelP);
-                        text(`r=${t.reward.toFixed(1)}`, labelX, labelY + 11);
+                        text(`r=${t.reward.toFixed(DEFAULT_FLOATING_POINT_RANGE)}`, labelX, labelY + 11);
                         fill(100, 100, 100, 180 * labelP);
                         textSize(8);
-                        text(`${t.probability.toFixed(2)}\u00B7[${t.reward.toFixed(1)}+${gamma}\u00B7${t.nextValue.toFixed(1)}] = ${t.term.toFixed(2)}`, labelX, labelY + 22);
+                        text(`${t.probability.
+                            toFixed(REWARD_FLOATING_POINT_RANGE)}\u00B7[${t.reward.
+                            toFixed(DEFAULT_FLOATING_POINT_RANGE)}+${gamma}\u00B7${t.nextValue.
+                            toFixed(DEFAULT_FLOATING_POINT_RANGE)}] = ${t.term.
+                            toFixed(REWARD_FLOATING_POINT_RANGE)}`, labelX, labelY + 22);
                     }
                     pop();
                 }
@@ -468,7 +490,7 @@ class ValueIterationView {
             const isBest = action.actionId === detail.bestActionId;
             fill(isBest ? color(46, 125, 50) : color(80, 80, 80));
             textAlign(CENTER, TOP);
-            textSize(10);
+            textSize(TEXT_SIZE);
             textFont('Calibri, "Segoe UI", Tahoma, sans-serif');
             textStyle(isBest ? BOLD : NORMAL);
             text(`Q = ${action.qValue.toFixed(2)}`, action.x, action.y + this.ACTION_NODE_RADIUS + 4);
@@ -505,7 +527,7 @@ class ValueIterationView {
                 push();
                 noFill();
                 stroke(46, 160, 67, 255 * ringAlpha);
-                strokeWeight(3);
+                strokeWeight(PROBABILITY_FLOATING_POINT_RANGE);
                 const r = this.ACTION_NODE_RADIUS + 4;
                 beginShape();
                 vertex(action.x, action.y - r);
@@ -536,7 +558,7 @@ class ValueIterationView {
     _drawQTable(detail) {
         if (!detail.actions || detail.actions.length === 0) return;
 
-        const gamma = detail.gamma || 0.9;
+        const gamma = detail.gamma || GAMMA_DEFAULT;
         const allActions = detail.actions;
         const currentAI = detail.currentActionIndex || 0;
         const visTransCount = detail.visibleTransitionCount || 0;
@@ -650,7 +672,7 @@ class ValueIterationView {
             // Action name
             noStroke();
             textAlign(CENTER, CENTER);
-            textSize(11);
+            textSize(DEFAULT_TEXT_SIZE);
             if (rowVisible) {
                 fill(60, 60, 60);
                 textStyle(BOLD);
@@ -676,7 +698,10 @@ class ValueIterationView {
                     // Show full term: p·[r + γ·V] = term
                     fill(70, 70, 70);
                     textSize(9);
-                    text(`${t.probability.toFixed(2)}\u00B7[${t.reward.toFixed(0)}+${gamma}\u00B7${t.nextValue.toFixed(0)}]=${t.term.toFixed(2)}`, cx, cy);
+                    text(`${t.probability.toFixed(REWARD_FLOATING_POINT_RANGE)}\u00B7[${t.reward.
+                        toFixed(0)}+${gamma}\u00B7${t.nextValue.
+                        toFixed(0)}]=${t.term.
+                        toFixed(REWARD_FLOATING_POINT_RANGE)}`, cx, cy);
                 } else {
                     // Show just p label (transition shown but not computed yet)
                     fill(130, 130, 130);
@@ -699,8 +724,8 @@ class ValueIterationView {
                 const isBest = action.actionId === detail.bestActionId;
                 fill(isBest ? color(46, 125, 50) : color(60, 60, 60));
                 textStyle(BOLD);
-                textSize(11);
-                text(action.qValue.toFixed(2), qx, rowY + rowH / 2);
+                textSize(DEFAULT_TEXT_SIZE);
+                text(action.qValue.toFixed(REWARD_FLOATING_POINT_RANGE), qx, rowY + rowH / 2);
                 textStyle(NORMAL);
             } else if (rowVisible && showTerms) {
                 // Show running sum
@@ -711,7 +736,7 @@ class ValueIterationView {
                 fill(130, 130, 130);
                 textSize(10);
                 textStyle(ITALIC);
-                text(runningSum.toFixed(2), qx, rowY + rowH / 2);
+                text(runningSum.toFixed(REWARD_FLOATING_POINT_RANGE), qx, rowY + rowH / 2);
                 textStyle(NORMAL);
             } else {
                 fill(200, 200, 200);
@@ -732,7 +757,7 @@ class ValueIterationView {
             textStyle(BOLD);
             textSize(12);
             textAlign(RIGHT, CENTER);
-            text(`V(${detail.stateName}) = max = ${detail.value.toFixed(2)}`,
+            text(`V(${detail.stateName}) = max = ${detail.value.toFixed(REWARD_FLOATING_POINT_RANGE)}`,
                 tableX + tableW - 10, vRowY + rowH / 2);
             textStyle(NORMAL);
         }
@@ -824,7 +849,7 @@ class ValueIterationView {
             text(`p=${t.probability.toFixed(2)}`, labelX, labelY);
 
             if (showRewards) {
-                const gamma = detail.gamma || 0.9;
+                const gamma = detail.gamma || GAMMA_DEFAULT;
                 fill(80, 80, 80, 200);
                 text(`r=${t.reward.toFixed(1)}`, labelX, labelY + 11);
                 fill(100, 100, 100, 180);

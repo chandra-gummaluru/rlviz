@@ -1,4 +1,11 @@
 // Domain entity for managing simulation replay state
+
+EDGE_ITERATION_TIMES = 3;
+SPINNING_ARROW_MIN = 800;
+SPINNING_ARROW_MAX = 3000;
+TICK_MIN = 50;
+TICK_MAX = 350;
+
 class SimulationState {
     constructor() {
         // Trace data
@@ -340,7 +347,7 @@ class SimulationState {
 
     setSpinningArrowDuration(duration) {
         // Clamp duration between 800ms and 3000ms
-        this.spinningArrowDuration = Math.max(800, Math.min(3000, duration));
+        this.spinningArrowDuration = Math.max(SPINNING_ARROW_MIN, Math.min(SPINNING_ARROW_MAX, duration));
     }
 
     // Initialize spinning arrow with edges and target selection (discrete tick sequence)
@@ -357,7 +364,7 @@ class SimulationState {
         // Build tick sequence: cycle through all edge indices 3 times, end on targetIndex
         const numEdges = edges.length;
         const sequence = [];
-        for (let cycle = 0; cycle < 3; cycle++) {
+        for (let cycle = 0; cycle < EDGE_ITERATION_TIMES; cycle++) {
             for (let i = 0; i < numEdges; i++) {
                 sequence.push(i);
             }
@@ -375,7 +382,7 @@ class SimulationState {
         let cumulative = 0;
         for (let i = 0; i < totalTicks; i++) {
             const t = totalTicks > 1 ? i / (totalTicks - 1) : 1;
-            const duration = 50 + (350 - 50) * t * t;  // Quadratic ease: starts fast, slows down
+            const duration = TICK_MIN + (TICK_MAX - TICK_MIN) * t * t;  // Quadratic ease: starts fast, slows down
             cumulative += duration;
             timestamps.push(cumulative);
         }
