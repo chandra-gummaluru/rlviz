@@ -1,7 +1,3 @@
-/**
- * Output boundary interface for SetMode use case
- * Defines the contract for presenting set mode results
- */
 class SetModeOutputBoundary {
     /**
      * Present the set mode results

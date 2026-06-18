@@ -1,7 +1,3 @@
-/**
- * Output boundary interface for Zoom use cases
- * Defines the contract for presenting zoom results
- */
 class ZoomOutputBoundary {
     /**
      * Present the zoom results

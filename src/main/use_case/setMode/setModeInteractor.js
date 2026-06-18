@@ -1,8 +1,3 @@
-
-/**
- * Interactor for SetMode use case
- * Contains the business logic for switching between editor and simulate modes
- */
 class SetModeInteractor extends SetModeInputBoundary {
     /**
      * @param {SetModeOutputBoundary} outputBoundary - The output boundary for presenting results

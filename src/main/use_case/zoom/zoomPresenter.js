@@ -1,8 +1,3 @@
-
-/**
- * Presenter for Zoom use cases
- * Formats and presents zoom results to the ViewModel
- */
 class ZoomPresenter extends ZoomOutputBoundary {
     /**
      * @param {CanvasViewModel} viewModel - The view model to update

@@ -1,8 +1,3 @@
-
-/**
- * Interactor for ZoomIn use case
- * Contains the business logic for zooming in (increasing zoom level)
- */
 class ZoomInInteractor extends ZoomInputBoundary {
     /**
      * @param {ZoomOutputBoundary} outputBoundary - The output boundary for presenting results

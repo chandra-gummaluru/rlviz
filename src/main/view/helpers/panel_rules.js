@@ -1,0 +1,19 @@
+export const GAMMA_DEFAULT = 0.9;
+export const TEXT_SIZE = 13;
+export const STROKE_WEIGHT = 2;
+export const THRESHOLD = 0.2;
+export const SIN_OFFSET = 0.4;
+export const BURST_AMPLITUDE = 220;
+
+export const STEPS = 20;
+export const BURST_OFFSET = 8;
+export const BURST_RANGE = 5;
+export const VISUAL_BURST_OFFSET = 40;
+export const PROB_OFFSET = 0.5;
+export const TIME = 400;
+export const TIME_RANGE = 200;
+export const STAGGER = 15;
+export const SCALE_MIN = 1.0;
+export const SCALE_MAX = 1.5;
+export const SCALE_DIFF = 0.5;
+export const ARROW_AMPLITUDE = 30;

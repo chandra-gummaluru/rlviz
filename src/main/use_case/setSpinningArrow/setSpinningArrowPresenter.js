@@ -1,4 +1,3 @@
-// Presenter for setting spinning arrow animation
 class SetSpinningArrowPresenter extends SetSpinningArrowOutputBoundary {
     constructor(viewModel) {
         super();

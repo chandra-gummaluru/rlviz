@@ -1,4 +1,3 @@
-
 class SelectNodeInputData {
     constructor(nodeId, edgeFromId, edgeToId, textLabelId) {
         this.nodeId = nodeId;

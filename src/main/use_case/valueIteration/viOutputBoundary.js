@@ -1,4 +1,3 @@
-// Output boundary interface for Value Iteration use cases
 class VIOutputBoundary {
     presentInitialized() { throw new Error('Not implemented'); }
     presentLayoutNeeded(canvasWidth, canvasHeight) { throw new Error('Not implemented'); }

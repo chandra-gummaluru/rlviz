@@ -1,8 +1,3 @@
-
-/**
- * Presenter for SetMode use case
- * Formats and presents set mode results to the ViewModel
- */
 class SetModePresenter extends SetModeOutputBoundary {
     /**
      * @param {CanvasViewModel} viewModel - The view model to update

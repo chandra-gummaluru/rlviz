@@ -767,7 +767,6 @@ class ValueIterationView {
 
     // --- Per-action single-action drawing ---
 
-    /** Draw a single action diamond with its state→action edge */
     _drawSingleAction(detail, action) {
         const actionColor = this._getActionColor(action.actionId, detail.actions, 200);
         const ai = detail.currentActionIndex ?? 0;

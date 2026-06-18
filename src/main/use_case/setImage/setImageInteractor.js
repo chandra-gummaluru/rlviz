@@ -1,4 +1,3 @@
-// Interactor for setting node images
 class SetImageInteractor extends SetImageInputBoundary {
     constructor(graph, commandHistory, outputBoundary) {
         super();

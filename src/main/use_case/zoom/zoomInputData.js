@@ -1,7 +1,3 @@
-/**
- * Input data for Zoom use cases
- * Plain data object containing request parameters
- */
 class ZoomInputData {
     /**
      * Create zoom input data

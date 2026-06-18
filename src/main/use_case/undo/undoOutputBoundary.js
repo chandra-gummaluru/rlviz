@@ -1,7 +1,4 @@
-/**
- * Output boundary interface for Undo use case
- * Defines the contract for presenting undo results
- */
+
 class UndoOutputBoundary {
     /**
      * Present the undo results

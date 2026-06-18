@@ -1,4 +1,3 @@
-// Interactor for Reset simulation action
 class ResetInteractor extends ResetInputBoundary {
     constructor(simulationState, outputBoundary) {
         super();

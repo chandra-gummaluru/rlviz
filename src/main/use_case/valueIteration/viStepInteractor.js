@@ -1,4 +1,3 @@
-// Interactor for VI Step — advances one sub-phase of the Bellman backup
 class VIStepInteractor extends VIStepInputBoundary {
     constructor(viState, outputBoundary, viViewModel) {
         super();

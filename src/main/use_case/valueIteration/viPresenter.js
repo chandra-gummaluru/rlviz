@@ -1,4 +1,3 @@
-// Presenter for Value Iteration — translates state changes to ViewModel updates
 class VIPresenter extends VIOutputBoundary {
     constructor(canvasViewModel) {
         super();

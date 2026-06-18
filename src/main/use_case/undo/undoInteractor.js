@@ -1,7 +1,3 @@
-/**
- * Interactor for Undo use case
- * Contains the business logic for undoing the last operation
- */
 class UndoInteractor {
     /**
      * @param {CommandHistory} commandHistory - The command history to operate on

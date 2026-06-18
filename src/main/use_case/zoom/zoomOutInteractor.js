@@ -1,8 +1,3 @@
-
-/**
- * Interactor for ZoomOut use case
- * Contains the business logic for zooming out (decreasing zoom level)
- */
 class ZoomOutInteractor extends ZoomInputBoundary {
     /**
      * @param {ZoomOutputBoundary} outputBoundary - The output boundary for presenting results

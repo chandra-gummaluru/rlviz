@@ -1,8 +1,4 @@
 
-/**
- * Presenter for Undo use case
- * Formats and presents undo results to the ViewModel
- */
 class UndoPresenter extends UndoOutputBoundary {
     /**
      * @param {CanvasViewModel} viewModel - The view model to update

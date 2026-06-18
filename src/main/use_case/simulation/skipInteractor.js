@@ -1,4 +1,4 @@
-// Interactor for Skip simulation action
+
 class SkipInteractor extends SkipInputBoundary {
     constructor(simulationState, outputBoundary) {
         super();

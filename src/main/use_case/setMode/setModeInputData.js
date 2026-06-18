@@ -1,7 +1,3 @@
-/**
- * Input data for SetMode use case
- * Plain data object containing request parameters
- */
 class SetModeInputData {
     /**
      * Create set mode input data

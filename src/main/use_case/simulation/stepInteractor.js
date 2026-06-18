@@ -1,4 +1,4 @@
-// Interactor for Step simulation action (advance one transition with animation)
+
 class StepInteractor extends StepInputBoundary {
     constructor(simulationState, traceGenerator, outputBoundary, startNodeProvider) {
         super();

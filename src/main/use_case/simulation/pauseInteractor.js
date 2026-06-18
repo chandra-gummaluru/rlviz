@@ -1,4 +1,3 @@
-// Interactor for Pause simulation action
 class PauseInteractor extends PauseInputBoundary {
     constructor(simulationState, outputBoundary) {
         super();

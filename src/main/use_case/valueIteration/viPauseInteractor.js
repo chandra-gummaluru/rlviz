@@ -1,4 +1,3 @@
-// Interactor for VI Pause — freezes animation mid-sequence
 class VIPauseInteractor extends VIPauseInputBoundary {
     constructor(viState, outputBoundary) {
         super();

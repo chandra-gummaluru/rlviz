@@ -1,4 +1,3 @@
-// Interactor for VI Reset — clears all state and returns to initial
 class VIResetInteractor extends VIResetInputBoundary {
     constructor(viState, outputBoundary) {
         super();

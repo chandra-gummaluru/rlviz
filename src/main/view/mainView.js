@@ -1,7 +1,3 @@
-COLOR_PALETTE = {
-    // Add a color palette here
-}
-
 class MainView {
     constructor(canvasViewModel, canvasController, menuBar, toolBar, rightPanel) {
         this.viewModel = canvasViewModel;

@@ -1,4 +1,4 @@
-// Shared animation logic for Play and Step simulation interactors
+
 class SimulationAnimator {
     constructor(simulationState, traceGenerator, outputBoundary, startNodeProvider) {
         this.simulationState = simulationState;
@@ -162,9 +162,6 @@ class SimulationAnimator {
         this.outputBoundary.presentRoundComplete(this.simulationState.currentNode);
     }
 
-    /**
-     * Get node from graph by ID
-     */
     getNodeFromGraph(nodeId) {
         if (this.traceGenerator && this.traceGenerator.graph) {
             return this.traceGenerator.graph.getNodeById(nodeId);
@@ -172,9 +169,6 @@ class SimulationAnimator {
         return null;
     }
 
-    /**
-     * Wait for current phase to complete
-     */
     waitForPhase() {
         return new Promise(resolve => {
             const checkComplete = () => {

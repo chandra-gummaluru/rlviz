@@ -1,4 +1,3 @@
-// Input data for SetImage use case
 class SetImageInputData {
     constructor(nodeId, imageData) {
         this.nodeId = nodeId;

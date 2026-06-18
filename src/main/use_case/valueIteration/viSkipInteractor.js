@@ -1,4 +1,3 @@
-// Interactor for VI Skip — completes one full state backup instantly
 class VISkipInteractor extends VISkipInputBoundary {
     constructor(viState, outputBoundary, viViewModel) {
         super();

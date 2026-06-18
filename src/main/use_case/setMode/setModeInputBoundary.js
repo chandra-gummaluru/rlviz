@@ -1,7 +1,3 @@
-/**
- * Input boundary interface for SetMode use case
- * Defines the contract for executing mode switch operations
- */
 class SetModeInputBoundary {
     /**
      * Execute the set mode operation

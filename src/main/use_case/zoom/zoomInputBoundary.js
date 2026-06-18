@@ -1,7 +1,3 @@
-/**
- * Input boundary interface for Zoom use cases
- * Defines the contract for executing zoom operations
- */
 class ZoomInputBoundary {
     /**
      * Execute the zoom operation

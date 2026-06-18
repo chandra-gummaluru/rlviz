@@ -1,4 +1,3 @@
-// Interactor for Play simulation action
 class PlayInteractor extends PlayInputBoundary {
     constructor(simulationState, traceGenerator, outputBoundary, startNodeProvider) {
         super();

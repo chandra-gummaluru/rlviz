@@ -1,4 +1,3 @@
-// Interactor for setting spinning arrow animation settings
 class SetSpinningArrowInteractor extends SetSpinningArrowInputBoundary {
     constructor(simulationState, outputBoundary) {
         super();

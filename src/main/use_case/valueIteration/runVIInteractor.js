@@ -1,4 +1,3 @@
-// Interactor for initializing and running Value Iteration computation
 class RunVIInteractor extends RunVIInputBoundary {
     constructor(graph, viState, outputBoundary) {
         super();

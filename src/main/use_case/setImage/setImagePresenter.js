@@ -1,4 +1,3 @@
-// Presenter for SetImage use case
 class SetImagePresenter extends SetImageOutputBoundary {
     constructor(viewModel) {
         super();
