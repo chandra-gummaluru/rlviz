@@ -15,18 +15,27 @@ class Command {
 
 // Command to add a node
 class AddNodeCommand extends Command {
-    constructor(graph, node) {
+    constructor(graph, node, selectionViewModel = null) {
         super();
         this.graph = graph;
         this.node = node;
+        this.selectionViewModel = selectionViewModel;
     }
 
     execute() {
         this.graph.addNode(this.node);
+        if (this.selectionViewModel) {
+            this.selectionViewModel.selectedNode = this.node;
+            this.selectionViewModel.selectedEdge = null;
+            this.selectionViewModel.selectedTextLabel = null;
+        }
     }
 
     undo() {
         this.graph.removeNode(this.node.id);
+        if (this.selectionViewModel && this.selectionViewModel.selectedNode === this.node) {
+            this.selectionViewModel.clearSelection();
+        }
     }
 
     getDescription() {

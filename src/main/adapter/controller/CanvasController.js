@@ -3,11 +3,16 @@ class CanvasController {
     constructor(viewModel, interactors) {
         this.viewModel = viewModel;
         this.interactors = interactors;
+        this.copiedNodeData = null;
+        this.lastClickedNodeForCopy = null;
+        this.preferLastClickedNodeForCopy = false;
     }
 
     // ===== Mouse Input Handling =====
 
     handleMousePress(screenX, screenY) {
+        this._blurActiveTextInput();
+
         const world = this.viewModel.screenToWorld(screenX, screenY);
         const x = world.x;
         const y = world.y;
@@ -230,13 +235,25 @@ class CanvasController {
         }
 
         // Undo
-        if ((key === 'z' || key === 'Z') && (keyIsDown(CONTROL) || keyIsDown(91))) {
+        if ((key === 'z' || key === 'Z') && this._isShortcutModifierDown()) {
             if (keyIsDown(SHIFT)) {
                 this.redo();
             } else {
                 this.undo();
             }
             return false; // Prevent default
+        }
+
+        // Copy selected node
+        if ((key === 'c' || key === 'C') && this._isShortcutModifierDown()) {
+            this.copySelectedNode();
+            return false;
+        }
+
+        // Paste copied node
+        if ((key === 'v' || key === 'V') && this._isShortcutModifierDown()) {
+            this.pasteCopiedNode();
+            return false;
         }
 
         // Reset zoom
@@ -333,6 +350,53 @@ class CanvasController {
         }
     }
 
+    copySelectedNode() {
+        const node = this._getNodeForCopy();
+        if (!node || (node.type !== 'state' && node.type !== 'action')) {
+            return false;
+        }
+
+        this.copiedNodeData = {
+            type: node.type,
+            name: node.name,
+            size: node.size,
+            image: node.image,
+            x: node.x,
+            y: node.y,
+            pasteCount: 0
+        };
+        return true;
+    }
+
+    pasteCopiedNode() {
+        if (!this.copiedNodeData ||
+            this.viewModel.mode !== 'editor' ||
+            this.viewModel.interaction.isInteracting()) {
+            return false;
+        }
+
+        const data = this.copiedNodeData;
+        data.pasteCount += 1;
+
+        const offset = 36 * data.pasteCount;
+        const node = data.type === 'state'
+            ? new StateNode(data.name, data.x + offset, data.y + offset, data.size)
+            : new ActionNode(data.name, data.x + offset, data.y + offset, data.size);
+
+        node.id = this._nextNodeId();
+        if (data.image !== undefined && data.image !== null) {
+            node.image = data.image;
+        }
+
+        const command = new AddNodeCommand(this.viewModel.graph, node, this.viewModel.selection);
+        this._executeCommand(command);
+        this.lastClickedNodeForCopy = node;
+        this.preferLastClickedNodeForCopy = false;
+        this.viewModel.interaction.clearEditorFocus();
+
+        return true;
+    }
+
     setMode(mode) {
         if (this.interactors.setMode) {
             const inputData = new SetModeInputData(mode);
@@ -341,6 +405,7 @@ class CanvasController {
         this.viewModel.selection.clearSelection();
         this.viewModel.interaction.startNode = null;
         this.viewModel.interaction.clearEditorFocus();
+        this.preferLastClickedNodeForCopy = false;
     }
 
     /**
@@ -440,6 +505,8 @@ class CanvasController {
     }
 
     _handleTextLabelClick(label, x, y) {
+        this.preferLastClickedNodeForCopy = false;
+
         // Select and start dragging
         if (this.interactors.selectNode) {
             const inputData = SelectNodeInputData.forTextLabel(label.id);
@@ -453,6 +520,8 @@ class CanvasController {
     }
 
     _handleEdgeLabelClick(edge, x, y) {
+        this.preferLastClickedNodeForCopy = false;
+
         // Start dragging edge label (doesn't select the edge)
         this.viewModel.interaction.draggingEdgeLabel = edge;
         this.viewModel.interaction.dragStartX = x;
@@ -463,6 +532,8 @@ class CanvasController {
     }
 
     _handleEdgeClick(edge) {
+        this.preferLastClickedNodeForCopy = false;
+
         // Select edge
         if (this.interactors.selectNode) {
             const inputData = SelectNodeInputData.forEdge(
@@ -474,6 +545,9 @@ class CanvasController {
     }
 
     _handleNodeClick(node, x, y) {
+        this.lastClickedNodeForCopy = node;
+        this.preferLastClickedNodeForCopy = true;
+
         // Check if clicking on edge of node (for resizing) in editor mode
         if (this.viewModel.mode === 'editor' &&
             GeometricHelper.isClickOnNodeEdge(node, x, y)) {
@@ -499,6 +573,7 @@ class CanvasController {
             const inputData = SelectNodeInputData.forNode(node.id);
             this.interactors.selectNode.select(inputData);
         }
+        this.preferLastClickedNodeForCopy = false;
 
         // Start dragging (in editor mode)
         if (this.viewModel.mode === 'editor') {
@@ -512,6 +587,8 @@ class CanvasController {
     }
 
     _handleCanvasClick() {
+        this.preferLastClickedNodeForCopy = false;
+
         // Clear all interaction states when clicking empty canvas
         this.viewModel.interaction.clearEditorFocus();
         this.viewModel.interaction.resizingNode = null;
@@ -621,6 +698,45 @@ class CanvasController {
     renameNode(nodeId, oldName, newName) {
         if (this.interactors.renameNode) {
             this.interactors.renameNode.executeRename(RenameNodeInputData.forExecution(nodeId, oldName, newName));
+        }
+    }
+
+    _nextNodeId() {
+        return this.viewModel.graph.nodes.length > 0
+            ? Math.max(...this.viewModel.graph.nodes.map(n => n.id)) + 1
+            : 0;
+    }
+
+    _getNodeForCopy() {
+        const lastClicked = this.lastClickedNodeForCopy;
+        if (this.preferLastClickedNodeForCopy &&
+            lastClicked &&
+            this.viewModel.graph.getNodeById(lastClicked.id) === lastClicked) {
+            return lastClicked;
+        }
+        return this.viewModel.selection.selectedNode;
+    }
+
+    _isShortcutModifierDown() {
+        return keyIsDown(CONTROL) || keyIsDown(91) || keyIsDown(93);
+    }
+
+    _blurActiveTextInput() {
+        const active = document.activeElement;
+        if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) {
+            active.blur();
+        }
+    }
+
+    _executeCommand(command) {
+        const commandHistory = this.interactors.undo?.commandHistory || this.interactors.redo?.commandHistory;
+        if (commandHistory) {
+            commandHistory.execute(command);
+            this.viewModel.updateUndoRedoState(commandHistory.canUndo(), commandHistory.canRedo());
+            this.viewModel.undoDescription = commandHistory.getUndoDescription() || '';
+            this.viewModel.redoDescription = commandHistory.getRedoDescription() || '';
+        } else {
+            command.execute();
         }
     }
 

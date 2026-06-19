@@ -643,7 +643,7 @@ function mouseMoved() {
 
 function keyPressed() {
     if (!mainView) return;
-    mainView.keyPressed();
+    return mainView.keyPressed();
 }
 
 function keyReleased() {

@@ -145,6 +145,7 @@ class Graph {
                 type: node.type,
                 name: node.name,
                 ...(includePositions ? { x: node.x, y: node.y, size: node.size } : {}),
+                ...(includePositions && node.image ? { image: node.image } : {}),
                 ...(node.type === 'state'
                     ? { actions: node.actions }
                     : { transitions: node.sas.map(s => ({
@@ -208,6 +209,7 @@ class Graph {
                 }
             }
             node.id = nodeData.id;
+            if (nodeData.image) node.image = nodeData.image;
             this.nodes.push(node);
         });
     }
