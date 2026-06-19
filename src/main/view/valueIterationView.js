@@ -319,17 +319,12 @@ class ValueIterationView {
             return;
         }
 
-        const bundledPhases = ['show_equation', 'show_actions', 'show_transitions', 'compute_q_values', 'select_max', 'revealing_value'];
+        const bundledPhases = ['show_equation', 'show_actions', 'explain_q', 'show_transitions', 'compute_q_values', 'select_max', 'revealing_value'];
         const phaseIdx = bundledPhases.indexOf(detail.subPhase);
         const perActionPhases = ['show_action', 'show_transition', 'compute_transition', 'show_q_result'];
         const isPerAction = perActionPhases.includes(detail.subPhase);
 
         if (phaseIdx < 0 && !isPerAction) return;
-
-        // Show equation overlay in bundled mode; per-action uses the Q-table instead
-        if (!isPerAction && detail.subPhase !== 'select_max' && detail.subPhase !== 'revealing_value') {
-            this._drawEquationOverlay(detail);
-        }
 
         if (isPerAction) {
             // Per-action mode: draw only current action and visible transitions
@@ -345,24 +340,24 @@ class ValueIterationView {
             if (detail.subPhase === 'show_q_result') {
                 this._drawSingleActionQValue(detail, action);
             }
-
-            // Draw the progressive Q-value table
-            this._drawQTable(detail);
         } else if (detail.subPhase === 'select_max' || detail.subPhase === 'revealing_value') {
             this._drawActionFanOut(detail);
             this._drawQValues(detail);
             this._drawMaxSelection(detail);
-            this._drawQTable(detail);
             if (detail.subPhase === 'revealing_value') {
                 this._drawRevealingValueOverlay(detail);
             }
         } else {
             // Bundled mode: cumulative phases
+            // phaseIdx: 1=show_actions, 2=explain_q, 3=show_transitions, 4=compute_q_values, 5=select_max
             if (phaseIdx >= 1) this._drawActionFanOut(detail);
-            if (phaseIdx >= 2) this._drawTransitionEdges(detail);
-            if (phaseIdx >= 3) this._drawQValues(detail);
-            if (phaseIdx >= 4) this._drawMaxSelection(detail);
+            if (phaseIdx === 2) this._drawQPlaceholders(detail);
+            if (phaseIdx >= 4) this._drawQValues(detail);
+            if (phaseIdx >= 3) this._drawTransitionEdges(detail);
+            if (phaseIdx >= 5) this._drawMaxSelection(detail);
         }
+
+        this._drawStatusStrip(detail);
     }
 
     /** Draw the Bellman equation overlay near the active state */
@@ -405,6 +400,58 @@ class ValueIterationView {
             mathRenderer.draw(drawingContext, line.text, boxX + 8, ly,
                 { color, em, alpha: a, alignX: 'left', alignY: 'middle' });
         });
+    }
+
+    /** Fixed screen-space status strip showing the current animation phase */
+    _drawStatusStrip(detail) {
+        const text = this._getStatusText(detail);
+        if (!text) return;
+
+        const canvasW = windowWidth - 300;
+        const x = 16;
+        const y = windowHeight - 54;
+        const w = Math.min(canvasW - 32, 620);
+        const h = 34;
+
+        push();
+        resetMatrix();
+        fill(255, 255, 255, 235);
+        stroke(100, 100, 100, 150);
+        strokeWeight(1);
+        rect(x, y, w, h, 6);
+        noStroke();
+        mathRenderer.draw(drawingContext, text, x + 12, y + h / 2, {
+            color: AppPalette.text.nearBlack,
+            em: 13,
+            alignX: 'left',
+            alignY: 'middle'
+        });
+        pop();
+    }
+
+    _getStatusText(detail) {
+        const phase = detail?.subPhase;
+        if (phase === 'compute_transition') {
+            const action = detail.actions?.[detail.currentActionIndex];
+            const t = action?.transitions?.[detail.currentTransitionIndex];
+            if (t) return `p=${t.probability.toFixed(2)}, r=${t.reward.toFixed(1)}  ->  term=${t.term.toFixed(2)}`;
+        }
+        if (phase === 'show_q_result') {
+            const action = detail.actions?.[detail.currentActionIndex];
+            if (action) return `Q(${action.actionName}) = ${action.qValue.toFixed(2)}`;
+        }
+        const map = {
+            'show_equation':    'Bellman backup for V(s)',
+            'show_actions':     'Compare available actions',
+            'explain_q':        'Each action gets one Q-value: the expected return after taking that action',
+            'show_action':      'Compare available actions',
+            'show_transitions': 'Transitions show how each Q(s,a) is calculated',
+            'show_transition':  'Reveal transition outcomes',
+            'compute_q_values': 'Compute Q(s,a)',
+            'select_max':       'Choose max Q',
+            'revealing_value':  'Store V(s)',
+        };
+        return map[phase] || '';
     }
 
     /** Draw action diamond nodes fanning out from the active state */
@@ -464,15 +511,25 @@ class ValueIterationView {
                     mathRenderer.draw(drawingContext, `p = ${t.probability.toFixed(2)}`,
                         labelX, labelY, { color: AppPalette.border.canvasDark, em: 9, alpha: aVal });
                     if (isComputed || showRewardForAction) {
-                        const gamma = detail.gamma || 0.9;
                         mathRenderer.draw(drawingContext, `r = ${t.reward.toFixed(1)}`,
                             labelX, labelY + 11, { color: AppPalette.text.medium, em: 9, alpha: aVal });
-                        const term = `${t.probability.toFixed(2)}\\cdot[${t.reward.toFixed(1)}+${gamma}\\cdot${t.nextValue.toFixed(1)}]=${t.term.toFixed(2)}`;
-                        mathRenderer.draw(drawingContext, term,
-                            labelX, labelY + 22, { color: AppPalette.text.mediumLight, em: 8, alpha: Math.round(180 * labelP) });
                     }
                 }
             });
+        });
+    }
+
+    /** Draw Q=? placeholder labels during explain_q phase, before numeric values are computed */
+    _drawQPlaceholders(detail) {
+        if (!detail.actions) return;
+        const count = detail.visibleActionCount !== undefined ? detail.visibleActionCount : detail.actions.length;
+        const fadeP = this._progress(detail, 'q_fade');
+        const alpha = Math.round(220 * fadeP);
+
+        detail.actions.slice(0, count).forEach(action => {
+            mathRenderer.draw(drawingContext, 'Q = ?',
+                action.x, action.y + this.ACTION_NODE_RADIUS + 4,
+                { color: AppPalette.text.medium, em: 10, alignX: 'center', alignY: 'top', alpha });
         });
     }
 
@@ -781,12 +838,8 @@ class ValueIterationView {
                     labelX, labelY, { color: AppPalette.border.canvasDark, em: 9, alpha: aVal });
                 const isComputed = showReward && (ti < transCount);
                 if (isComputed) {
-                    const gamma = detail.gamma || 0.9;
                     mathRenderer.draw(drawingContext, `r = ${t.reward.toFixed(1)}`,
                         labelX, labelY + 11, { color: AppPalette.text.medium, em: 9, alpha: aVal });
-                    const term = `${t.probability.toFixed(2)}\\cdot[${t.reward.toFixed(1)}+${gamma}\\cdot${t.nextValue.toFixed(1)}]=${t.term.toFixed(2)}`;
-                    mathRenderer.draw(drawingContext, term,
-                        labelX, labelY + 22, { color: AppPalette.text.mediumLight, em: 8, alpha: Math.round(180 * labelP) });
                 }
             }
         });
@@ -806,12 +859,8 @@ class ValueIterationView {
             mathRenderer.draw(drawingContext, `p = ${t.probability.toFixed(2)}`,
                 labelX, labelY, { color: AppPalette.border.canvasDark, em: 9 });
             if (showRewards) {
-                const gamma = detail.gamma || 0.9;
                 mathRenderer.draw(drawingContext, `r = ${t.reward.toFixed(1)}`,
                     labelX, labelY + 11, { color: AppPalette.text.medium, em: 9 });
-                const term = `${t.probability.toFixed(2)}\\cdot[${t.reward.toFixed(1)}+${gamma}\\cdot${t.nextValue.toFixed(1)}]=${t.term.toFixed(2)}`;
-                mathRenderer.draw(drawingContext, term,
-                    labelX, labelY + 22, { color: AppPalette.text.mediumLight, em: 8 });
             }
         });
     }
@@ -1032,6 +1081,9 @@ class ValueIterationView {
             case 'show_action':
                 this.tween.start(this._phaseId(detail, 'sa_line', detail.currentActionIndex ?? 0), VI_DUR_SA_LINE, 'linear');
                 this.tween.start(this._phaseId(detail, 'sa_head', detail.currentActionIndex ?? 0), VI_DUR_SA_HEAD, 'easeOut', VI_DUR_SA_HEAD_DELAY);
+                break;
+        case 'explain_q':
+                this.tween.start(this._phaseId(detail, 'q_fade'), 400, 'easeOut');
                 break;
             case 'show_transitions':
                 this._forVisibleTransitions(detail, (action, t, key, i) => {

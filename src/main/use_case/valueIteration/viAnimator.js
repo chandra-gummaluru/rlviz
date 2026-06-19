@@ -6,7 +6,7 @@ class VIAnimator {
         this.outputBoundary = outputBoundary;
         this.viViewModel = viViewModel; // needed to check perActionMode
 
-        this.SUB_PHASES = ['show_equation', 'show_actions', 'show_transitions', 'compute_q_values', 'select_max', 'revealing_value'];
+        this.SUB_PHASES = ['show_equation', 'show_actions', 'explain_q', 'show_transitions', 'compute_q_values', 'select_max', 'revealing_value'];
 
         this.TIMING = {
             COLUMN_SLIDE: 400,
@@ -14,6 +14,7 @@ class VIAnimator {
             // Sub-phase durations for detailed Bellman backup
             show_equation: 600,
             show_actions: 500,
+            explain_q: 700,
             show_transitions: 600,
             compute_q_values: 800,
             select_max: 600,
@@ -29,6 +30,7 @@ class VIAnimator {
         this.SKIP_TIMING = {
             show_equation: 0,
             show_actions: 0,
+            explain_q: 0,
             show_transitions: 0,
             compute_q_values: 0,
             select_max: 0,
@@ -241,6 +243,7 @@ class VIAnimator {
         } else {
             // Bundled mode
             phases.push({ phase: 'show_actions' });
+            phases.push({ phase: 'explain_q' });
             phases.push({ phase: 'show_transitions' });
             phases.push({ phase: 'compute_q_values' });
         }
@@ -321,6 +324,7 @@ class VIAnimator {
                 this.outputBoundary.presentEquationStart(colIdx, stateId);
                 break;
             case 'show_actions':
+            case 'explain_q':
             case 'show_action':
                 this.outputBoundary.presentActionsRevealed(colIdx, stateId);
                 break;

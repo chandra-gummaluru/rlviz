@@ -536,13 +536,14 @@ function setup() {
     // VI explanation phase constants (local to setup; labels/counts passed into buildExplanationDetail)
     const VI_EXPLAIN_PHASES = [
         'show_equation',
+        'explain_q',
         'show_actions',
         'show_transitions',
         'compute_q_values',
         'select_max',
         'revealing_value'
     ];
-    const VI_EXPLAIN_LABELS = ['Equation', 'Actions', 'Transitions', 'Q-Values', 'Select Max', 'Final Value'];
+    const VI_EXPLAIN_LABELS = ['Equation', 'What is Q?', 'Actions', 'Transitions', 'Q-Values', 'Select Max', 'Final Value'];
 
     const onVICellClick = (columnIndex, stateId, actionId) => {
         if (!viPresenter || !valueIterationViewModel) return;

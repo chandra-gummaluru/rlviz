@@ -8,9 +8,10 @@ class TraceGenerator {
      * Generate a valid trace starting from a given state node
      * @param {Object} startNode - The starting state node
      * @param {number} maxSteps - Maximum number of nodes in the trace
+     * @param {Object} policy - Optional stateId -> actionId map. Missing entries use random actions.
      * @returns {Array} visited - Array of {id, type, name} objects representing the path
      */
-    generate(startNode, maxSteps = 50) {
+    generate(startNode, maxSteps = 50, policy = {}) {
         if (!startNode) {
             throw new Error('Start node is required');
         }
@@ -30,8 +31,8 @@ class TraceGenerator {
             stepCount++;
 
             if (current.type === 'state') {
-                // From state: pick random action
-                const nextAction = this.selectRandomAction(current);
+                // From state: follow selected policy action when present; otherwise pick random action
+                const nextAction = this.selectActionForPolicy(current, policy);
                 if (!nextAction) {
                     break;  // Terminal state
                 }
@@ -53,6 +54,27 @@ class TraceGenerator {
     }
 
     /**
+     * Select an action from a state using a deterministic policy when available.
+     */
+    selectActionForPolicy(stateNode, policy = {}) {
+        if (!stateNode.actions || stateNode.actions.length === 0) {
+            return null;
+        }
+
+        const selectedActionId = policy[stateNode.id];
+        if (selectedActionId !== undefined && selectedActionId !== null && selectedActionId !== '') {
+            const normalizedId = Number(selectedActionId);
+            const matchingActionId = stateNode.actions.find(actionId => Number(actionId) === normalizedId);
+            if (matchingActionId !== undefined) {
+                const actionNode = this.graph.nodes.find(n => n.type === 'action' && n.id === matchingActionId);
+                if (actionNode) return actionNode;
+            }
+        }
+
+        return this.selectRandomAction(stateNode);
+    }
+
+    /**
      * Select a random action from a state node's available actions
      */
     selectRandomAction(stateNode) {
@@ -65,7 +87,7 @@ class TraceGenerator {
         const actionId = stateNode.actions[randomIndex];
 
         // Find the action node
-        const actionNode = this.graph.getNodeById(actionId);
+        const actionNode = this.graph.nodes.find(n => n.type === 'action' && n.id === actionId);
         return actionNode;
     }
 

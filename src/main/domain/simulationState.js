@@ -24,10 +24,14 @@ class SimulationState {
         this.initialState = null;  // Starting state node
         this.totalReward = 0;  // Accumulated reward
         this.stepCount = 0;  // Number of state-action-state transitions completed
+        this.rewardHistory = [];  // Rewards collected at each completed transition
         this.pendingReward = 0;  // Reward awaiting particle animation completion
         this.pendingRewardActionNodeId = null;  // Action node that generated pending reward
         this.currentDecisionProbs = [];  // Available actions with uniform probability
         this.currentOutcomeProbs = [];  // Possible next states with their probabilities
+
+        // Policy settings: stateId -> selected actionId. Missing entries use random action selection.
+        this.policy = {};
 
         // Spinning arrow animation settings
         this.spinningArrowEnabled = true;  // Toggle for spinning arrow animation (on by default)
@@ -56,6 +60,7 @@ class SimulationState {
         this.initialState = visited[0];
         this.totalReward = 0;
         this.stepCount = 0;
+        this.rewardHistory = [];
         this.pendingReward = 0;
         this.pendingRewardActionNodeId = null;
         this.currentDecisionProbs = [];
@@ -228,6 +233,7 @@ class SimulationState {
         this.initialState = null;
         this.totalReward = 0;
         this.stepCount = 0;
+        this.rewardHistory = [];
         this.pendingReward = 0;
         this.pendingRewardActionNodeId = null;
         this.currentDecisionProbs = [];
@@ -299,6 +305,7 @@ class SimulationState {
         this.pendingReward = reward;
         this.pendingRewardActionNodeId = actionNodeId;
         this.stepCount++;
+        this.rewardHistory.push(reward);
     }
 
     // Commit pending reward to total (called when particles arrive)
@@ -328,9 +335,23 @@ class SimulationState {
             currentState: this.getCurrentState(),
             totalReward: this.totalReward,
             stepCount: this.stepCount,
+            rewardHistory: [...this.rewardHistory],
+            policy: { ...this.policy },
             decisionProbs: this.currentDecisionProbs,
             outcomeProbs: this.currentOutcomeProbs
         };
+    }
+
+    setPolicyAction(stateId, actionId) {
+        if (actionId === null || actionId === undefined || actionId === '') {
+            delete this.policy[stateId];
+            return;
+        }
+        this.policy[stateId] = actionId;
+    }
+
+    getPolicyAction(stateId) {
+        return this.policy[stateId] ?? null;
     }
 
     // Spinning arrow animation methods

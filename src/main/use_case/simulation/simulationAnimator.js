@@ -39,7 +39,7 @@ class SimulationAnimator {
             return false;
         }
 
-        const visited = this.traceGenerator.generate(startNode, 50);
+        const visited = this.traceGenerator.generate(startNode, 50, this.simulationState.policy);
         this.simulationState.setTrace(visited);
         return true;
     }

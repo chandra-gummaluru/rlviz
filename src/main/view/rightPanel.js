@@ -174,7 +174,7 @@ class RightPanel {
 
         const latex = createDiv();
         latex.parent(titleContainer);
-        latex.html('$$\\langle \\mathcal{S}, s_0, \\mathcal{A}, P, r, \\gamma \\rangle$$');
+        latex.html('$$\\langle \\mathcal{S}, s_0, \\mathcal{A}, P, R, \\gamma \\rangle$$');
         latex.addClass('panel-latex');
 
         // State Space Section
@@ -696,36 +696,73 @@ class RightPanel {
 
         const simulationState = this.viewModel.simulationState;
         const stats = simulationState.getSimulationStats();
+        const gamma = this.discountFactor;
+        const rewardHistory = stats.rewardHistory || [];
+        const returnValue = rewardHistory.reduce((sum, reward, t) => sum + Math.pow(gamma, t) * reward, 0);
 
-        // Initial State
-        this.createSection('Initial State', () => {
-            const stateDiv = createDiv();
-            stateDiv.parent(this.contentContainer);
-            if (stats.initialState) {
-                const stateName = createDiv(stats.initialState.name);
-                stateName.parent(stateDiv);
-                stateName.addClass('panel-stat-value');
-                stateName.addClass('panel-stat-value--primary');
-            } else {
-                const noState = createDiv('Not started');
-                noState.parent(stateDiv);
-                noState.addClass('panel-empty');
-            }
+        // Steps
+        this.createSection('Steps', () => {
+            const stepsDiv = createDiv();
+            stepsDiv.parent(this.contentContainer);
+            const stepsValue = createDiv(stats.stepCount.toString());
+            stepsValue.parent(stepsDiv);
+            stepsValue.addClass('panel-stat-value--large-primary');
         });
 
-        // Current State
-        this.createSection('Current State', () => {
-            const stateDiv = createDiv();
-            stateDiv.parent(this.contentContainer);
-            if (stats.currentState) {
-                const stateName = createDiv(stats.currentState.name);
-                stateName.parent(stateDiv);
-                stateName.addClass('panel-stat-value');
-                stateName.addClass('panel-stat-value--success');
+        // Discounted return
+        this.createSection('Utility', () => {
+            const utilityDiv = createDiv();
+            utilityDiv.parent(this.contentContainer);
+
+            const formula = createDiv();
+            formula.parent(utilityDiv);
+            formula.html('$$G = \\sum_{t=0}^{T-1} \\gamma^t r_t$$');
+            formula.addClass('panel-latex');
+
+            const utilityValue = createDiv(returnValue.toFixed(2));
+            utilityValue.parent(utilityDiv);
+            utilityValue.addClass('panel-stat-value--large');
+            this._applyRewardColor(utilityValue, returnValue);
+
+            const timeline = createDiv();
+            timeline.parent(utilityDiv);
+            timeline.style('display', 'grid');
+            timeline.style('grid-template-columns', 'repeat(auto-fit, minmax(72px, 1fr))');
+            timeline.style('gap', '6px');
+            timeline.style('margin-top', '10px');
+
+            if (rewardHistory.length === 0) {
+                const empty = createDiv('No rewards collected');
+                empty.parent(timeline);
+                empty.addClass('panel-empty');
             } else {
-                const noState = createDiv('Not at a state');
-                noState.parent(stateDiv);
-                noState.addClass('panel-empty');
+                rewardHistory.forEach((reward, t) => {
+                    const discounted = Math.pow(gamma, t) * reward;
+                    const cell = createDiv();
+                    cell.parent(timeline);
+                    cell.style('border', '1px solid #e0e0e0');
+                    cell.style('border-radius', '4px');
+                    cell.style('padding', '6px');
+                    cell.style('background', '#fafafa');
+
+                    const label = createDiv(`T = ${t}`);
+                    label.parent(cell);
+                    label.style('font-size', '11px');
+                    label.style('font-weight', '600');
+                    label.style('color', '#555');
+
+                    const term = createDiv(`&gamma;^${t} &times; ${reward.toFixed(2)}`);
+                    term.parent(cell);
+                    term.style('font-size', '11px');
+                    term.style('margin-top', '4px');
+
+                    const value = createDiv(discounted.toFixed(2));
+                    value.parent(cell);
+                    value.style('font-size', '13px');
+                    value.style('font-weight', '600');
+                    value.style('margin-top', '3px');
+                    this._applyRewardColor(value, discounted);
+                });
             }
         });
 
@@ -771,80 +808,64 @@ class RightPanel {
             centerLine.addClass('reward-bar-center');
         });
 
-        // Steps
-        this.createSection('Steps', () => {
-            const stepsDiv = createDiv();
-            stepsDiv.parent(this.contentContainer);
-            const stepsValue = createDiv(stats.stepCount.toString());
-            stepsValue.parent(stepsDiv);
-            stepsValue.addClass('panel-stat-value--large-primary');
+        // Policy
+        this.createSection('Policy', () => {
+            const policyDiv = createDiv();
+            policyDiv.parent(this.contentContainer);
+
+            const states = this.viewModel.graph.nodes.filter(n => n.type === 'state');
+            if (states.length === 0) {
+                const empty = createDiv('No states available');
+                empty.parent(policyDiv);
+                empty.addClass('panel-empty');
+                return;
+            }
+
+            const note = createDiv('Select pi(s). Random chooses uniformly among available actions.');
+            note.parent(policyDiv);
+            note.addClass('panel-hint');
+            note.style('margin-bottom', '8px');
+
+            states.forEach(stateNode => {
+                const row = createDiv();
+                row.parent(policyDiv);
+                row.style('display', 'grid');
+                row.style('grid-template-columns', 'minmax(0, 1fr) minmax(110px, 1.2fr)');
+                row.style('gap', '8px');
+                row.style('align-items', 'center');
+                row.style('margin-bottom', '8px');
+
+                const label = createDiv(`pi(${stateNode.name})`);
+                label.parent(row);
+                label.style('font-size', '12px');
+                label.style('font-weight', '600');
+                label.style('color', '#444');
+
+                const select = createSelect();
+                select.parent(row);
+                select.addClass('panel-input');
+                select.option('Random', '');
+
+                (stateNode.actions || []).forEach(actionId => {
+                    const actionNode = this.viewModel.graph.nodes.find(n => n.type === 'action' && n.id === actionId);
+                    if (actionNode) {
+                        select.option(actionNode.name, String(actionId));
+                    }
+                });
+
+                const selectedAction = simulationState.getPolicyAction(stateNode.id);
+                select.selected(selectedAction === null ? '' : String(selectedAction));
+                select.changed(() => {
+                    const selectedValue = select.value();
+                    simulationState.setPolicyAction(stateNode.id, selectedValue === '' ? null : Number(selectedValue));
+                    if (simulationState.replayInitialized) {
+                        simulationState.reset();
+                    }
+                    this.updateContent();
+                    if (typeof redraw === 'function') redraw();
+                });
+            });
         });
-
-        // Decision p(a|s)
-        if (stats.decisionProbs && stats.decisionProbs.length > 0) {
-            this.createSection('Decision p(a|s)', () => {
-                const decisionDiv = createDiv();
-                decisionDiv.parent(this.contentContainer);
-
-                stats.decisionProbs.forEach(decision => {
-                    const row = createDiv();
-                    row.parent(decisionDiv);
-                    row.addClass('panel-decision-row');
-
-                    const actionName = createDiv(decision.actionName);
-                    actionName.parent(row);
-                    actionName.addClass('panel-decision-name');
-
-                    const prob = createDiv(decision.probability.toFixed(3));
-                    prob.parent(row);
-                    prob.addClass('panel-decision-prob');
-                });
-            });
-        }
-
-        // Outcome p(s'|a,s)
-        if (stats.outcomeProbs && stats.outcomeProbs.length > 0) {
-            this.createSection('Outcome p(s\'|a,s)', () => {
-                const outcomeDiv = createDiv();
-                outcomeDiv.parent(this.contentContainer);
-
-                stats.outcomeProbs.forEach(outcome => {
-                    const row = createDiv();
-                    row.parent(outcomeDiv);
-                    row.addClass('panel-outcome-card');
-
-                    const stateName = createDiv(outcome.stateName);
-                    stateName.parent(row);
-                    stateName.addClass('panel-outcome-name');
-
-                    const probRow = createDiv();
-                    probRow.parent(row);
-                    probRow.addClass('panel-outcome-detail');
-
-                    const probLabel = createDiv('Probability:');
-                    probLabel.parent(probRow);
-                    probLabel.addClass('panel-outcome-label');
-
-                    const prob = createDiv(outcome.probability.toFixed(3));
-                    prob.parent(probRow);
-                    prob.addClass('panel-outcome-value');
-                    prob.addClass('panel-outcome-value--primary');
-
-                    const rewardRow = createDiv();
-                    rewardRow.parent(row);
-                    rewardRow.addClass('panel-outcome-detail');
-
-                    const rewardLabel = createDiv('Reward:');
-                    rewardLabel.parent(rewardRow);
-                    rewardLabel.addClass('panel-outcome-label');
-
-                    const reward = createDiv(outcome.reward.toFixed(2));
-                    reward.parent(rewardRow);
-                    reward.addClass('panel-outcome-value');
-                    this._applyRewardColor(reward, outcome.reward);
-                });
-            });
-        }
 
     }
 
@@ -967,6 +988,14 @@ class RightPanel {
         }
 
         if (detail.stepIndex === 1) {
+            // What is Q? — definition of Q(s,a)
+            return [
+                { type: 'header', text: `Q(s, a) = \\sum_{s'} P(s'|s,a)\\bigl[R(s,a,s') + ${g}\\,V_{${t + 1}}(s')\\bigr]` },
+                { type: 'normal', text: `\\text{expected return from taking action } a \\text{ in state } s` }
+            ];
+        }
+
+        if (detail.stepIndex === 2) {
             const lines = [{
                 type: 'header',
                 text: `V_{${t}}(\\text{${s}}) = \\max\\{\\, Q(\\text{${s}}, a) \\,\\}`
@@ -978,7 +1007,7 @@ class RightPanel {
             return lines;
         }
 
-        if (detail.stepIndex === 2) {
+        if (detail.stepIndex === 3) {
             const clicked = (detail.actions || []).find(ac => ac.actionId === detail.selectedActionId);
             if (!clicked) {
                 return [{
@@ -1007,6 +1036,7 @@ class RightPanel {
     _renderExplanationPanel(detail) {
         const phaseDescriptions = {
             'Equation':     'The Bellman equation shows how V(s) is computed from the best Q(s,a).',
+            'What is Q?':   'Q(s,a) is the expected total return from taking action a in state s, then following the optimal policy. One Q-value per action — the best one becomes V(s).',
             'Actions':      'Each action available from this state fans out as a diamond node.',
             'Transitions':  'Each action leads to successor states with probability p and reward r.',
             'Q-Values':     'Q(s,a) sums the weighted future values across all transitions.',
@@ -1093,8 +1123,8 @@ class RightPanel {
         callout.style('color', 'var(--color-primary)');
         callout.style('font-weight', '600');
 
-        // Action Q-value table (steps >= 3, i.e. Q-Values and beyond)
-        if (detail.stepIndex >= 3 && detail.actions && detail.actions.length > 0) {
+        // Action Q-value table (steps >= 4, i.e. Q-Values and beyond)
+        if (detail.stepIndex >= 4 && detail.actions && detail.actions.length > 0) {
             const tableContainer = createDiv();
             tableContainer.parent(this.contentContainer);
             tableContainer.style('padding', '0 12px 8px');
@@ -1145,8 +1175,8 @@ class RightPanel {
             tableContainer.elt.appendChild(tableEl);
         }
 
-        // Result line (steps >= 4, i.e. Select Max and Final Value)
-        if (detail.stepIndex >= 4 && detail.value != null) {
+        // Result line (steps >= 5, i.e. Select Max and Final Value)
+        if (detail.stepIndex >= 5 && detail.value != null) {
             const resultLine = createDiv(`V<sub>${detail.timestep}</sub>(${detail.stateName}) = ${detail.value.toFixed(2)}`);
             resultLine.parent(this.contentContainer);
             resultLine.style('padding', '4px 12px 8px');
