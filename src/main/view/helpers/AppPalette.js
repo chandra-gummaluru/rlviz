@@ -53,7 +53,8 @@ const AppPalette = deepFreeze({
         held:          '#9CCC65',
         activeInitial: '#FF9800',
         badgeState:    '#2D6A4F',
-        badgeAction:   '#1565C0'
+        badgeAction:   '#1565C0',
+        startRing:     '#FFC107'
     },
     edge: {
         default:      '#666666',
@@ -79,8 +80,10 @@ const AppPalette = deepFreeze({
         highlightYellow: '#FFF03C'
     },
     simulation: {
-        travelBall:    '#FFD700',
-        spinningArrow: '#FF5722'
+        travelBall:          '#FFD700',
+        spinningArrow:       '#FF5722',
+        spinLabelHighlight:  '#FFEB3B',
+        spinLabelBackground: '#FFFFFF'
     }
 });
 

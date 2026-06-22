@@ -5,6 +5,7 @@ class NodesObj {
         this.y = posY;
         this.size = size;
         this.id = null;
+        this.nameLabelOffset = null;
     }
 
     getName() {
@@ -22,6 +23,26 @@ class NodesObj {
     setPosition(newX, newY) {
         this.x = newX;
         this.y = newY;
+    }
+
+    getNameLabelPosition() {
+        if (this.nameLabelOffset) {
+            return {
+                x: this.x + this.nameLabelOffset.x,
+                y: this.y + this.nameLabelOffset.y
+            };
+        }
+        return {
+            x: this.x,
+            y: this.y - this.size - 12
+        };
+    }
+
+    setNameLabelPosition(newX, newY) {
+        this.nameLabelOffset = {
+            x: newX - this.x,
+            y: newY - this.y
+        };
     }
 
     getSize() {

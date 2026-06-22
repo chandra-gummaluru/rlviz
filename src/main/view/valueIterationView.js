@@ -1,6 +1,16 @@
 // --- File-local rendering constants ---
 const VI_ACTION_NODE_RADIUS  = 18;
 
+// Escape special TeX characters in node/action names interpolated into \text{...}.
+function _viLatexEscape(text) {
+    return String(text)
+        .replace(/\\/g, '\\textbackslash{}')
+        .replace(/\{/g, '\\{').replace(/\}/g, '\\}')
+        .replace(/_/g, '\\_').replace(/\^/g, '\\^{}')
+        .replace(/&/g, '\\&').replace(/%/g, '\\%')
+        .replace(/\$/g, '\\$').replace(/#/g, '\\#');
+}
+
 const VI_ALPHA_COMPLETED     = 90;   // completed columns and inactive same-column nodes
 const VI_ALPHA_ACTIVE_SAME   = 50;   // non-active nodes within the active column
 const VI_ALPHA_NEXT_COL      = 200;  // nodes in the column immediately after the active one
@@ -784,7 +794,7 @@ class ValueIterationView {
             strokeWeight(1);
             line(tableX, vRowY, tableX + tableW, vRowY);
 
-            const vMaxLatex = `V(\\text{${detail.stateName}}) = \\max = ${detail.value.toFixed(2)}`;
+            const vMaxLatex = `V(\\text{${_viLatexEscape(detail.stateName)}}) = \\max = ${detail.value.toFixed(2)}`;
             mathRenderer.draw(drawingContext, vMaxLatex,
                 tableX + tableW - 10, vRowY + rowH / 2,
                 { color: AppPalette.valueIteration.result, em: 12, alignX: 'right', alignY: 'middle' });
@@ -995,7 +1005,7 @@ class ValueIterationView {
     // --- V badge helpers ---
 
     _drawStaticVBadge(detail, alpha = 220) {
-        const latex = `V_{${detail.timestep}}(\\text{${detail.stateName}}) = ${detail.value.toFixed(2)}`;
+        const latex = `V_{${detail.timestep}}(\\text{${_viLatexEscape(detail.stateName)}}) = ${detail.value.toFixed(2)}`;
         const color = AppPalette.valueIteration.badge;
         const em = 13;
         const vx = detail.stateX;
@@ -1028,9 +1038,14 @@ class ValueIterationView {
 
         if (badgeP <= 0) return;
 
-        const displayValue = detail.value * countP;
-        const finalLatex  = `V_{${detail.timestep}}(\\text{${detail.stateName}}) = ${detail.value.toFixed(2)}`;
-        const currentLatex = `V_{${detail.timestep}}(\\text{${detail.stateName}}) = ${displayValue.toFixed(2)}`;
+        // Quantize to steps of 0.05 to limit unique cache entries during count-up animation.
+        const rawValue = detail.value * countP;
+        const displayValue = Math.round(rawValue * 20) / 20;
+        const escapedName = _viLatexEscape(detail.stateName);
+        const finalLatex  = `V_{${detail.timestep}}(\\text{${escapedName}}) = ${detail.value.toFixed(2)}`;
+        const currentLatex = countP >= 1
+            ? finalLatex
+            : `V_{${detail.timestep}}(\\text{${escapedName}}) = ${displayValue.toFixed(2)}`;
         const badgeColor = AppPalette.valueIteration.badge;
         const em = 13;
         const vx = detail.stateX;
@@ -1050,10 +1065,23 @@ class ValueIterationView {
         rect(vx - fullTw / 2, vy - th / 2, fullTw, th, 12);
         pop();
 
-        // Draw text at full scale (only when badge is mostly open)
+        // Draw text at full scale (only when badge is mostly open).
+        // Fall back to plain p5 text if the KaTeX image isn't ready yet so the badge is never blank.
         if (badgeP > 0.5) {
-            mathRenderer.draw(drawingContext, currentLatex, vx, vy,
-                { color: AppPalette.text.inverse, em, alpha: Math.round(220 * Math.min((badgeP - 0.5) * 2, 1)) });
+            const textAlpha = Math.round(220 * Math.min((badgeP - 0.5) * 2, 1));
+            const drawn = mathRenderer.draw(drawingContext, currentLatex, vx, vy,
+                { color: AppPalette.text.inverse, em, alpha: textAlpha });
+            if (!drawn) {
+                push();
+                fill(AppPalette.text.inverse);
+                noStroke();
+                textSize(em);
+                textAlign(CENTER, CENTER);
+                textFont('Calibri, "Segoe UI", Tahoma, sans-serif');
+                if (typeof drawingContext !== 'undefined') drawingContext.globalAlpha *= textAlpha / 255;
+                text(mathRenderer._plainText(currentLatex), vx, vy);
+                pop();
+            }
         }
     }
 
@@ -1111,11 +1139,15 @@ class ValueIterationView {
                 this.tween.start(this._phaseId(detail, 'select_burst'), VI_DUR_SELECT_BURST, 'easeOut', scanDur);
                 break;
             }
-            case 'revealing_value':
+            case 'revealing_value': {
                 this.tween.start(this._phaseId(detail, 'badge_expand'), VI_DUR_BADGE_EXPAND, 'easeOut');
                 this.tween.start(this._phaseId(detail, 'value_countup'), VI_DUR_VALUE_COUNTUP, 'easeInOut');
                 this.tween.start(this._phaseId(detail, 'node_pulse'), VI_DUR_NODE_PULSE, 'easeOut');
+                // Pre-warm the final badge label so KaTeX image is ready by the time countP reaches 1
+                const _prewarmLatex = `V_{${detail.timestep}}(\\text{${_viLatexEscape(detail.stateName)}}) = ${detail.value.toFixed(2)}`;
+                mathRenderer.getCachedSize(_prewarmLatex, AppPalette.valueIteration.badge, 13);
                 break;
+            }
         }
     }
 

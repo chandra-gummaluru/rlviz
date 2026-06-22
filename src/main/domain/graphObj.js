@@ -146,6 +146,12 @@ class Graph {
                 name: node.name,
                 ...(includePositions ? { x: node.x, y: node.y, size: node.size } : {}),
                 ...(includePositions && node.image ? { image: node.image } : {}),
+                ...(includePositions && node.nameLabelOffset ? {
+                    nameLabelOffset: {
+                        x: node.nameLabelOffset.x,
+                        y: node.nameLabelOffset.y
+                    }
+                } : {}),
                 ...(node.type === 'state'
                     ? { actions: node.actions }
                     : { transitions: node.sas.map(s => ({
@@ -210,6 +216,12 @@ class Graph {
             }
             node.id = nodeData.id;
             if (nodeData.image) node.image = nodeData.image;
+            if (nodeData.nameLabelOffset) {
+                node.nameLabelOffset = {
+                    x: nodeData.nameLabelOffset.x || 0,
+                    y: nodeData.nameLabelOffset.y || 0
+                };
+            }
             this.nodes.push(node);
         });
     }

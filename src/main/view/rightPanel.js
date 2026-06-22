@@ -11,6 +11,13 @@ const RP_REWARD_BAR_HALF_PCT = 50;     // percent representing one full half of 
 
 // Right panel displaying MDP information and node editing
 
+// Render a LaTeX string directly to HTML via KaTeX.
+// display=true for block (display) math, false for inline.
+function renderKatex(latex, display = false) {
+    if (typeof katex === 'undefined') return `<span>${latex}</span>`;
+    return katex.renderToString(latex, { throwOnError: false, displayMode: display });
+}
+
 function latexEscapeText(value) {
     return String(value)
         .replace(/\\/g, '\\textbackslash{}')
@@ -53,13 +60,12 @@ class RightPanel {
         // Discount factor (gamma) for MDP - editable
         this.discountFactor = RP_DEFAULT_DISCOUNT;
 
-        // Sequence counter to cancel stale async MathJax renders
-        this.mathJaxRenderSeq = 0;
-        this.mathJaxRetryCount = 0;
-        this.mathJaxRetryTimer = null;
-        this.mathJaxRetryMax = 600;
-        this.mathJaxRetryDelayMs = 50;
-        this.mathJaxWarnedUnavailable = false;
+        this.simStatDisplay = {
+            steps: 0,
+            utility: 0,
+            totalReward: 0
+        };
+        this.simStatAnimationFrame = null;
 
         this.callbacks = {
             onSpinningArrowToggle: (enabled) => {
@@ -90,7 +96,12 @@ class RightPanel {
     }
 
     updateContent() {
-        // Replace container with a fresh element so MathJax always sees an unprocessed root
+        if (this.simStatAnimationFrame !== null && typeof cancelAnimationFrame === 'function') {
+            cancelAnimationFrame(this.simStatAnimationFrame);
+            this.simStatAnimationFrame = null;
+        }
+
+        // Recreate container so renderMathInElement always processes a fresh, unmodified DOM tree
         if (this.contentContainer) this.contentContainer.remove();
         this.contentContainer = createDiv();
         this.contentContainer.parent(this.panelElement);
@@ -118,193 +129,107 @@ class RightPanel {
             this.renderMDPInfoPanel();
         }
 
-        this._typesetMath();
-    }
-
-    _typesetMath() {
-        if (!window.MathJax || !MathJax.startup || !MathJax.typesetPromise || !this.contentContainer) {
-            if (!this.contentContainer) {
-                return;
-            }
-
-            if (this.mathJaxRetryCount < this.mathJaxRetryMax && !this.mathJaxRetryTimer) {
-                this.mathJaxRetryCount++;
-                this.mathJaxRetryTimer = setTimeout(() => {
-                    this.mathJaxRetryTimer = null;
-                    this._typesetMath();
-                }, this.mathJaxRetryDelayMs);
-            } else if (this.mathJaxRetryCount >= this.mathJaxRetryMax && !this.mathJaxWarnedUnavailable) {
-                this.mathJaxWarnedUnavailable = true;
-                this.mathJaxRetryCount = 0;
-                console.warn('[MJ] MathJax did not become ready for right panel typesetting.');
-            }
-            return;
-        }
-
-        this.mathJaxRetryCount = 0;
-        this.mathJaxWarnedUnavailable = false;
-        if (this.mathJaxRetryTimer) {
-            clearTimeout(this.mathJaxRetryTimer);
-            this.mathJaxRetryTimer = null;
-        }
-
-        const target = this.contentContainer.elt;
-        const seq = ++this.mathJaxRenderSeq;
-
-        MathJax.startup.promise
-            .then(() => {
-                if (seq !== this.mathJaxRenderSeq || !document.body.contains(target)) {
-                    return null;
-                }
-                return MathJax.typesetPromise([target]);
-            })
-            .catch(e => console.error('[MJ] typesetPromise failed:', e));
     }
 
     renderMDPInfoPanel() {
-        // Title with LaTeX notation
-        const titleContainer = createDiv();
-        titleContainer.parent(this.contentContainer);
-        titleContainer.addClass('panel-section-margin');
-
-        const title = createDiv('Markov Decision Process');
-        title.parent(titleContainer);
-        title.addClass('panel-title');
-        title.addClass('panel-title--with-gap');
-
-        const latex = createDiv();
-        latex.parent(titleContainer);
-        latex.html('$$\\langle \\mathcal{S}, s_0, \\mathcal{A}, P, R, \\gamma \\rangle$$');
-        latex.addClass('panel-latex');
-
-        // State Space Section
-        this.createSection('State Space', () => {
-            const states = this.viewModel.graph.nodes.filter(n => n.type === 'state');
-            const stateList = createDiv();
-            stateList.parent(this.contentContainer);
-            stateList.addClass('panel-section-content');
-
-            if (states.length === 0) {
-                const setNotation = createDiv();
-                setNotation.parent(stateList);
-                setNotation.html('$$\\mathcal{S} = \\{\\}$$');
-                setNotation.addClass('panel-set-notation');
-            } else {
-                const stateNames = buildSetLatex(states, RP_SET_CHAR_LIMIT);
-                const setNotation = createDiv();
-                setNotation.parent(stateList);
-                setNotation.html(`$$\\mathcal{S} = \\{${stateNames}\\}$$`);
-                setNotation.addClass('panel-set-notation');
-                setNotation.addClass('panel-set-notation--wrap');
-            }
-
-        });
-
-        // Action Space Section
-        this.createSection('Action Space', () => {
-            const actions = this.viewModel.graph.nodes.filter(n => n.type === 'action');
-            const actionList = createDiv();
-            actionList.parent(this.contentContainer);
-            actionList.addClass('panel-section-content');
-
-            if (actions.length === 0) {
-                const setNotation = createDiv();
-                setNotation.parent(actionList);
-                setNotation.html('$$\\mathcal{A} = \\{\\}$$');
-                setNotation.addClass('panel-set-notation');
-            } else {
-                const actionNames = buildSetLatex(actions, RP_SET_CHAR_LIMIT);
-                const setNotation = createDiv();
-                setNotation.parent(actionList);
-                setNotation.html(`$$\\mathcal{A} = \\{${actionNames}\\}$$`);
-                setNotation.addClass('panel-set-notation');
-                setNotation.addClass('panel-set-notation--wrap');
-            }
-
-        });
-
-        // Probability Section
-        this.createSection('Probability', () => {
-            const probabilityInfo = createDiv();
-            probabilityInfo.parent(this.contentContainer);
-            probabilityInfo.addClass('panel-section-content');
+        // Initial State (s₀) Section
+        this.createSection('Initial State', () => {
+            const s0Container = createDiv();
+            s0Container.parent(this.contentContainer);
+            s0Container.addClass('panel-section-content');
 
             const states = this.viewModel.graph.nodes.filter(n => n.type === 'state');
-            const actions = this.viewModel.graph.nodes.filter(n => n.type === 'action');
 
-            if (states.length === 0 || actions.length === 0) {
-                const empty = createDiv('Insufficient data');
-                empty.parent(probabilityInfo);
-                empty.addClass('panel-empty');
-            } else {
-                const dimensionsDiv = createDiv(`Dimensions: ${states.length} \\(\\times\\) ${actions.length} \\(\\times\\) ${states.length}`);
-                dimensionsDiv.parent(probabilityInfo);
-                dimensionsDiv.addClass('panel-dimensions');
+            const row = createDiv();
+            row.parent(s0Container);
+            row.style('display', 'flex');
+            row.style('align-items', 'center');
+            row.style('gap', '8px');
 
-                const descDiv = createDiv();
-                descDiv.parent(probabilityInfo);
-                descDiv.html('$$P[s][a][s\'] = \\text{probability}$$');
-                descDiv.addClass('panel-description');
+            const label = createDiv();
+            label.parent(row);
+            label.elt.innerHTML = renderKatex('s_0 =');
 
-            }
-        });
+            const select = createSelect();
+            select.parent(row);
+            select.addClass('panel-input');
+            select.option('None', '');
 
-        // Reward Section
-        this.createSection('Reward', () => {
-            const rewardInfo = createDiv();
-            rewardInfo.parent(this.contentContainer);
-            rewardInfo.addClass('panel-section-content');
-
-            const states = this.viewModel.graph.nodes.filter(n => n.type === 'state');
-            const actions = this.viewModel.graph.nodes.filter(n => n.type === 'action');
-
-            if (states.length === 0 || actions.length === 0) {
-                const empty = createDiv('Insufficient data');
-                empty.parent(rewardInfo);
-                empty.addClass('panel-empty');
-            } else {
-                const dimensionsDiv = createDiv(`Dimensions: ${states.length} \\(\\times\\) ${actions.length} \\(\\times\\) ${states.length}`);
-                dimensionsDiv.parent(rewardInfo);
-                dimensionsDiv.addClass('panel-dimensions');
-
-                const descDiv = createDiv();
-                descDiv.parent(rewardInfo);
-                descDiv.html('$$R[s][a][s\'] = \\text{reward}$$');
-                descDiv.addClass('panel-description');
-
-            }
-        });
-
-        // Discount Factor Section
-        this.createSection('Discount Factor', () => {
-            const gammaContainer = createDiv();
-            gammaContainer.parent(this.contentContainer);
-            gammaContainer.addClass('panel-section-content');
-
-            const inputContainer = createDiv();
-            inputContainer.parent(gammaContainer);
-            inputContainer.addClass('panel-flex-row');
-
-            const input = createInput(this.discountFactor.toString());
-            input.parent(inputContainer);
-            input.addClass('panel-input');
-            input.addClass('panel-input--small');
-            input.attribute('type', 'number');
-            input.attribute('step', '0.01');
-            input.attribute('min', '0');
-            input.attribute('max', '1');
-
-            input.input(() => {
-                const value = parseFloat(input.value());
-                if (!isNaN(value) && value >= 0 && value <= 1) {
-                    this.discountFactor = value;
-                }
+            states.forEach(stateNode => {
+                select.option(stateNode.name, String(stateNode.id));
             });
 
-            const desc = createDiv('Range: 0.0 - 1.0');
-            desc.parent(gammaContainer);
-            desc.addClass('panel-hint');
+            const currentStart = this.viewModel.startNode;
+            select.selected(currentStart ? String(currentStart.id) : '');
+
+            select.changed(() => {
+                const val = select.value();
+                if (val === '') {
+                    this.viewModel.startNode = null;
+                } else {
+                    const node = this.viewModel.graph.nodes.find(n => n.id === Number(val));
+                    this.viewModel.startNode = node || null;
+                }
+                if (typeof redraw === 'function') redraw();
+            });
         });
+
+        // Policy (π) Section
+        this.createSection('Policy', () => {
+            const policyDiv = createDiv();
+            policyDiv.parent(this.contentContainer);
+
+            const states = this.viewModel.graph.nodes.filter(n => n.type === 'state');
+            if (states.length === 0) {
+                const empty = createDiv('No states available');
+                empty.parent(policyDiv);
+                empty.addClass('panel-empty');
+                return;
+            }
+
+            const note = createDiv('Select π(s). Random chooses uniformly among available actions.');
+            note.parent(policyDiv);
+            note.addClass('panel-hint');
+            note.style('margin-bottom', '8px');
+
+            const simulationState = this.viewModel.simulationState;
+
+            states.forEach(stateNode => {
+                const row = createDiv();
+                row.parent(policyDiv);
+                row.style('display', 'grid');
+                row.style('grid-template-columns', 'minmax(0, 1fr) minmax(110px, 1.2fr)');
+                row.style('gap', '8px');
+                row.style('align-items', 'center');
+                row.style('margin-bottom', '8px');
+
+                const label = createDiv(`π(${stateNode.name})`);
+                label.parent(row);
+                label.style('font-size', '12px');
+                label.style('font-weight', '600');
+                label.style('color', '#444');
+
+                const select = createSelect();
+                select.parent(row);
+                select.addClass('panel-input');
+                select.option('Random', '');
+
+                (stateNode.actions || []).forEach(actionId => {
+                    const actionNode = this.viewModel.graph.nodes.find(n => n.type === 'action' && n.id === actionId);
+                    if (actionNode) {
+                        select.option(actionNode.name, String(actionId));
+                    }
+                });
+
+                const selectedAction = simulationState.getPolicyAction(stateNode.id);
+                select.selected(selectedAction === null ? '' : String(selectedAction));
+                select.changed(() => {
+                    const selectedValue = select.value();
+                    simulationState.setPolicyAction(stateNode.id, selectedValue === '' ? null : Number(selectedValue));
+                });
+            });
+        });
+
     }
 
     renderNodePanel(node, { readOnly = false } = {}) {
@@ -505,7 +430,7 @@ class RightPanel {
             if (stateNode.actions.length === 0) {
                 const latexDiv = createDiv();
                 latexDiv.parent(connectionsDiv);
-                latexDiv.html(`$$A(s_{${stateIndex}}) = \\{\\}$$`);
+                latexDiv.elt.innerHTML = renderKatex(`A(s_{${stateIndex}}) = \\{\\}`, true);
                 latexDiv.addClass('panel-latex-content');
 
             } else {
@@ -516,7 +441,7 @@ class RightPanel {
                     .join(', ');
                 const latexDiv = createDiv();
                 latexDiv.parent(connectionsDiv);
-                latexDiv.html(`$$A(s_{${stateIndex}}) = \\{${actionSet}\\}$$`);
+                latexDiv.elt.innerHTML = renderKatex(`A(s_{${stateIndex}}) = \\{${actionSet}\\}`, true);
                 latexDiv.addClass('panel-latex-content');
 
             }
@@ -647,7 +572,7 @@ class RightPanel {
         const eqDiv = createDiv();
         eqDiv.parent(this.contentContainer);
         eqDiv.addClass('panel-section-content');
-        eqDiv.html('$$V_t(s) = \\max_a \\sum_{s\'} P(s\'|s,a)[R + \\gamma V_{t+1}(s\')]$$');
+        eqDiv.elt.innerHTML = renderKatex('V_t(s) = \\max_a \\sum_{s\'} P(s\'|s,a)[R + \\gamma V_{t+1}(s\')]', true);
 
         // Parameters
         const paramsDiv = createDiv();
@@ -655,7 +580,8 @@ class RightPanel {
         paramsDiv.addClass('panel-section-content');
         paramsDiv.style('margin-top', '10px');
 
-        const gammaLine = createDiv(`<strong>Discount (\\(\\gamma\\)):</strong> ${this.discountFactor}`);
+        const gammaLine = createDiv();
+        gammaLine.elt.innerHTML = `<strong>Discount (${renderKatex('\\gamma', false)}):</strong> ${this.discountFactor}`;
         gammaLine.parent(paramsDiv);
         gammaLine.style('margin-bottom', '4px');
         if (viState && viState.initialized) {
@@ -689,24 +615,53 @@ class RightPanel {
     }
 
     renderSimulationPanel() {
-        // Title
-        const title = createDiv('Simulation Status');
-        title.parent(this.contentContainer);
-        title.addClass('panel-title');
-
         const simulationState = this.viewModel.simulationState;
         const stats = simulationState.getSimulationStats();
         const gamma = this.discountFactor;
         const rewardHistory = stats.rewardHistory || [];
         const returnValue = rewardHistory.reduce((sum, reward, t) => sum + Math.pow(gamma, t) * reward, 0);
+        const simStatElements = {};
 
         // Steps
         this.createSection('Steps', () => {
             const stepsDiv = createDiv();
             stepsDiv.parent(this.contentContainer);
-            const stepsValue = createDiv(stats.stepCount.toString());
+            const stepsValue = createDiv();
             stepsValue.parent(stepsDiv);
             stepsValue.addClass('panel-stat-value--large-primary');
+            stepsValue.html(this._formatCount(this.simStatDisplay.steps));
+            simStatElements.steps = stepsValue;
+        });
+
+        // Discount Factor (γ) Section
+        this.createSection('Discount Factor', () => {
+            const gammaContainer = createDiv();
+            gammaContainer.parent(this.contentContainer);
+            gammaContainer.addClass('panel-section-content');
+
+            const inputContainer = createDiv();
+            inputContainer.parent(gammaContainer);
+            inputContainer.addClass('panel-flex-row');
+
+            const input = createInput(this.discountFactor.toString());
+            input.parent(inputContainer);
+            input.addClass('panel-input');
+            input.addClass('panel-input--small');
+            input.attribute('type', 'number');
+            input.attribute('step', '0.01');
+            input.attribute('min', '0');
+            input.attribute('max', '1');
+
+            input.input(() => {
+                const value = parseFloat(input.value());
+                if (!isNaN(value) && value >= 0 && value <= 1) {
+                    this.discountFactor = value;
+                }
+            });
+
+            const desc = createDiv('Range: 0.0 - 1.0');
+            desc.parent(gammaContainer);
+            desc.addClass('panel-hint');
         });
 
         // Discounted return
@@ -716,13 +671,15 @@ class RightPanel {
 
             const formula = createDiv();
             formula.parent(utilityDiv);
-            formula.html('$$G = \\sum_{t=0}^{T-1} \\gamma^t r_t$$');
+            formula.elt.innerHTML = renderKatex('G = \\sum_{t=0}^{T-1} \\gamma^t r_t', true);
             formula.addClass('panel-latex');
 
-            const utilityValue = createDiv(returnValue.toFixed(2));
+            const utilityValue = createDiv();
             utilityValue.parent(utilityDiv);
             utilityValue.addClass('panel-stat-value--large');
-            this._applyRewardColor(utilityValue, returnValue);
+            utilityValue.html(this._formatAmount(this.simStatDisplay.utility));
+            this._applyRewardColor(utilityValue, this.simStatDisplay.utility);
+            simStatElements.utility = utilityValue;
 
             const timeline = createDiv();
             timeline.parent(utilityDiv);
@@ -770,10 +727,12 @@ class RightPanel {
         this.createSection('Total Reward', () => {
             const rewardDiv = createDiv();
             rewardDiv.parent(this.contentContainer);
-            const rewardValue = createDiv(stats.totalReward.toFixed(2));
+            const rewardValue = createDiv();
             rewardValue.parent(rewardDiv);
             rewardValue.addClass('panel-stat-value--large');
-            this._applyRewardColor(rewardValue, stats.totalReward);
+            rewardValue.html(this._formatAmount(this.simStatDisplay.totalReward));
+            this._applyRewardColor(rewardValue, this.simStatDisplay.totalReward);
+            simStatElements.totalReward = rewardValue;
 
             // Horizontal reward bar
             const barContainer = createDiv();
@@ -806,65 +765,12 @@ class RightPanel {
             const centerLine = createDiv();
             centerLine.parent(barContainer);
             centerLine.addClass('reward-bar-center');
-        });
 
-        // Policy
-        this.createSection('Policy', () => {
-            const policyDiv = createDiv();
-            policyDiv.parent(this.contentContainer);
-
-            const states = this.viewModel.graph.nodes.filter(n => n.type === 'state');
-            if (states.length === 0) {
-                const empty = createDiv('No states available');
-                empty.parent(policyDiv);
-                empty.addClass('panel-empty');
-                return;
-            }
-
-            const note = createDiv('Select pi(s). Random chooses uniformly among available actions.');
-            note.parent(policyDiv);
-            note.addClass('panel-hint');
-            note.style('margin-bottom', '8px');
-
-            states.forEach(stateNode => {
-                const row = createDiv();
-                row.parent(policyDiv);
-                row.style('display', 'grid');
-                row.style('grid-template-columns', 'minmax(0, 1fr) minmax(110px, 1.2fr)');
-                row.style('gap', '8px');
-                row.style('align-items', 'center');
-                row.style('margin-bottom', '8px');
-
-                const label = createDiv(`pi(${stateNode.name})`);
-                label.parent(row);
-                label.style('font-size', '12px');
-                label.style('font-weight', '600');
-                label.style('color', '#444');
-
-                const select = createSelect();
-                select.parent(row);
-                select.addClass('panel-input');
-                select.option('Random', '');
-
-                (stateNode.actions || []).forEach(actionId => {
-                    const actionNode = this.viewModel.graph.nodes.find(n => n.type === 'action' && n.id === actionId);
-                    if (actionNode) {
-                        select.option(actionNode.name, String(actionId));
-                    }
-                });
-
-                const selectedAction = simulationState.getPolicyAction(stateNode.id);
-                select.selected(selectedAction === null ? '' : String(selectedAction));
-                select.changed(() => {
-                    const selectedValue = select.value();
-                    simulationState.setPolicyAction(stateNode.id, selectedValue === '' ? null : Number(selectedValue));
-                    if (simulationState.replayInitialized) {
-                        simulationState.reset();
-                    }
-                    this.updateContent();
-                    if (typeof redraw === 'function') redraw();
-                });
-            });
+            this._animateSimulationStats({
+                steps: stats.stepCount,
+                utility: returnValue,
+                totalReward: stats.totalReward
+            }, simStatElements);
         });
 
     }
@@ -973,6 +879,66 @@ class RightPanel {
 
         tableEl.appendChild(tbody);
         container.elt.appendChild(tableEl);
+    }
+
+    _formatCount(value) {
+        return Math.round(value).toString();
+    }
+
+    _formatAmount(value) {
+        return value.toFixed(2);
+    }
+
+    _animateSimulationStats(targets, elements) {
+        if (!elements.steps || !elements.utility || !elements.totalReward) return;
+
+        const starts = {
+            steps: this.simStatDisplay.steps,
+            utility: this.simStatDisplay.utility,
+            totalReward: this.simStatDisplay.totalReward
+        };
+        const durationMs = 450;
+        const startTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
+
+        const renderFrame = () => {
+            elements.steps.html(this._formatCount(this.simStatDisplay.steps));
+            elements.utility.html(this._formatAmount(this.simStatDisplay.utility));
+            elements.totalReward.html(this._formatAmount(this.simStatDisplay.totalReward));
+            this._applyRewardColor(elements.utility, this.simStatDisplay.utility);
+            this._applyRewardColor(elements.totalReward, this.simStatDisplay.totalReward);
+        };
+
+        const tick = now => {
+            const elapsed = now - startTime;
+            const t = Math.min(1, elapsed / durationMs);
+            const eased = 1 - Math.pow(1 - t, 3);
+
+            this.simStatDisplay.steps = starts.steps + (targets.steps - starts.steps) * eased;
+            this.simStatDisplay.utility = starts.utility + (targets.utility - starts.utility) * eased;
+            this.simStatDisplay.totalReward = starts.totalReward + (targets.totalReward - starts.totalReward) * eased;
+
+            renderFrame();
+
+            if (t < 1 && typeof requestAnimationFrame === 'function') {
+                this.simStatAnimationFrame = requestAnimationFrame(tick);
+                return;
+            }
+
+            this.simStatDisplay.steps = targets.steps;
+            this.simStatDisplay.utility = targets.utility;
+            this.simStatDisplay.totalReward = targets.totalReward;
+            renderFrame();
+            this.simStatAnimationFrame = null;
+        };
+
+        if (typeof requestAnimationFrame === 'function') {
+            this.simStatAnimationFrame = requestAnimationFrame(tick);
+        } else {
+            this.simStatDisplay.steps = targets.steps;
+            this.simStatDisplay.utility = targets.utility;
+            this.simStatDisplay.totalReward = targets.totalReward;
+            renderFrame();
+        }
     }
 
     _buildExplainEquationLines(detail) {
@@ -1102,7 +1068,7 @@ class RightPanel {
         this._buildExplainEquationLines(detail).forEach(line => {
             const d = createDiv();
             d.parent(eqContainer);
-            d.html(`$$${line.text}$$`);
+            d.elt.innerHTML = renderKatex(line.text, true);
             d.addClass('explain-eq-line');
             d.addClass(`explain-eq-line--${line.type}`);
         });

@@ -11,6 +11,7 @@ class InteractionViewModel {
         // Drag state
         this.draggingNode = null;
         this.draggingTextLabel = null;
+        this.draggingNodeNameLabel = null;
         this.draggingEdgeLabel = null;
         this.dragStartX = 0;
         this.dragStartY = 0;
@@ -19,6 +20,8 @@ class InteractionViewModel {
         this.dragStartNodeY = 0;
         this.dragStartLabelOffsetX = 0;
         this.dragStartLabelOffsetY = 0;
+        this.dragStartNameLabelX = 0;
+        this.dragStartNameLabelY = 0;
 
         // Resize state
         this.resizingNode = null;
@@ -72,6 +75,7 @@ class InteractionViewModel {
         this.heldTextLabel = null;
         this.draggingNode = null;
         this.draggingTextLabel = null;
+        this.draggingNodeNameLabel = null;
         this.draggingEdgeLabel = null;
         this.resizingNode = null;
         this.isPanning = false;
@@ -123,6 +127,7 @@ class InteractionViewModel {
                this.heldTextLabel !== null ||
                this.draggingNode !== null ||
                this.draggingTextLabel !== null ||
+               this.draggingNodeNameLabel !== null ||
                this.draggingEdgeLabel !== null ||
                this.resizingNode !== null ||
                this.isPanning;
@@ -146,6 +151,11 @@ class InteractionViewModel {
             this.dragDistance += Math.abs(currentX - this.draggingTextLabel.x) +
                                  Math.abs(currentY - this.draggingTextLabel.y);
         }
+        if (this.draggingNodeNameLabel) {
+            const pos = this.draggingNodeNameLabel.getNameLabelPosition();
+            this.dragDistance += Math.abs(currentX - pos.x) +
+                                 Math.abs(currentY - pos.y);
+        }
         if (this.draggingEdgeLabel) {
             // Just increment to track that dragging occurred
             this.dragDistance += Math.abs(currentX - this.dragStartX) +
@@ -160,6 +170,7 @@ class InteractionViewModel {
     clearDrag() {
         this.draggingNode = null;
         this.draggingTextLabel = null;
+        this.draggingNodeNameLabel = null;
         this.draggingEdgeLabel = null;
         this.dragDistance = 0;
     }

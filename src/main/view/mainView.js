@@ -68,6 +68,9 @@ class MainView {
         this.canvas = createCanvas(canvasWidth, canvasHeight);
         this.canvas.position(0, this.TOP_BARS_HEIGHT);
 
+        // Suppress browser context menu so right-click can be used for canvas interactions
+        this.canvas.elt.addEventListener('contextmenu', e => e.preventDefault());
+
         // Set global text font to Calibri
         textFont('Calibri, "Segoe UI", Tahoma, sans-serif');
 
@@ -98,10 +101,11 @@ class MainView {
         this.drawNodes();
         this.drawTextLabels();
 
-        // Draw spinning arrow if in spinning arrow phase
-        if (this.viewModel.simulationState &&
-            this.viewModel.simulationState.phase === 'spinning_arrow') {
-            this.drawSpinningArrow();
+        // Draw spinning arrow if in spinning arrow phase (action node) or state_spinning_arrow (state node)
+        if (this.viewModel.simulationState) {
+            const _phase = this.viewModel.simulationState.phase;
+            if (_phase === 'spinning_arrow') this.drawSpinningArrow();
+            if (_phase === 'state_spinning_arrow') this.drawStateSpinningArrow();
         }
 
         // Draw travel ball during edge_highlight phase
@@ -112,7 +116,10 @@ class MainView {
         // Continuous redraw during animated simulation phases
         const _simS = this.viewModel.simulationState;
         if (_simS && _simS.replayInitialized && !_simS.isPhaseComplete() &&
-            (_simS.phase === 'reveal' || _simS.phase === 'highlight')) {
+            (_simS.phase === 'reveal' ||
+             _simS.phase === 'highlight' ||
+             _simS.phase === 'spinning_arrow' ||
+             _simS.phase === 'state_spinning_arrow')) {
             requestAnimationFrame(() => { if (typeof redraw === 'function') redraw(); });
         }
 
@@ -286,8 +293,24 @@ class MainView {
             // Apply alpha to node fill color
             const nodeColor = this.applyAlphaToColor(color, nodeAlpha);
             fill(nodeColor);
-            stroke(this.applyAlphaToColor(AppPalette.text.black, nodeAlpha));
-            strokeWeight(2);
+
+            const isStartNode = this.viewModel.startNode &&
+                this.viewModel.startNode.id === node.id;
+            const isEditorStartNode = this.viewModel.mode === 'editor' && isStartNode;
+            const isSimStartNode = this.viewModel.mode === 'simulate' &&
+                isStartNode &&
+                (!this.viewModel.simulationState || !this.viewModel.simulationState.replayInitialized);
+
+            if (isEditorStartNode) {
+                stroke(AppPalette.node.startRing);
+                strokeWeight(3);
+            } else if (isSimStartNode) {
+                stroke(AppPalette.node.selected);
+                strokeWeight(3);
+            } else {
+                stroke(this.applyAlphaToColor(AppPalette.text.black, nodeAlpha));
+                strokeWeight(2);
+            }
 
             if (isNodeFaded) {
                 drawingContext.setLineDash([MV_DASH_NODE_LINE, MV_DASH_NODE_GAP]);
@@ -316,14 +339,26 @@ class MainView {
                     drawingContext.beginPath();
                     drawingContext.arc(node.x, node.y, node.size * 0.8, 0, TWO_PI);
                     drawingContext.clip();
+                    drawingContext.globalAlpha = nodeAlpha / 255;
 
                     // Draw image to fit inside circle
                     const imgSize = node.size * 1.6; // Diameter * 0.8
                     image(node._imageObj, node.x, node.y, imgSize, imgSize);
 
-                    drawingContext.restore();
+                    drawingContext.restore(); // resets globalAlpha to 1.0
                 }
                 pop();
+
+                // Draw name above the node, matching text label style
+                const labelColor = this.viewModel.selection.selectedNodeNameLabel === node
+                    ? AppPalette.node.selected
+                    : AppPalette.text.black;
+                const labelPos = node.getNameLabelPosition();
+                fill(ColorUtils.applyAlpha(labelColor, nodeAlpha));
+                noStroke();
+                textAlign(CENTER, CENTER);
+                textSize(16);
+                text(node.name, labelPos.x, labelPos.y);
             } else {
                 // Only draw text if no image
                 fill(255, 255, 255, nodeAlpha);
@@ -699,10 +734,68 @@ class MainView {
             });
         });
 
-        // Keep redrawing for smooth animation
-        if (!simState.isPhaseComplete()) {
-            requestAnimationFrame(() => redraw());
+    }
+
+    // Draw spinning arrow animation at state node during action-selection phase (random policy)
+    drawStateSpinningArrow() {
+        const simState = this.viewModel.simulationState;
+        if (!simState || simState.phase !== 'state_spinning_arrow') return;
+
+        const currentNode = simState.currentNode;
+        if (!currentNode || currentNode.type !== 'state') return;
+
+        const stateNode = this.viewModel.graph.getNodeById(currentNode.id);
+        if (!stateNode) return;
+
+        const edges = simState.spinningArrowEdges;
+        if (!edges || edges.length === 0) return;
+
+        const highlightedEdgeIndex = simState.getHighlightedEdgeByArrow();
+        const highlightedEdge = edges[highlightedEdgeIndex];
+
+        // Arrow points from state node toward highlighted action node
+        let arrowAngle = 0;
+        if (highlightedEdge) {
+            const targetAction = this.viewModel.graph.getNodeById(highlightedEdge.targetId);
+            if (targetAction) {
+                arrowAngle = atan2(targetAction.y - stateNode.y, targetAction.x - stateNode.x) + PI / 2;
+            }
         }
+
+        push();
+        translate(stateNode.x, stateNode.y);
+        rotate(arrowAngle);
+        this.drawSpinningArrowGlyph(stateNode.size);
+        pop();
+
+        // Probability labels on each state→action edge
+        const n = edges.length;
+        edges.forEach((edge, index) => {
+            const actionNode = this.viewModel.graph.getNodeById(edge.targetId);
+            if (!actionNode) return;
+
+            const midX = (stateNode.x + actionNode.x) / 2;
+            const midY = (stateNode.y + actionNode.y) / 2;
+            const isHighlighted = (index === highlightedEdgeIndex);
+            const probLabel = `p = ${(1 / n).toFixed(2)}`;
+
+            push();
+            noStroke();
+            if (isHighlighted) {
+                fill(ColorUtils.applyAlpha(AppPalette.simulation.spinLabelHighlight, 220));
+                rect(midX - 30, midY - 12, 60, 24, 4);
+            } else {
+                fill(ColorUtils.applyAlpha(AppPalette.simulation.spinLabelBackground, 60));
+                rect(midX - 30, midY - 12, 60, 24, 4);
+            }
+            pop();
+
+            mathRenderer.draw(drawingContext, probLabel, midX, midY, {
+                color: isHighlighted ? AppPalette.text.black : AppPalette.edge.label,
+                em: isHighlighted ? 14 : 12,
+                alpha: isHighlighted ? 255 : 80
+            });
+        });
     }
 
     drawTextLabels() {
@@ -729,6 +822,20 @@ class MainView {
         // In p5.js, mouseX and mouseY are canvas-relative (0 to width, 0 to height)
         // Only handle clicks within the canvas bounds
         if (mouseX < 0 || mouseX > width || mouseY < 0 || mouseY > height) {
+            return;
+        }
+
+        // Right-click in editor/simulate mode: set start node (s₀)
+        if (mouseButton === RIGHT) {
+            if (this.viewModel.mode === 'editor' || this.viewModel.mode === 'simulate') {
+                const world = this.viewModel.viewport.screenToWorld(mouseX, mouseY);
+                const target = GeometricHelper.findEntityAtPosition(this.viewModel.graph, world.x, world.y);
+                if (target.type === 'node' && target.entity.type === 'state') {
+                    this.controller.setStartNode(target.entity);
+                    if (this.rightPanel) this.rightPanel.updateContent();
+                    redraw();
+                }
+            }
             return;
         }
 

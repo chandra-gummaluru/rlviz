@@ -42,9 +42,6 @@ class CanvasViewModel {
 
     set mode(value) {
         this.interaction.mode = value;
-        if (value === 'editor') {
-            this.interaction.startNode = null;
-        }
         if (value !== 'value_iteration' && this.valueIterationState) {
             this.valueIterationState.reset();
         }

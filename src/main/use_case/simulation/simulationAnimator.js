@@ -118,12 +118,19 @@ class SimulationAnimator {
         this.outputBoundary.presentPhaseChange('reveal', this.TIMING.DECISION_PAUSE);
         await this.waitForPhase();
 
-        // Phase 2: Hide unchosen action nodes (state→action transitions)
+        // Phase 2: State-level spinning arrow (random policy only)
+        if (this.simulationState.spinningArrowEnabled &&
+            fromNode.type === 'state' &&
+            this.simulationState.policy[fromNode.id] === undefined) {
+            await this._runStateSpinningArrow(fromNode, toNode);
+        }
+
+        // Phase 2b: Hide unchosen action nodes (state→action transitions)
         if (fromNode.type === 'state') {
             this._hideUnchosenActions(fromNode, toNode);
         }
 
-        // Phase 2b: SPINNING ARROW (if enabled and at action node)
+        // Phase 2c: SPINNING ARROW (if enabled and at action node)
         if (this.simulationState.spinningArrowEnabled && fromNode.type === 'action') {
             await this._runSpinningArrow(fromNode, toNode);
         } else if (fromNode.type === 'action') {
@@ -211,6 +218,29 @@ class SimulationAnimator {
                 }
             });
         }
+    }
+
+    async _runStateSpinningArrow(fromNode, toNode) {
+        const stateNodeInGraph = this.getNodeFromGraph(fromNode.id);
+        if (!stateNodeInGraph || !stateNodeInGraph.actions || stateNodeInGraph.actions.length === 0) {
+            return;
+        }
+
+        const targetActionId = Number(toNode.id);
+        const actionIds = stateNodeInGraph.actions.filter(actionId => {
+            const actionNode = this.getNodeFromGraph(actionId);
+            return actionNode && actionNode.type === 'action';
+        });
+        if (!actionIds.some(actionId => Number(actionId) === targetActionId)) {
+            return;
+        }
+
+        this.simulationState.initStateSpinningArrow(actionIds, targetActionId);
+        this.simulationState.setPhase('state_spinning_arrow', this.simulationState.spinningArrowDuration);
+        this.outputBoundary.presentPhaseChange('state_spinning_arrow', this.simulationState.spinningArrowDuration);
+        await this.waitForPhase();
+
+        this.simulationState.clearSpinningArrow();
     }
 
     async _runSpinningArrow(fromNode, toNode) {

@@ -406,6 +406,17 @@ class SimulationState {
 
     }
 
+    initStateSpinningArrow(actionIds, targetActionId) {
+        const n = actionIds.length;
+        if (n === 0) return;
+        const edges = actionIds.map(actionId => ({
+            probability: 1 / n,
+            targetId: actionId
+        }));
+        const targetIndex = actionIds.findIndex(actionId => Number(actionId) === Number(targetActionId));
+        this.initSpinningArrow(edges, targetIndex >= 0 ? targetIndex : 0);
+    }
+
     // Get which edge the arrow is currently pointing at (tick-based)
     getHighlightedEdgeByArrow() {
         if (this.spinningArrowSequence.length === 0) return -1;

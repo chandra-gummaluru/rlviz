@@ -9,6 +9,7 @@ class SelectNodePresenter extends SelectNodeOutputBoundary {
         this.selectionViewModel.selectedNode = null;
         this.selectionViewModel.selectedEdge = null;
         this.selectionViewModel.selectedTextLabel = null;
+        this.selectionViewModel.selectedNodeNameLabel = null;
 
         if (entity.type === 'state' || entity.type === 'action') {
             this.selectionViewModel.selectedNode = entity;
@@ -23,5 +24,6 @@ class SelectNodePresenter extends SelectNodeOutputBoundary {
         this.selectionViewModel.selectedNode = null;
         this.selectionViewModel.selectedEdge = null;
         this.selectionViewModel.selectedTextLabel = null;
+        this.selectionViewModel.selectedNodeNameLabel = null;
     }
 }
