@@ -40,6 +40,17 @@ class SimulationRenderer {
             return faded;
         }
 
+        if (simState.phase === 'state_spinning_arrow' && cur.type === 'state') {
+            if (from.id === cur.id && from.type === 'state' && to.type === 'action') {
+                const hi = simState.getHighlightedEdgeByArrow();
+                const highlightedEdge = simState.spinningArrowEdges[hi];
+                if (highlightedEdge && to.id === highlightedEdge.targetId) return full;
+                return { dashed: true, alpha: this._ALPHA_DIM, colorOverride: null };
+            }
+            if (to.id === cur.id) return full;
+            return faded;
+        }
+
         if (simState.phase === 'reveal' && cur.type === 'state') {
             const sn = this._vm.graph.getNodeById(cur.id);
             if (!sn || !sn.actions) return faded;
@@ -72,6 +83,16 @@ class SimulationRenderer {
             const hi = simState.getHighlightedEdgeByArrow();
             const ht = an.sas[hi];
             return (ht && node.id === ht.nextState) ? this._ALPHA_FULL : this._ALPHA_DIM;
+        }
+
+        if (simState.phase === 'state_spinning_arrow' && cur.type === 'state') {
+            if (node.id === cur.id) return this._ALPHA_FULL;
+            const hi = simState.getHighlightedEdgeByArrow();
+            const highlightedEdge = simState.spinningArrowEdges[hi];
+            const sn = this._vm.graph.getNodeById(cur.id);
+            if (!sn || !sn.actions || !sn.actions.includes(node.id)) return this._ALPHA_FADED;
+            if (highlightedEdge && node.id === highlightedEdge.targetId) return this._ALPHA_FULL;
+            return this._ALPHA_DIM;
         }
 
         if (simState.phase === 'reveal' && cur.type === 'state') {

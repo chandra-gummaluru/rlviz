@@ -44,6 +44,7 @@ class SimulationPresenter extends SimulationOutputBoundary {
             case 'center_camera':
             case 'camera_move':
             case 'reveal':
+            case 'state_spinning_arrow':
             case 'spinning_arrow':
             case 'edge_highlight':
             case 'decision_pause':

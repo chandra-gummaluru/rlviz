@@ -60,7 +60,12 @@ class RightPanel {
         // Discount factor (gamma) for MDP - editable
         this.discountFactor = RP_DEFAULT_DISCOUNT;
 
-
+        this.simStatDisplay = {
+            steps: 0,
+            utility: 0,
+            totalReward: 0
+        };
+        this.simStatAnimationFrame = null;
 
         this.callbacks = {
             onSpinningArrowToggle: (enabled) => {
@@ -91,6 +96,11 @@ class RightPanel {
     }
 
     updateContent() {
+        if (this.simStatAnimationFrame !== null && typeof cancelAnimationFrame === 'function') {
+            cancelAnimationFrame(this.simStatAnimationFrame);
+            this.simStatAnimationFrame = null;
+        }
+
         // Recreate container so renderMathInElement always processes a fresh, unmodified DOM tree
         if (this.contentContainer) this.contentContainer.remove();
         this.contentContainer = createDiv();
@@ -160,6 +170,7 @@ class RightPanel {
                     const node = this.viewModel.graph.nodes.find(n => n.id === Number(val));
                     this.viewModel.startNode = node || null;
                 }
+                if (typeof redraw === 'function') redraw();
             });
         });
 
@@ -604,24 +615,22 @@ class RightPanel {
     }
 
     renderSimulationPanel() {
-        // Title
-        const title = createDiv('Simulation Status');
-        title.parent(this.contentContainer);
-        title.addClass('panel-title');
-
         const simulationState = this.viewModel.simulationState;
         const stats = simulationState.getSimulationStats();
         const gamma = this.discountFactor;
         const rewardHistory = stats.rewardHistory || [];
         const returnValue = rewardHistory.reduce((sum, reward, t) => sum + Math.pow(gamma, t) * reward, 0);
+        const simStatElements = {};
 
         // Steps
         this.createSection('Steps', () => {
             const stepsDiv = createDiv();
             stepsDiv.parent(this.contentContainer);
-            const stepsValue = createDiv(stats.stepCount.toString());
+            const stepsValue = createDiv();
             stepsValue.parent(stepsDiv);
             stepsValue.addClass('panel-stat-value--large-primary');
+            stepsValue.html(this._formatCount(this.simStatDisplay.steps));
+            simStatElements.steps = stepsValue;
         });
 
         // Discount Factor (γ) Section
@@ -665,10 +674,12 @@ class RightPanel {
             formula.elt.innerHTML = renderKatex('G = \\sum_{t=0}^{T-1} \\gamma^t r_t', true);
             formula.addClass('panel-latex');
 
-            const utilityValue = createDiv(returnValue.toFixed(2));
+            const utilityValue = createDiv();
             utilityValue.parent(utilityDiv);
             utilityValue.addClass('panel-stat-value--large');
-            this._applyRewardColor(utilityValue, returnValue);
+            utilityValue.html(this._formatAmount(this.simStatDisplay.utility));
+            this._applyRewardColor(utilityValue, this.simStatDisplay.utility);
+            simStatElements.utility = utilityValue;
 
             const timeline = createDiv();
             timeline.parent(utilityDiv);
@@ -716,10 +727,12 @@ class RightPanel {
         this.createSection('Total Reward', () => {
             const rewardDiv = createDiv();
             rewardDiv.parent(this.contentContainer);
-            const rewardValue = createDiv(stats.totalReward.toFixed(2));
+            const rewardValue = createDiv();
             rewardValue.parent(rewardDiv);
             rewardValue.addClass('panel-stat-value--large');
-            this._applyRewardColor(rewardValue, stats.totalReward);
+            rewardValue.html(this._formatAmount(this.simStatDisplay.totalReward));
+            this._applyRewardColor(rewardValue, this.simStatDisplay.totalReward);
+            simStatElements.totalReward = rewardValue;
 
             // Horizontal reward bar
             const barContainer = createDiv();
@@ -752,6 +765,12 @@ class RightPanel {
             const centerLine = createDiv();
             centerLine.parent(barContainer);
             centerLine.addClass('reward-bar-center');
+
+            this._animateSimulationStats({
+                steps: stats.stepCount,
+                utility: returnValue,
+                totalReward: stats.totalReward
+            }, simStatElements);
         });
 
     }
@@ -860,6 +879,66 @@ class RightPanel {
 
         tableEl.appendChild(tbody);
         container.elt.appendChild(tableEl);
+    }
+
+    _formatCount(value) {
+        return Math.round(value).toString();
+    }
+
+    _formatAmount(value) {
+        return value.toFixed(2);
+    }
+
+    _animateSimulationStats(targets, elements) {
+        if (!elements.steps || !elements.utility || !elements.totalReward) return;
+
+        const starts = {
+            steps: this.simStatDisplay.steps,
+            utility: this.simStatDisplay.utility,
+            totalReward: this.simStatDisplay.totalReward
+        };
+        const durationMs = 450;
+        const startTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
+
+        const renderFrame = () => {
+            elements.steps.html(this._formatCount(this.simStatDisplay.steps));
+            elements.utility.html(this._formatAmount(this.simStatDisplay.utility));
+            elements.totalReward.html(this._formatAmount(this.simStatDisplay.totalReward));
+            this._applyRewardColor(elements.utility, this.simStatDisplay.utility);
+            this._applyRewardColor(elements.totalReward, this.simStatDisplay.totalReward);
+        };
+
+        const tick = now => {
+            const elapsed = now - startTime;
+            const t = Math.min(1, elapsed / durationMs);
+            const eased = 1 - Math.pow(1 - t, 3);
+
+            this.simStatDisplay.steps = starts.steps + (targets.steps - starts.steps) * eased;
+            this.simStatDisplay.utility = starts.utility + (targets.utility - starts.utility) * eased;
+            this.simStatDisplay.totalReward = starts.totalReward + (targets.totalReward - starts.totalReward) * eased;
+
+            renderFrame();
+
+            if (t < 1 && typeof requestAnimationFrame === 'function') {
+                this.simStatAnimationFrame = requestAnimationFrame(tick);
+                return;
+            }
+
+            this.simStatDisplay.steps = targets.steps;
+            this.simStatDisplay.utility = targets.utility;
+            this.simStatDisplay.totalReward = targets.totalReward;
+            renderFrame();
+            this.simStatAnimationFrame = null;
+        };
+
+        if (typeof requestAnimationFrame === 'function') {
+            this.simStatAnimationFrame = requestAnimationFrame(tick);
+        } else {
+            this.simStatDisplay.steps = targets.steps;
+            this.simStatDisplay.utility = targets.utility;
+            this.simStatDisplay.totalReward = targets.totalReward;
+            renderFrame();
+        }
     }
 
     _buildExplainEquationLines(detail) {

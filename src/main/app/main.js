@@ -356,7 +356,7 @@ const onPlay = () => {
 
     // Check if start node is selected
     if (!canvasViewModel.interaction.startNode && !simulationState.replayInitialized) {
-        alert('Please select a start node first by double-clicking a state node');
+        alert('Please select a start node first (right-click a state in editor mode, or use the s₀ dropdown)');
         return;
     }
 
@@ -389,7 +389,7 @@ const onStep = () => {
 
     // Check if start node is selected for first step
     if (!canvasViewModel.interaction.startNode && !simulationState.replayInitialized) {
-        alert('Please select a start node first by double-clicking a state node');
+        alert('Please select a start node first (right-click a state in editor mode, or use the s₀ dropdown)');
         return;
     }
 

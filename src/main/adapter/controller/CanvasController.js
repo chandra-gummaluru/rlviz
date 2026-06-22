@@ -433,7 +433,6 @@ class CanvasController {
             this.interactors.setMode.execute(inputData);
         }
         this.viewModel.selection.clearSelection();
-        this.viewModel.interaction.startNode = null;
         this.viewModel.interaction.clearEditorFocus();
         this.preferLastClickedNodeForCopy = false;
     }
@@ -511,6 +510,10 @@ class CanvasController {
             console.log('Graph exported:');
             console.log(json);
         }
+    }
+
+    setStartNode(node) {
+        this.viewModel.startNode = node;
     }
 
     // ===== Private Helper Methods =====
