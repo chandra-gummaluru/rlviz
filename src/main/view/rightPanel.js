@@ -122,151 +122,103 @@ class RightPanel {
     }
 
     renderMDPInfoPanel() {
-        // Title with LaTeX notation
-        const titleContainer = createDiv();
-        titleContainer.parent(this.contentContainer);
-        titleContainer.addClass('panel-section-margin');
-
-        const title = createDiv('Markov Decision Process');
-        title.parent(titleContainer);
-        title.addClass('panel-title');
-        title.addClass('panel-title--with-gap');
-
-        const latex = createDiv();
-        latex.parent(titleContainer);
-        latex.elt.innerHTML = renderKatex('\\langle \\mathcal{S}, s_0, \\mathcal{A}, P, R, \\gamma \\rangle', true);
-        latex.addClass('panel-latex');
-
-        // State Space Section
-        this.createSection('State Space', () => {
-            const states = this.viewModel.graph.nodes.filter(n => n.type === 'state');
-            const stateList = createDiv();
-            stateList.parent(this.contentContainer);
-            stateList.addClass('panel-section-content');
-
-            if (states.length === 0) {
-                const setNotation = createDiv();
-                setNotation.parent(stateList);
-                setNotation.elt.innerHTML = renderKatex('\\mathcal{S} = \\{\\}', true);
-                setNotation.addClass('panel-set-notation');
-            } else {
-                const stateNames = buildSetLatex(states, RP_SET_CHAR_LIMIT);
-                const setNotation = createDiv();
-                setNotation.parent(stateList);
-                setNotation.elt.innerHTML = renderKatex(`\\mathcal{S} = \\{${stateNames}\\}`, true);
-                setNotation.addClass('panel-set-notation');
-                setNotation.addClass('panel-set-notation--wrap');
-            }
-
-        });
-
-        // Action Space Section
-        this.createSection('Action Space', () => {
-            const actions = this.viewModel.graph.nodes.filter(n => n.type === 'action');
-            const actionList = createDiv();
-            actionList.parent(this.contentContainer);
-            actionList.addClass('panel-section-content');
-
-            if (actions.length === 0) {
-                const setNotation = createDiv();
-                setNotation.parent(actionList);
-                setNotation.elt.innerHTML = renderKatex('\\mathcal{A} = \\{\\}', true);
-                setNotation.addClass('panel-set-notation');
-            } else {
-                const actionNames = buildSetLatex(actions, RP_SET_CHAR_LIMIT);
-                const setNotation = createDiv();
-                setNotation.parent(actionList);
-                setNotation.elt.innerHTML = renderKatex(`\\mathcal{A} = \\{${actionNames}\\}`, true);
-                setNotation.addClass('panel-set-notation');
-                setNotation.addClass('panel-set-notation--wrap');
-            }
-
-        });
-
-        // Probability Section
-        this.createSection('Probability', () => {
-            const probabilityInfo = createDiv();
-            probabilityInfo.parent(this.contentContainer);
-            probabilityInfo.addClass('panel-section-content');
+        // Initial State (s₀) Section
+        this.createSection('Initial State', () => {
+            const s0Container = createDiv();
+            s0Container.parent(this.contentContainer);
+            s0Container.addClass('panel-section-content');
 
             const states = this.viewModel.graph.nodes.filter(n => n.type === 'state');
-            const actions = this.viewModel.graph.nodes.filter(n => n.type === 'action');
 
-            if (states.length === 0 || actions.length === 0) {
-                const empty = createDiv('Insufficient data');
-                empty.parent(probabilityInfo);
-                empty.addClass('panel-empty');
-            } else {
-                const dimensionsDiv = createDiv();
-                dimensionsDiv.elt.innerHTML = `Dimensions: ${renderKatex(`${states.length} \\times ${actions.length} \\times ${states.length}`, false)}`;
-                dimensionsDiv.parent(probabilityInfo);
-                dimensionsDiv.addClass('panel-dimensions');
+            const row = createDiv();
+            row.parent(s0Container);
+            row.style('display', 'flex');
+            row.style('align-items', 'center');
+            row.style('gap', '8px');
 
-                const descDiv = createDiv();
-                descDiv.parent(probabilityInfo);
-                descDiv.elt.innerHTML = renderKatex('P[s][a][s\'] = \\text{probability}', true);
-                descDiv.addClass('panel-description');
+            const label = createDiv();
+            label.parent(row);
+            label.elt.innerHTML = renderKatex('s_0 =');
 
-            }
-        });
+            const select = createSelect();
+            select.parent(row);
+            select.addClass('panel-input');
+            select.option('None', '');
 
-        // Reward Section
-        this.createSection('Reward', () => {
-            const rewardInfo = createDiv();
-            rewardInfo.parent(this.contentContainer);
-            rewardInfo.addClass('panel-section-content');
-
-            const states = this.viewModel.graph.nodes.filter(n => n.type === 'state');
-            const actions = this.viewModel.graph.nodes.filter(n => n.type === 'action');
-
-            if (states.length === 0 || actions.length === 0) {
-                const empty = createDiv('Insufficient data');
-                empty.parent(rewardInfo);
-                empty.addClass('panel-empty');
-            } else {
-                const dimensionsDiv = createDiv();
-                dimensionsDiv.elt.innerHTML = `Dimensions: ${renderKatex(`${states.length} \\times ${actions.length} \\times ${states.length}`, false)}`;
-                dimensionsDiv.parent(rewardInfo);
-                dimensionsDiv.addClass('panel-dimensions');
-
-                const descDiv = createDiv();
-                descDiv.parent(rewardInfo);
-                descDiv.elt.innerHTML = renderKatex('R[s][a][s\'] = \\text{reward}', true);
-                descDiv.addClass('panel-description');
-
-            }
-        });
-
-        // Discount Factor Section
-        this.createSection('Discount Factor', () => {
-            const gammaContainer = createDiv();
-            gammaContainer.parent(this.contentContainer);
-            gammaContainer.addClass('panel-section-content');
-
-            const inputContainer = createDiv();
-            inputContainer.parent(gammaContainer);
-            inputContainer.addClass('panel-flex-row');
-
-            const input = createInput(this.discountFactor.toString());
-            input.parent(inputContainer);
-            input.addClass('panel-input');
-            input.addClass('panel-input--small');
-            input.attribute('type', 'number');
-            input.attribute('step', '0.01');
-            input.attribute('min', '0');
-            input.attribute('max', '1');
-
-            input.input(() => {
-                const value = parseFloat(input.value());
-                if (!isNaN(value) && value >= 0 && value <= 1) {
-                    this.discountFactor = value;
-                }
+            states.forEach(stateNode => {
+                select.option(stateNode.name, String(stateNode.id));
             });
 
-            const desc = createDiv('Range: 0.0 - 1.0');
-            desc.parent(gammaContainer);
-            desc.addClass('panel-hint');
+            const currentStart = this.viewModel.startNode;
+            select.selected(currentStart ? String(currentStart.id) : '');
+
+            select.changed(() => {
+                const val = select.value();
+                if (val === '') {
+                    this.viewModel.startNode = null;
+                } else {
+                    const node = this.viewModel.graph.nodes.find(n => n.id === Number(val));
+                    this.viewModel.startNode = node || null;
+                }
+            });
         });
+
+        // Policy (π) Section
+        this.createSection('Policy', () => {
+            const policyDiv = createDiv();
+            policyDiv.parent(this.contentContainer);
+
+            const states = this.viewModel.graph.nodes.filter(n => n.type === 'state');
+            if (states.length === 0) {
+                const empty = createDiv('No states available');
+                empty.parent(policyDiv);
+                empty.addClass('panel-empty');
+                return;
+            }
+
+            const note = createDiv('Select π(s). Random chooses uniformly among available actions.');
+            note.parent(policyDiv);
+            note.addClass('panel-hint');
+            note.style('margin-bottom', '8px');
+
+            const simulationState = this.viewModel.simulationState;
+
+            states.forEach(stateNode => {
+                const row = createDiv();
+                row.parent(policyDiv);
+                row.style('display', 'grid');
+                row.style('grid-template-columns', 'minmax(0, 1fr) minmax(110px, 1.2fr)');
+                row.style('gap', '8px');
+                row.style('align-items', 'center');
+                row.style('margin-bottom', '8px');
+
+                const label = createDiv(`π(${stateNode.name})`);
+                label.parent(row);
+                label.style('font-size', '12px');
+                label.style('font-weight', '600');
+                label.style('color', '#444');
+
+                const select = createSelect();
+                select.parent(row);
+                select.addClass('panel-input');
+                select.option('Random', '');
+
+                (stateNode.actions || []).forEach(actionId => {
+                    const actionNode = this.viewModel.graph.nodes.find(n => n.type === 'action' && n.id === actionId);
+                    if (actionNode) {
+                        select.option(actionNode.name, String(actionId));
+                    }
+                });
+
+                const selectedAction = simulationState.getPolicyAction(stateNode.id);
+                select.selected(selectedAction === null ? '' : String(selectedAction));
+                select.changed(() => {
+                    const selectedValue = select.value();
+                    simulationState.setPolicyAction(stateNode.id, selectedValue === '' ? null : Number(selectedValue));
+                });
+            });
+        });
+
     }
 
     renderNodePanel(node, { readOnly = false } = {}) {
@@ -672,6 +624,37 @@ class RightPanel {
             stepsValue.addClass('panel-stat-value--large-primary');
         });
 
+        // Discount Factor (γ) Section
+        this.createSection('Discount Factor', () => {
+            const gammaContainer = createDiv();
+            gammaContainer.parent(this.contentContainer);
+            gammaContainer.addClass('panel-section-content');
+
+            const inputContainer = createDiv();
+            inputContainer.parent(gammaContainer);
+            inputContainer.addClass('panel-flex-row');
+
+            const input = createInput(this.discountFactor.toString());
+            input.parent(inputContainer);
+            input.addClass('panel-input');
+            input.addClass('panel-input--small');
+            input.attribute('type', 'number');
+            input.attribute('step', '0.01');
+            input.attribute('min', '0');
+            input.attribute('max', '1');
+
+            input.input(() => {
+                const value = parseFloat(input.value());
+                if (!isNaN(value) && value >= 0 && value <= 1) {
+                    this.discountFactor = value;
+                }
+            });
+
+            const desc = createDiv('Range: 0.0 - 1.0');
+            desc.parent(gammaContainer);
+            desc.addClass('panel-hint');
+        });
+
         // Discounted return
         this.createSection('Utility', () => {
             const utilityDiv = createDiv();
@@ -769,65 +752,6 @@ class RightPanel {
             const centerLine = createDiv();
             centerLine.parent(barContainer);
             centerLine.addClass('reward-bar-center');
-        });
-
-        // Policy
-        this.createSection('Policy', () => {
-            const policyDiv = createDiv();
-            policyDiv.parent(this.contentContainer);
-
-            const states = this.viewModel.graph.nodes.filter(n => n.type === 'state');
-            if (states.length === 0) {
-                const empty = createDiv('No states available');
-                empty.parent(policyDiv);
-                empty.addClass('panel-empty');
-                return;
-            }
-
-            const note = createDiv('Select pi(s). Random chooses uniformly among available actions.');
-            note.parent(policyDiv);
-            note.addClass('panel-hint');
-            note.style('margin-bottom', '8px');
-
-            states.forEach(stateNode => {
-                const row = createDiv();
-                row.parent(policyDiv);
-                row.style('display', 'grid');
-                row.style('grid-template-columns', 'minmax(0, 1fr) minmax(110px, 1.2fr)');
-                row.style('gap', '8px');
-                row.style('align-items', 'center');
-                row.style('margin-bottom', '8px');
-
-                const label = createDiv(`pi(${stateNode.name})`);
-                label.parent(row);
-                label.style('font-size', '12px');
-                label.style('font-weight', '600');
-                label.style('color', '#444');
-
-                const select = createSelect();
-                select.parent(row);
-                select.addClass('panel-input');
-                select.option('Random', '');
-
-                (stateNode.actions || []).forEach(actionId => {
-                    const actionNode = this.viewModel.graph.nodes.find(n => n.type === 'action' && n.id === actionId);
-                    if (actionNode) {
-                        select.option(actionNode.name, String(actionId));
-                    }
-                });
-
-                const selectedAction = simulationState.getPolicyAction(stateNode.id);
-                select.selected(selectedAction === null ? '' : String(selectedAction));
-                select.changed(() => {
-                    const selectedValue = select.value();
-                    simulationState.setPolicyAction(stateNode.id, selectedValue === '' ? null : Number(selectedValue));
-                    if (simulationState.replayInitialized) {
-                        simulationState.reset();
-                    }
-                    this.updateContent();
-                    if (typeof redraw === 'function') redraw();
-                });
-            });
         });
 
     }
