@@ -49,6 +49,9 @@ class CanvasController {
             case 'textLabel':
                 this._handleTextLabelClick(target.entity, x, y);
                 break;
+            case 'nodeNameLabel':
+                this._handleNodeNameLabelClick(target.entity, x, y);
+                break;
             case 'edge':
                 this._handleEdgeClick(target.entity);
                 break;
@@ -120,6 +123,12 @@ class CanvasController {
             return;
         }
 
+        if (this.viewModel.interaction.draggingNodeNameLabel) {
+            this.viewModel.interaction.updateDragDistance(x, y);
+            this.viewModel.interaction.draggingNodeNameLabel.setNameLabelPosition(x, y);
+            return;
+        }
+
         // Handle node drag
         if (this.viewModel.interaction.draggingNode) {
             this.viewModel.interaction.updateDragDistance(x, y);
@@ -187,6 +196,12 @@ class CanvasController {
             }
 
             this.viewModel.interaction.draggingTextLabel = null;
+            this.viewModel.interaction.dragDistance = 0;
+            return;
+        }
+
+        if (this.viewModel.interaction.draggingNodeNameLabel) {
+            this.viewModel.interaction.draggingNodeNameLabel = null;
             this.viewModel.interaction.dragDistance = 0;
             return;
         }
@@ -315,6 +330,11 @@ class CanvasController {
             return;
         }
 
+        if (this.viewModel.selection.selectedNodeNameLabel) {
+            this.viewModel.selection.clearSelection();
+            return;
+        }
+
         const entity = this.viewModel.selection.getSelectedEntity();
 
         if (this.interactors.deleteNode) {
@@ -361,6 +381,10 @@ class CanvasController {
             name: node.name,
             size: node.size,
             image: node.image,
+            nameLabelOffset: node.nameLabelOffset ? {
+                x: node.nameLabelOffset.x,
+                y: node.nameLabelOffset.y
+            } : null,
             x: node.x,
             y: node.y,
             pasteCount: 0
@@ -386,6 +410,12 @@ class CanvasController {
         node.id = this._nextNodeId();
         if (data.image !== undefined && data.image !== null) {
             node.image = data.image;
+        }
+        if (data.nameLabelOffset) {
+            node.nameLabelOffset = {
+                x: data.nameLabelOffset.x,
+                y: data.nameLabelOffset.y
+            };
         }
 
         const command = new AddNodeCommand(this.viewModel.graph, node, this.viewModel.selection);
@@ -519,6 +549,24 @@ class CanvasController {
         this.viewModel.interaction.dragDistance = 0;
     }
 
+    _handleNodeNameLabelClick(node, x, y) {
+        this.preferLastClickedNodeForCopy = false;
+        this.viewModel.selection.selectedNode = null;
+        this.viewModel.selection.selectedEdge = null;
+        this.viewModel.selection.selectedTextLabel = null;
+        this.viewModel.selection.selectedNodeNameLabel = node;
+
+        if (this.viewModel.mode === 'editor') {
+            this.viewModel.interaction.draggingNodeNameLabel = node;
+            this.viewModel.interaction.dragStartX = x;
+            this.viewModel.interaction.dragStartY = y;
+            const pos = node.getNameLabelPosition();
+            this.viewModel.interaction.dragStartNameLabelX = pos.x;
+            this.viewModel.interaction.dragStartNameLabelY = pos.y;
+            this.viewModel.interaction.dragDistance = 0;
+        }
+    }
+
     _handleEdgeLabelClick(edge, x, y) {
         this.preferLastClickedNodeForCopy = false;
 
@@ -594,6 +642,7 @@ class CanvasController {
         this.viewModel.interaction.resizingNode = null;
         this.viewModel.interaction.draggingNode = null;
         this.viewModel.interaction.draggingTextLabel = null;
+        this.viewModel.interaction.draggingNodeNameLabel = null;
         this.viewModel.interaction.draggingEdgeLabel = null;
 
         // Clear selection

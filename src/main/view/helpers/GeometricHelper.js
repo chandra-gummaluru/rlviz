@@ -16,6 +16,11 @@ class GeometricHelper {
             return { type: 'textLabel', entity: textLabel };
         }
 
+        const nodeNameLabel = this.findNodeNameLabelAtPosition(graph, x, y);
+        if (nodeNameLabel) {
+            return { type: 'nodeNameLabel', entity: nodeNameLabel };
+        }
+
         // Check nodes (higher priority than edges — visually on top)
         for (let i = graph.nodes.length - 1; i >= 0; i--) {
             const node = graph.nodes[i];
@@ -31,6 +36,23 @@ class GeometricHelper {
         }
 
         return { type: 'none', entity: null };
+    }
+
+    static findNodeNameLabelAtPosition(graph, x, y, fontSize = 16) {
+        for (let i = graph.nodes.length - 1; i >= 0; i--) {
+            const node = graph.nodes[i];
+            if (!node.image || !node.getNameLabelPosition) continue;
+            const pos = node.getNameLabelPosition();
+            const textWidth = String(node.name).length * fontSize * 0.6;
+            const textHeight = fontSize;
+            if (x >= pos.x - textWidth / 2 &&
+                x <= pos.x + textWidth / 2 &&
+                y >= pos.y - textHeight / 2 &&
+                y <= pos.y + textHeight / 2) {
+                return node;
+            }
+        }
+        return null;
     }
 
     /**

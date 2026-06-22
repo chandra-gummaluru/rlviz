@@ -324,6 +324,17 @@ class MainView {
                     drawingContext.restore();
                 }
                 pop();
+
+                // Draw name above the node, matching text label style
+                const labelColor = this.viewModel.selection.selectedNodeNameLabel === node
+                    ? AppPalette.node.selected
+                    : AppPalette.text.black;
+                const labelPos = node.getNameLabelPosition();
+                fill(ColorUtils.applyAlpha(labelColor, nodeAlpha));
+                noStroke();
+                textAlign(CENTER, CENTER);
+                textSize(16);
+                text(node.name, labelPos.x, labelPos.y);
             } else {
                 // Only draw text if no image
                 fill(255, 255, 255, nodeAlpha);

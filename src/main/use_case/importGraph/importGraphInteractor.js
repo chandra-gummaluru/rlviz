@@ -82,6 +82,13 @@ class ImportGraphInteractor extends ImportGraphInputBoundary {
                     }
                 }
 
+                if (nodeData.image) node.image = nodeData.image;
+                if (nodeData.nameLabelOffset) {
+                    node.nameLabelOffset = {
+                        x: nodeData.nameLabelOffset.x || 0,
+                        y: nodeData.nameLabelOffset.y || 0
+                    };
+                }
                 this.graph.addNode(node);
                 nodeMap.set(nodeData.id, node);
             }
