@@ -11,6 +11,13 @@ const RP_REWARD_BAR_HALF_PCT = 50;     // percent representing one full half of 
 
 // Right panel displaying MDP information and node editing
 
+// Render a LaTeX string directly to HTML via KaTeX.
+// display=true for block (display) math, false for inline.
+function renderKatex(latex, display = false) {
+    if (typeof katex === 'undefined') return `<span>${latex}</span>`;
+    return katex.renderToString(latex, { throwOnError: false, displayMode: display });
+}
+
 function latexEscapeText(value) {
     return String(value)
         .replace(/\\/g, '\\textbackslash{}')
@@ -53,13 +60,7 @@ class RightPanel {
         // Discount factor (gamma) for MDP - editable
         this.discountFactor = RP_DEFAULT_DISCOUNT;
 
-        // Sequence counter to cancel stale async MathJax renders
-        this.mathJaxRenderSeq = 0;
-        this.mathJaxRetryCount = 0;
-        this.mathJaxRetryTimer = null;
-        this.mathJaxRetryMax = 600;
-        this.mathJaxRetryDelayMs = 50;
-        this.mathJaxWarnedUnavailable = false;
+
 
         this.callbacks = {
             onSpinningArrowToggle: (enabled) => {
@@ -90,7 +91,7 @@ class RightPanel {
     }
 
     updateContent() {
-        // Replace container with a fresh element so MathJax always sees an unprocessed root
+        // Recreate container so renderMathInElement always processes a fresh, unmodified DOM tree
         if (this.contentContainer) this.contentContainer.remove();
         this.contentContainer = createDiv();
         this.contentContainer.parent(this.panelElement);
@@ -118,47 +119,6 @@ class RightPanel {
             this.renderMDPInfoPanel();
         }
 
-        this._typesetMath();
-    }
-
-    _typesetMath() {
-        if (!window.MathJax || !MathJax.startup || !MathJax.typesetPromise || !this.contentContainer) {
-            if (!this.contentContainer) {
-                return;
-            }
-
-            if (this.mathJaxRetryCount < this.mathJaxRetryMax && !this.mathJaxRetryTimer) {
-                this.mathJaxRetryCount++;
-                this.mathJaxRetryTimer = setTimeout(() => {
-                    this.mathJaxRetryTimer = null;
-                    this._typesetMath();
-                }, this.mathJaxRetryDelayMs);
-            } else if (this.mathJaxRetryCount >= this.mathJaxRetryMax && !this.mathJaxWarnedUnavailable) {
-                this.mathJaxWarnedUnavailable = true;
-                this.mathJaxRetryCount = 0;
-                console.warn('[MJ] MathJax did not become ready for right panel typesetting.');
-            }
-            return;
-        }
-
-        this.mathJaxRetryCount = 0;
-        this.mathJaxWarnedUnavailable = false;
-        if (this.mathJaxRetryTimer) {
-            clearTimeout(this.mathJaxRetryTimer);
-            this.mathJaxRetryTimer = null;
-        }
-
-        const target = this.contentContainer.elt;
-        const seq = ++this.mathJaxRenderSeq;
-
-        MathJax.startup.promise
-            .then(() => {
-                if (seq !== this.mathJaxRenderSeq || !document.body.contains(target)) {
-                    return null;
-                }
-                return MathJax.typesetPromise([target]);
-            })
-            .catch(e => console.error('[MJ] typesetPromise failed:', e));
     }
 
     renderMDPInfoPanel() {
@@ -174,7 +134,7 @@ class RightPanel {
 
         const latex = createDiv();
         latex.parent(titleContainer);
-        latex.html('$$\\langle \\mathcal{S}, s_0, \\mathcal{A}, P, R, \\gamma \\rangle$$');
+        latex.elt.innerHTML = renderKatex('\\langle \\mathcal{S}, s_0, \\mathcal{A}, P, R, \\gamma \\rangle', true);
         latex.addClass('panel-latex');
 
         // State Space Section
@@ -187,13 +147,13 @@ class RightPanel {
             if (states.length === 0) {
                 const setNotation = createDiv();
                 setNotation.parent(stateList);
-                setNotation.html('$$\\mathcal{S} = \\{\\}$$');
+                setNotation.elt.innerHTML = renderKatex('\\mathcal{S} = \\{\\}', true);
                 setNotation.addClass('panel-set-notation');
             } else {
                 const stateNames = buildSetLatex(states, RP_SET_CHAR_LIMIT);
                 const setNotation = createDiv();
                 setNotation.parent(stateList);
-                setNotation.html(`$$\\mathcal{S} = \\{${stateNames}\\}$$`);
+                setNotation.elt.innerHTML = renderKatex(`\\mathcal{S} = \\{${stateNames}\\}`, true);
                 setNotation.addClass('panel-set-notation');
                 setNotation.addClass('panel-set-notation--wrap');
             }
@@ -210,13 +170,13 @@ class RightPanel {
             if (actions.length === 0) {
                 const setNotation = createDiv();
                 setNotation.parent(actionList);
-                setNotation.html('$$\\mathcal{A} = \\{\\}$$');
+                setNotation.elt.innerHTML = renderKatex('\\mathcal{A} = \\{\\}', true);
                 setNotation.addClass('panel-set-notation');
             } else {
                 const actionNames = buildSetLatex(actions, RP_SET_CHAR_LIMIT);
                 const setNotation = createDiv();
                 setNotation.parent(actionList);
-                setNotation.html(`$$\\mathcal{A} = \\{${actionNames}\\}$$`);
+                setNotation.elt.innerHTML = renderKatex(`\\mathcal{A} = \\{${actionNames}\\}`, true);
                 setNotation.addClass('panel-set-notation');
                 setNotation.addClass('panel-set-notation--wrap');
             }
@@ -237,13 +197,14 @@ class RightPanel {
                 empty.parent(probabilityInfo);
                 empty.addClass('panel-empty');
             } else {
-                const dimensionsDiv = createDiv(`Dimensions: ${states.length} \\(\\times\\) ${actions.length} \\(\\times\\) ${states.length}`);
+                const dimensionsDiv = createDiv();
+                dimensionsDiv.elt.innerHTML = `Dimensions: ${renderKatex(`${states.length} \\times ${actions.length} \\times ${states.length}`, false)}`;
                 dimensionsDiv.parent(probabilityInfo);
                 dimensionsDiv.addClass('panel-dimensions');
 
                 const descDiv = createDiv();
                 descDiv.parent(probabilityInfo);
-                descDiv.html('$$P[s][a][s\'] = \\text{probability}$$');
+                descDiv.elt.innerHTML = renderKatex('P[s][a][s\'] = \\text{probability}', true);
                 descDiv.addClass('panel-description');
 
             }
@@ -263,13 +224,14 @@ class RightPanel {
                 empty.parent(rewardInfo);
                 empty.addClass('panel-empty');
             } else {
-                const dimensionsDiv = createDiv(`Dimensions: ${states.length} \\(\\times\\) ${actions.length} \\(\\times\\) ${states.length}`);
+                const dimensionsDiv = createDiv();
+                dimensionsDiv.elt.innerHTML = `Dimensions: ${renderKatex(`${states.length} \\times ${actions.length} \\times ${states.length}`, false)}`;
                 dimensionsDiv.parent(rewardInfo);
                 dimensionsDiv.addClass('panel-dimensions');
 
                 const descDiv = createDiv();
                 descDiv.parent(rewardInfo);
-                descDiv.html('$$R[s][a][s\'] = \\text{reward}$$');
+                descDiv.elt.innerHTML = renderKatex('R[s][a][s\'] = \\text{reward}', true);
                 descDiv.addClass('panel-description');
 
             }
@@ -505,7 +467,7 @@ class RightPanel {
             if (stateNode.actions.length === 0) {
                 const latexDiv = createDiv();
                 latexDiv.parent(connectionsDiv);
-                latexDiv.html(`$$A(s_{${stateIndex}}) = \\{\\}$$`);
+                latexDiv.elt.innerHTML = renderKatex(`A(s_{${stateIndex}}) = \\{\\}`, true);
                 latexDiv.addClass('panel-latex-content');
 
             } else {
@@ -516,7 +478,7 @@ class RightPanel {
                     .join(', ');
                 const latexDiv = createDiv();
                 latexDiv.parent(connectionsDiv);
-                latexDiv.html(`$$A(s_{${stateIndex}}) = \\{${actionSet}\\}$$`);
+                latexDiv.elt.innerHTML = renderKatex(`A(s_{${stateIndex}}) = \\{${actionSet}\\}`, true);
                 latexDiv.addClass('panel-latex-content');
 
             }
@@ -647,7 +609,7 @@ class RightPanel {
         const eqDiv = createDiv();
         eqDiv.parent(this.contentContainer);
         eqDiv.addClass('panel-section-content');
-        eqDiv.html('$$V_t(s) = \\max_a \\sum_{s\'} P(s\'|s,a)[R + \\gamma V_{t+1}(s\')]$$');
+        eqDiv.elt.innerHTML = renderKatex('V_t(s) = \\max_a \\sum_{s\'} P(s\'|s,a)[R + \\gamma V_{t+1}(s\')]', true);
 
         // Parameters
         const paramsDiv = createDiv();
@@ -655,7 +617,8 @@ class RightPanel {
         paramsDiv.addClass('panel-section-content');
         paramsDiv.style('margin-top', '10px');
 
-        const gammaLine = createDiv(`<strong>Discount (\\(\\gamma\\)):</strong> ${this.discountFactor}`);
+        const gammaLine = createDiv();
+        gammaLine.elt.innerHTML = `<strong>Discount (${renderKatex('\\gamma', false)}):</strong> ${this.discountFactor}`;
         gammaLine.parent(paramsDiv);
         gammaLine.style('margin-bottom', '4px');
         if (viState && viState.initialized) {
@@ -716,7 +679,7 @@ class RightPanel {
 
             const formula = createDiv();
             formula.parent(utilityDiv);
-            formula.html('$$G = \\sum_{t=0}^{T-1} \\gamma^t r_t$$');
+            formula.elt.innerHTML = renderKatex('G = \\sum_{t=0}^{T-1} \\gamma^t r_t', true);
             formula.addClass('panel-latex');
 
             const utilityValue = createDiv(returnValue.toFixed(2));
@@ -1102,7 +1065,7 @@ class RightPanel {
         this._buildExplainEquationLines(detail).forEach(line => {
             const d = createDiv();
             d.parent(eqContainer);
-            d.html(`$$${line.text}$$`);
+            d.elt.innerHTML = renderKatex(line.text, true);
             d.addClass('explain-eq-line');
             d.addClass(`explain-eq-line--${line.type}`);
         });
