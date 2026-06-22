@@ -668,6 +668,8 @@ class RightPanel {
         this.createSection('Utility', () => {
             const utilityDiv = createDiv();
             utilityDiv.parent(this.contentContainer);
+            utilityDiv.addClass('utility-hover-panel');
+            utilityDiv.attribute('tabindex', '0');
 
             const formula = createDiv();
             formula.parent(utilityDiv);
@@ -681,43 +683,42 @@ class RightPanel {
             this._applyRewardColor(utilityValue, this.simStatDisplay.utility);
             simStatElements.utility = utilityValue;
 
+            const contributionEpsilon = 1e-9;
+            const nonZeroContributions = rewardHistory
+                .map((reward, t) => ({ reward, t, discounted: Math.pow(gamma, t) * reward }))
+                .filter(({ discounted }) => Math.abs(discounted) > contributionEpsilon);
+
             const timeline = createDiv();
             timeline.parent(utilityDiv);
-            timeline.style('display', 'grid');
-            timeline.style('grid-template-columns', 'repeat(auto-fit, minmax(72px, 1fr))');
-            timeline.style('gap', '6px');
-            timeline.style('margin-top', '10px');
+            timeline.addClass('utility-time-cards');
 
             if (rewardHistory.length === 0) {
                 const empty = createDiv('No rewards collected');
                 empty.parent(timeline);
                 empty.addClass('panel-empty');
+            } else if (nonZeroContributions.length === 0) {
+                const empty = createDiv('No non-zero contributions');
+                empty.parent(timeline);
+                empty.addClass('panel-empty');
             } else {
-                rewardHistory.forEach((reward, t) => {
-                    const discounted = Math.pow(gamma, t) * reward;
+                nonZeroContributions.forEach(({ reward, t, discounted }) => {
                     const cell = createDiv();
                     cell.parent(timeline);
-                    cell.style('border', '1px solid #e0e0e0');
-                    cell.style('border-radius', '4px');
-                    cell.style('padding', '6px');
-                    cell.style('background', '#fafafa');
+                    cell.addClass('utility-time-card');
 
-                    const label = createDiv(`T = ${t}`);
+                    const label = createDiv();
                     label.parent(cell);
-                    label.style('font-size', '11px');
-                    label.style('font-weight', '600');
-                    label.style('color', '#555');
+                    label.addClass('utility-time-card-label');
+                    label.elt.innerHTML = renderKatex('t = ' + t, false);
 
-                    const term = createDiv(`&gamma;^${t} &times; ${reward.toFixed(2)}`);
+                    const term = createDiv();
                     term.parent(cell);
-                    term.style('font-size', '11px');
-                    term.style('margin-top', '4px');
+                    term.addClass('utility-time-card-term');
+                    term.elt.innerHTML = renderKatex('\\gamma^{' + t + '} \\times ' + reward.toFixed(2), false);
 
                     const value = createDiv(discounted.toFixed(2));
                     value.parent(cell);
-                    value.style('font-size', '13px');
-                    value.style('font-weight', '600');
-                    value.style('margin-top', '3px');
+                    value.addClass('utility-time-card-value');
                     this._applyRewardColor(value, discounted);
                 });
             }
