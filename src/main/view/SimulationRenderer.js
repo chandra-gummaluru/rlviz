@@ -63,6 +63,37 @@ class SimulationRenderer {
         return full;
     }
 
+    // Returns trace-based alpha info for a node: null if not in trace, { alpha, forceOpaque }.
+    // forceOpaque=true for current node and (outside spinning phases) the next trace node.
+    // forceOpaque=false for prior visited nodes with decayed alpha.
+    _getTraceAlphaInfo(nodeId) {
+        const simState = this._vm.simulationState;
+        if (!simState || !simState.replayInitialized || simState.currentIndex < 0) return null;
+        const visited = simState.visited;
+        if (!visited || visited.length === 0) return null;
+
+        const ci = simState.currentIndex;
+
+        if (visited[ci] && nodeId === visited[ci].id) {
+            return { alpha: this._ALPHA_FULL, forceOpaque: true };
+        }
+
+        const isSpinningPhase = simState.phase === 'spinning_arrow' || simState.phase === 'state_spinning_arrow';
+        if (!isSpinningPhase && ci + 1 < visited.length && visited[ci + 1] && nodeId === visited[ci + 1].id) {
+            return { alpha: this._ALPHA_FULL, forceOpaque: true };
+        }
+
+        for (let i = ci - 1; i >= 0; i--) {
+            if (visited[i] && visited[i].id === nodeId) {
+                const age = ci - i;
+                const alpha = Math.round(lerp(255, 40, Math.min(age, 5) / 5));
+                return { alpha, forceOpaque: false };
+            }
+        }
+
+        return null;
+    }
+
     // Returns alpha (0-255) for a node during sim phases.
     getNodeAlpha(node) {
         if (this._vm.interaction.mode !== 'simulate') return this._ALPHA_FULL;
@@ -71,38 +102,61 @@ class SimulationRenderer {
         const cur = simState.currentNode;
         if (!cur) return this._ALPHA_FULL;
 
+        let phaseAlpha = this._ALPHA_FULL;
+
         if (simState.phase === 'spinning_arrow' && cur.type === 'action') {
-            if (node.id === cur.id) return this._ALPHA_FULL;
-            if (simState.currentIndex > 0) {
+            if (node.id === cur.id) {
+                phaseAlpha = this._ALPHA_FULL;
+            } else if (simState.currentIndex > 0) {
                 const prev = simState.visited[simState.currentIndex - 1];
-                if (prev && node.id === prev.id && node.type === 'state') return this._ALPHA_FULL;
+                if (prev && node.id === prev.id && node.type === 'state') {
+                    phaseAlpha = this._ALPHA_FULL;
+                } else {
+                    const an = this._vm.graph.getNodeById(cur.id);
+                    if (!an || !an.sas || !an.sas.some(t => t.nextState === node.id)) {
+                        phaseAlpha = this._ALPHA_FADED;
+                    } else {
+                        const hi = simState.getHighlightedEdgeByArrow();
+                        const ht = an.sas[hi];
+                        phaseAlpha = (ht && node.id === ht.nextState) ? this._ALPHA_FULL : this._ALPHA_DIM;
+                    }
+                }
+            } else {
+                const an = this._vm.graph.getNodeById(cur.id);
+                if (!an || !an.sas || !an.sas.some(t => t.nextState === node.id)) {
+                    phaseAlpha = this._ALPHA_FADED;
+                } else {
+                    const hi = simState.getHighlightedEdgeByArrow();
+                    const ht = an.sas[hi];
+                    phaseAlpha = (ht && node.id === ht.nextState) ? this._ALPHA_FULL : this._ALPHA_DIM;
+                }
             }
-            const an = this._vm.graph.getNodeById(cur.id);
-            if (!an || !an.sas) return this._ALPHA_FADED;
-            if (!an.sas.some(t => t.nextState === node.id)) return this._ALPHA_FADED;
-            const hi = simState.getHighlightedEdgeByArrow();
-            const ht = an.sas[hi];
-            return (ht && node.id === ht.nextState) ? this._ALPHA_FULL : this._ALPHA_DIM;
+        } else if (simState.phase === 'state_spinning_arrow' && cur.type === 'state') {
+            if (node.id === cur.id) {
+                phaseAlpha = this._ALPHA_FULL;
+            } else {
+                const hi = simState.getHighlightedEdgeByArrow();
+                const highlightedEdge = simState.spinningArrowEdges[hi];
+                const sn = this._vm.graph.getNodeById(cur.id);
+                if (!sn || !sn.actions || !sn.actions.includes(node.id)) {
+                    phaseAlpha = this._ALPHA_FADED;
+                } else {
+                    phaseAlpha = (highlightedEdge && node.id === highlightedEdge.targetId) ? this._ALPHA_FULL : this._ALPHA_DIM;
+                }
+            }
+        } else if (simState.phase === 'reveal' && cur.type === 'state') {
+            if (node.id === cur.id) {
+                phaseAlpha = this._ALPHA_FULL;
+            } else {
+                const sn = this._vm.graph.getNodeById(cur.id);
+                phaseAlpha = (sn && sn.actions && sn.actions.includes(node.id)) ? this._ALPHA_FULL : this._ALPHA_FADED;
+            }
         }
 
-        if (simState.phase === 'state_spinning_arrow' && cur.type === 'state') {
-            if (node.id === cur.id) return this._ALPHA_FULL;
-            const hi = simState.getHighlightedEdgeByArrow();
-            const highlightedEdge = simState.spinningArrowEdges[hi];
-            const sn = this._vm.graph.getNodeById(cur.id);
-            if (!sn || !sn.actions || !sn.actions.includes(node.id)) return this._ALPHA_FADED;
-            if (highlightedEdge && node.id === highlightedEdge.targetId) return this._ALPHA_FULL;
-            return this._ALPHA_DIM;
-        }
-
-        if (simState.phase === 'reveal' && cur.type === 'state') {
-            if (node.id === cur.id) return this._ALPHA_FULL;
-            const sn = this._vm.graph.getNodeById(cur.id);
-            if (!sn || !sn.actions) return this._ALPHA_FADED;
-            return sn.actions.includes(node.id) ? this._ALPHA_FULL : this._ALPHA_FADED;
-        }
-
-        return this._ALPHA_FULL;
+        const traceAlpha = this._getTraceAlphaInfo(node.id);
+        if (traceAlpha === null) return phaseAlpha;
+        if (traceAlpha.forceOpaque) return this._ALPHA_FULL;
+        return Math.min(phaseAlpha, traceAlpha.alpha);
     }
 
     // Draws the gold travel ball along the highlighted edge during the 'highlight' phase.

@@ -339,12 +339,13 @@ class MainView {
                     drawingContext.beginPath();
                     drawingContext.arc(node.x, node.y, node.size * 0.8, 0, TWO_PI);
                     drawingContext.clip();
+                    drawingContext.globalAlpha = nodeAlpha / 255;
 
                     // Draw image to fit inside circle
                     const imgSize = node.size * 1.6; // Diameter * 0.8
                     image(node._imageObj, node.x, node.y, imgSize, imgSize);
 
-                    drawingContext.restore();
+                    drawingContext.restore(); // resets globalAlpha to 1.0
                 }
                 pop();
 
