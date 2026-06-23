@@ -55,6 +55,8 @@ class TraceGenerator {
 
     /**
      * Select an action from a state using a deterministic policy when available.
+     * Falls back to a random valid action (one with transitions) if the policy
+     * action is missing or has no outgoing transitions.
      */
     selectActionForPolicy(stateNode, policy = {}) {
         if (!stateNode.actions || stateNode.actions.length === 0) {
@@ -67,7 +69,7 @@ class TraceGenerator {
             const matchingActionId = stateNode.actions.find(actionId => Number(actionId) === normalizedId);
             if (matchingActionId !== undefined) {
                 const actionNode = this.graph.nodes.find(n => n.type === 'action' && n.id === matchingActionId);
-                if (actionNode) return actionNode;
+                if (actionNode && actionNode.sas && actionNode.sas.length > 0) return actionNode;
             }
         }
 
@@ -75,20 +77,25 @@ class TraceGenerator {
     }
 
     /**
-     * Select a random action from a state node's available actions
+     * Select a random action from a state node's available actions.
+     * Only considers actions that have at least one outgoing transition,
+     * so the trace never ends stranded on an action node.
      */
     selectRandomAction(stateNode) {
         if (!stateNode.actions || stateNode.actions.length === 0) {
             return null;  // No actions available
         }
 
-        // Get random action ID
-        const randomIndex = Math.floor(Math.random() * stateNode.actions.length);
-        const actionId = stateNode.actions[randomIndex];
+        // Filter to action nodes that have at least one transition
+        const validActions = stateNode.actions
+            .map(actionId => this.graph.nodes.find(n => n.type === 'action' && n.id === actionId))
+            .filter(n => n && n.sas && n.sas.length > 0);
 
-        // Find the action node
-        const actionNode = this.graph.nodes.find(n => n.type === 'action' && n.id === actionId);
-        return actionNode;
+        if (validActions.length === 0) {
+            return null;  // Terminal state — no reachable next state
+        }
+
+        return validActions[Math.floor(Math.random() * validActions.length)];
     }
 
     /**
