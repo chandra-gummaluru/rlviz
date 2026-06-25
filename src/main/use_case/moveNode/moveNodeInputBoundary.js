@@ -1,4 +1,3 @@
-// Input boundary interface for MoveNode use case
 class MoveNodeInputBoundary {
     startMove(inputData) {
         throw new Error('MoveNodeInputBoundary.startMove() must be implemented');

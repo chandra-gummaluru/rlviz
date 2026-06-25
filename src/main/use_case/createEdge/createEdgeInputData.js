@@ -1,4 +1,3 @@
-// Input data for creating an edge
 class CreateEdgeInputData {
     constructor(fromNodeId, toNodeId, probability, reward) {
         this.fromNodeId = fromNodeId;

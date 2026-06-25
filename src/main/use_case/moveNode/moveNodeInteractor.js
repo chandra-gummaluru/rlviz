@@ -1,4 +1,3 @@
-// Interactor for MoveNode use case
 class MoveNodeInteractor extends MoveNodeInputBoundary {
     constructor(graph, presenter) {
         super();

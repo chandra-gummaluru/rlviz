@@ -1,4 +1,3 @@
-// Input boundary interface for RenameNode use case
 class RenameNodeInputBoundary {
     requestRename(inputData) {
         throw new Error('RenameNodeInputBoundary.requestRename() must be implemented');

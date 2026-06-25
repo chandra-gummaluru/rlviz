@@ -1,4 +1,3 @@
-// Input data for MoveNode use case
 class MoveNodeInputData {
     constructor(nodeId, textLabelId, startX, startY, endX, endY) {
         this.nodeId = nodeId;

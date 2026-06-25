@@ -1,4 +1,3 @@
-// Input data for CreateTextLabel use case
 class CreateTextLabelInputData {
     constructor(text, x, y, fontSize) {
         this.text = text;

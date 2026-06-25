@@ -1,4 +1,3 @@
-// Presenter for DeleteNode use case
 class DeleteNodePresenter extends DeleteNodeOutputBoundary {
     constructor(selectionViewModel) {
         super();

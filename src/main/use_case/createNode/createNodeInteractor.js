@@ -1,4 +1,3 @@
-// Interactor for creating nodes
 class CreateNodeInteractor extends CreateNodeInputBoundary {
     constructor(graph, outputBoundary) {
         super();

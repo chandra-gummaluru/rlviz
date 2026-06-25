@@ -1,4 +1,3 @@
-// Interactor for RenameNode use case
 class RenameNodeInteractor extends RenameNodeInputBoundary {
     constructor(graph, commandHistory, presenter) {
         super();

@@ -1,4 +1,3 @@
-// Presenter for renormalizing probabilities
 class RenormalizeProbabilitiesPresenter extends RenormalizeProbabilitiesOutputBoundary {
     constructor(viewModel) {
         super();

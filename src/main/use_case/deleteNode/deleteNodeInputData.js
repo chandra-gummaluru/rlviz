@@ -1,4 +1,3 @@
-// Input data for DeleteNode use case
 class DeleteNodeInputData {
     constructor(nodeId, edgeFromId, edgeToId, textLabelId) {
         this.nodeId = nodeId;

@@ -1,4 +1,3 @@
-// Interactor for creating edges
 class CreateEdgeInteractor extends CreateEdgeInputBoundary {
     constructor(graph, commandHistory, outputBoundary) {
         super();

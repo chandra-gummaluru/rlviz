@@ -1,4 +1,3 @@
-// Interactor for CreateTextLabel use case
 class CreateTextLabelInteractor extends CreateTextLabelInputBoundary {
     constructor(graph, commandHistory, presenter) {
         super();

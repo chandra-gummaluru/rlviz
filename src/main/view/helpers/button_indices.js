@@ -2,6 +2,7 @@ export const ADD_STATE_BTN_INDEX = 0;
 export const ADD_ACTION_BTN_INDEX = 1;
 export const ADD_TEXT_BTN_INDEX = 2;
 export const RENORMALIZE_BTN_INDEX = 3;
+export const NEW_BTN_INDEX = 4;
 
 export const PLAY_PAUSE_BTN_INDEX = 0;
 export const STEP_BTN_INDEX = 1;

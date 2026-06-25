@@ -1,4 +1,3 @@
-// Output boundary interface for MoveNode use case
 class MoveNodeOutputBoundary {
     presentMoveStarted(entity, startX, startY) {
         throw new Error('MoveNodeOutputBoundary.presentMoveStarted() must be implemented');

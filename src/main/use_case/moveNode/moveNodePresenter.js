@@ -1,4 +1,3 @@
-// Presenter for MoveNode use case
 class MoveNodePresenter extends MoveNodeOutputBoundary {
     constructor(interactionViewModel) {
         super();

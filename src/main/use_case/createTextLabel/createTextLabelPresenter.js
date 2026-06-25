@@ -1,4 +1,3 @@
-// Presenter for CreateTextLabel use case
 class CreateTextLabelPresenter extends CreateTextLabelOutputBoundary {
     constructor(interactionViewModel) {
         super();

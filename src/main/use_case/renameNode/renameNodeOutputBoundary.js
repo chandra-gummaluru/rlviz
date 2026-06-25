@@ -1,4 +1,3 @@
-// Output boundary interface for RenameNode use case
 class RenameNodeOutputBoundary {
     presentRenameRequested(node, currentName) {
         throw new Error('RenameNodeOutputBoundary.presentRenameRequested() must be implemented');

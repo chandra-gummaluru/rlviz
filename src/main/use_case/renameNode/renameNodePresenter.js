@@ -1,4 +1,3 @@
-// Presenter for RenameNode use case
 class RenameNodePresenter extends RenameNodeOutputBoundary {
     constructor(interactionViewModel) {
         super();

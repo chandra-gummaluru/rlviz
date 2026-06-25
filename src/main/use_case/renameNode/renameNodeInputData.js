@@ -1,4 +1,3 @@
-// Input data for RenameNode use case
 class RenameNodeInputData {
     constructor(nodeId, newName) {
         this.nodeId = nodeId;

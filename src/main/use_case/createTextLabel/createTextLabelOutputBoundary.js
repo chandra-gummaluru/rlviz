@@ -1,4 +1,3 @@
-// Output boundary interface for CreateTextLabel use case
 class CreateTextLabelOutputBoundary {
     presentTextRequested() {
         throw new Error('CreateTextLabelOutputBoundary.presentTextRequested() must be implemented');

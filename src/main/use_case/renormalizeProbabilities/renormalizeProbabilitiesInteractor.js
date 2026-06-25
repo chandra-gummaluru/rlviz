@@ -1,4 +1,3 @@
-// Interactor for renormalizing probabilities across all action nodes
 class RenormalizeProbabilitiesInteractor extends RenormalizeProbabilitiesInputBoundary {
     constructor(graph, commandHistory, presenter) {
         super();

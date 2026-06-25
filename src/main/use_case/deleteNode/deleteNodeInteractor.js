@@ -1,4 +1,3 @@
-// Interactor for DeleteNode use case
 class DeleteNodeInteractor extends DeleteNodeInputBoundary {
     constructor(graph, commandHistory, presenter) {
         super();

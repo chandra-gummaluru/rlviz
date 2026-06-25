@@ -1,4 +1,3 @@
-// Presenter for node creation
 class CreateNodePresenter extends CreateNodeOutputBoundary {
     constructor(viewModel) {
         super();

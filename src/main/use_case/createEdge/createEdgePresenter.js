@@ -1,4 +1,3 @@
-// Presenter for edge creation
 class CreateEdgePresenter extends CreateEdgeOutputBoundary {
     constructor(viewModel) {
         super();

@@ -5,3 +5,4 @@ export const TEXT_SIZE_4 = 11;
 export const TEXT_SIZE_5 = 12;
 export const TEXT_SIZE_6 = 13;
 export const TEXT_SIZE_7 = 14;
+export const TEXT_SIZE_8 = 16;
