@@ -881,3 +881,18 @@ canvas {
   white-space: nowrap;
   color: var(--text-dark);
 }
+
+.expectation-back-btn {
+  position: absolute;
+  z-index: 11;
+  background: var(--surface-light);
+  border: 0.5px solid var(--border-light);
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: var(--font-family);
+  color: var(--text-dark);
+  pointer-events: all;
+}
+.expectation-back-btn:hover { background: var(--surface-white); }

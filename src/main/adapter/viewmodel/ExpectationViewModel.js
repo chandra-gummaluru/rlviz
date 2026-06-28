@@ -3,6 +3,7 @@ class ExpectationViewModel {
         this.panelLayout = null;
         this.layoutStale = true;
         this.isPlaying = false;
+        this.focusedRunIndex = null;
         this.lastResponse = null;
         this.lastError = null;
     }

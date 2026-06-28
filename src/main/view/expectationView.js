@@ -36,6 +36,11 @@ class ExpectationView {
             return;
         }
 
+        if (vm.focusedRunIndex !== null) {
+            this._drawFocusedPanel(canvasW, canvasH);
+            return;
+        }
+
         if (vm.layoutStale) {
             vm.computeLayout(canvasW, canvasH - EXPECTATION_SCRUBBER_H, state.displayRuns, this.graph);
         }
@@ -306,8 +311,126 @@ class ExpectationView {
         this._scrubberSlider.value = '0';
     }
 
+    handleClick(mx, my) {
+        const vm = this.expectationViewModel;
+        const state = this.expectationState;
+        if (!state.computed) return;
+
+        if (vm.focusedRunIndex !== null) {
+            return;
+        }
+
+        const { panels } = vm.panelLayout || { panels: [] };
+        for (let i = 0; i < panels.length; i++) {
+            const p = panels[i];
+            if (mx >= p.x && mx <= p.x + p.w && my >= p.y && my <= p.y + p.h) {
+                this.enterFocusMode(i);
+                return;
+            }
+        }
+    }
+
+    enterFocusMode(index) {
+        const state = this.expectationState;
+        const vm = this.expectationViewModel;
+        if (index < 0 || index >= state.getDisplaySlice().length) return;
+        vm.focusedRunIndex = index;
+        this._createBackButton();
+        if (typeof redraw === 'function') redraw();
+    }
+
+    exitFocusMode() {
+        const vm = this.expectationViewModel;
+        if (vm.focusedRunIndex === null) return;
+        vm.focusedRunIndex = null;
+        this._removeBackButton();
+        vm.invalidateLayout();
+        if (typeof redraw === 'function') redraw();
+    }
+
+    handleKey(key) {
+        if (key === 'Escape') this.exitFocusMode();
+    }
+
+    _createBackButton() {
+        this._removeBackButton();
+        const btn = document.createElement('div');
+        btn.className = 'expectation-back-btn';
+        btn.textContent = '← All runs';
+        btn.style.top = (this._topOffset + 8) + 'px';
+        btn.style.left = '8px';
+        btn.addEventListener('click', () => this.exitFocusMode());
+        document.body.appendChild(btn);
+        this._backBtn = btn;
+    }
+
+    _removeBackButton() {
+        if (this._backBtn) {
+            this._backBtn.remove();
+            this._backBtn = null;
+        }
+    }
+
+    _drawFocusedPanel(canvasW, canvasH) {
+        const state = this.expectationState;
+        const vm = this.expectationViewModel;
+        const rollout = state.getDisplaySlice()[vm.focusedRunIndex];
+        if (!rollout) return;
+
+        const availH = canvasH - EXPECTATION_SCRUBBER_H;
+        const fitTransform = this.expectationViewModel._computeFitTransform(this.graph, canvasW, availH);
+        if (!fitTransform) return;
+
+        const { offsetX, offsetY, fitScale } = fitTransform;
+        const runColor = AppPalette.expectation.runColors[vm.focusedRunIndex % AppPalette.expectation.runColors.length];
+        const currentT = state.currentT;
+
+        drawingContext.save();
+        drawingContext.beginPath();
+        drawingContext.rect(0, 0, canvasW, availH);
+        drawingContext.clip();
+
+        fill(AppPalette.surface.white);
+        noStroke();
+        rect(0, 0, canvasW, availH);
+
+        push();
+        translate(offsetX, offsetY);
+        scale(fitScale);
+
+        for (const edge of this.graph.edges) {
+            this._drawEdge(edge.getFromNode(), edge.getToNode(), AppPalette.node.state, EXPECTATION_DIM_ALPHA);
+        }
+        for (const node of this.graph.nodes) {
+            this._drawNode(node, AppPalette.node.state, EXPECTATION_DIM_ALPHA, fitScale);
+        }
+
+        const effectiveT = Math.min(currentT, rollout.numSteps);
+        const visitedSlice = rollout.trace.slice(0, 2 * effectiveT + 1);
+        for (let k = 0; k + 1 < visitedSlice.length; k++) {
+            const fromNode = this.graph.getNodeById(visitedSlice[k].id);
+            const toNode = this.graph.getNodeById(visitedSlice[k + 1].id);
+            if (fromNode && toNode) this._drawEdge(fromNode, toNode, runColor, 255);
+        }
+        for (const entry of visitedSlice) {
+            const node = this.graph.getNodeById(entry.id);
+            if (node) this._drawNode(node, runColor, 255, fitScale);
+        }
+        pop();
+        drawingContext.restore();
+
+        const utility = state._getUtility(rollout, currentT);
+        noStroke();
+        fill(AppPalette.text.primary);
+        textSize(13);
+        textAlign(LEFT, TOP);
+        textFont('Calibri, "Segoe UI", Tahoma, sans-serif');
+        text(`Run ${vm.focusedRunIndex + 1}  G = ${utility.toFixed(2)}`, 48, 10);
+    }
+
     teardown() {
         this.stopPlay();
+        this.exitFocusMode();
         cancelAnimationFrame(this._rafHandle);
         this._rafHandle = null;
         this._removeScrubber();

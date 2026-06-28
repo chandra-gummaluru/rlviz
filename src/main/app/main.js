@@ -719,6 +719,9 @@ function setup() {
 
     rightPanel.callbacks.onExpectationDisplayRunsChange = (displayRuns) => {
         expectationState.displayRuns = displayRuns;
+        if (expectationViewModel.focusedRunIndex !== null && expectationViewModel.focusedRunIndex >= displayRuns) {
+            if (expectationView) expectationView.exitFocusMode();
+        }
         expectationViewModel.invalidateLayout();
         rightPanel.updateContent();
         redraw();
@@ -747,6 +750,10 @@ function draw() {
 
 function mousePressed() {
     if (!mainView) return;
+    if (canvasViewModel.interaction.mode === 'expectation' && mainView.expectationView) {
+        mainView.expectationView.handleClick(mouseX, mouseY);
+        return;
+    }
     mainView.mousePressed();
 }
 
@@ -767,6 +774,9 @@ function mouseMoved() {
 
 function keyPressed() {
     if (!mainView) return;
+    if (canvasViewModel.interaction.mode === 'expectation' && mainView.expectationView) {
+        mainView.expectationView.handleKey(key);
+    }
     return mainView.keyPressed();
 }
 
