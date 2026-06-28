@@ -1,0 +1,3 @@
+class UpdateExpectationGammaInputBoundary {
+    execute(inputData) {}
+}
