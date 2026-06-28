@@ -389,6 +389,7 @@ class ExpectationView {
         if (index < 0 || index >= state.getDisplaySlice().length) return;
         vm.focusedRunIndex = index;
         this._createBackButton();
+        if (this._rightPanel) this._rightPanel.updateExpectationData();
         if (typeof redraw === 'function') redraw();
     }
 
@@ -398,6 +399,7 @@ class ExpectationView {
         vm.focusedRunIndex = null;
         this._removeBackButton();
         vm.invalidateLayout();
+        if (this._rightPanel) this._rightPanel.updateExpectationData();
         if (typeof redraw === 'function') redraw();
     }
 

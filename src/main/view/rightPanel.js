@@ -1468,6 +1468,22 @@ class RightPanel {
         return { labels, upperBand, means, lowerBand };
     }
 
+    _distChartStyles(state, focusedIdx) {
+        const allUtils = state.getAllUtilitiesAtT(state.currentT);
+        const data = allUtils.map((u, i) => ({ x: u, y: i * RP_EXPECTATION_Y_STEP }));
+        const bgColors = allUtils.map((_, i) =>
+            focusedIdx !== null && i === focusedIdx
+                ? AppPalette.expectation.runColors[i % 8]
+                : 'rgba(150,150,150,0.3)'
+        );
+        const radii = allUtils.map((_, i) => focusedIdx !== null && i === focusedIdx ? 8 : 3);
+        const xVals = allUtils.filter(isFinite);
+        const xMin = xVals.length > 0 ? Math.min(...xVals) : 0;
+        const xMax = xVals.length > 0 ? Math.max(...xVals) : 1;
+        const xPad = (xMax - xMin) * 0.1 || 1;
+        return { data, bgColors, radii, xMin: xMin - xPad, xMax: xMax + xPad };
+    }
+
     _buildExpectationDistChart(state) {
         if (this.expectationDistChartInst) {
             this.expectationDistChartInst.destroy();
@@ -1476,32 +1492,25 @@ class RightPanel {
         if (!this._expectationDistCanvas || !state || !state.computed) return;
         if (typeof Chart === 'undefined') return;
 
-        const ctx = this._expectationDistCanvas.getContext('2d');
-        const currentT = state.currentT;
-        const allUtils = state.getAllUtilitiesAtT(currentT);
-        const dispUtils = state.getDisplayUtilitiesAtT(currentT);
-        const xVals = allUtils.filter(isFinite);
-        const xMin = xVals.length > 0 ? Math.min(...xVals) : 0;
-        const xMax = xVals.length > 0 ? Math.max(...xVals) : 1;
-        const xPad = (xMax - xMin) * 0.1 || 1;
+        const focusedIdx = this.expectationViewModel ? this.expectationViewModel.focusedRunIndex : null;
+        const { data, bgColors, radii, xMin, xMax } = this._distChartStyles(state, focusedIdx);
 
-        const allData = allUtils.map((u, i) => ({ x: u, y: i * RP_EXPECTATION_Y_STEP }));
-        const dispData = dispUtils.map((u, i) => ({ x: u, y: i * RP_EXPECTATION_Y_STEP }));
-        const dispColors = dispUtils.map((_, i) => AppPalette.expectation.runColors[i % 8]);
-
-        this.expectationDistChartInst = new Chart(ctx, {
+        this.expectationDistChartInst = new Chart(this._expectationDistCanvas.getContext('2d'), {
             type: 'scatter',
             data: {
-                datasets: [
-                    { label: 'All', data: allData, backgroundColor: 'rgba(150,150,150,0.25)', pointRadius: 3 },
-                    { label: 'Display', data: dispData, backgroundColor: dispColors, pointRadius: 6 }
-                ]
+                datasets: [{
+                    label: 'Runs',
+                    data,
+                    backgroundColor: bgColors,
+                    pointRadius: radii
+                }]
             },
             options: {
                 responsive: true, maintainAspectRatio: false,
+                animation: false,
                 plugins: { legend: { display: false } },
                 scales: {
-                    x: { min: xMin - xPad, max: xMax + xPad,
+                    x: { min: xMin, max: xMax,
                          ticks: { font: { size: 9 }, color: '#898781' }, grid: { color: '#e1e0d9' } },
                     y: { display: false }
                 }
@@ -1534,22 +1543,15 @@ class RightPanel {
         }
 
         if (this.expectationDistChartInst) {
-            const allUtils = state.getAllUtilitiesAtT(currentT);
-            const dispUtils = state.getDisplayUtilitiesAtT(currentT);
-            const xVals = allUtils.filter(isFinite);
-            const xMin = xVals.length > 0 ? Math.min(...xVals) : 0;
-            const xMax = xVals.length > 0 ? Math.max(...xVals) : 1;
-            const xPad = (xMax - xMin) * 0.1 || 1;
-
-            this.expectationDistChartInst.data.datasets[0].data =
-                allUtils.map((u, i) => ({ x: u, y: i * RP_EXPECTATION_Y_STEP }));
-            this.expectationDistChartInst.data.datasets[1].data =
-                dispUtils.map((u, i) => ({ x: u, y: i * RP_EXPECTATION_Y_STEP }));
-            this.expectationDistChartInst.data.datasets[1].backgroundColor =
-                dispUtils.map((_, i) => AppPalette.expectation.runColors[i % 8]);
-            this.expectationDistChartInst.options.scales.x.min = xMin - xPad;
-            this.expectationDistChartInst.options.scales.x.max = xMax + xPad;
-            this.expectationDistChartInst.update('none');
+            const focusedIdx = this.expectationViewModel ? this.expectationViewModel.focusedRunIndex : null;
+            const { data, bgColors, radii, xMin, xMax } = this._distChartStyles(state, focusedIdx);
+            const chart = this.expectationDistChartInst;
+            chart.data.datasets[0].data = data;
+            chart.data.datasets[0].backgroundColor = bgColors;
+            chart.data.datasets[0].pointRadius = radii;
+            chart.options.scales.x.min = xMin;
+            chart.options.scales.x.max = xMax;
+            chart.update('none');
         }
     }
 
