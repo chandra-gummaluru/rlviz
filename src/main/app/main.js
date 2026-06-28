@@ -697,7 +697,7 @@ function setup() {
     rightPanel.expectationViewModel = expectationViewModel;
 
     // Right panel Expectation callbacks
-    rightPanel.callbacks.onExpectationSamplingChange = () => {
+    const _runExpectationBatch = () => {
         const startNode = canvasViewModel.startNode;
         if (!startNode) return;
         runExpectationInteractor.execute(new RunExpectationInputData(
@@ -708,6 +708,17 @@ function setup() {
             expectationState.gamma
         ));
         if (expectationView) expectationView.updateScrubberMax();
+    };
+
+    rightPanel.callbacks.onExpectationDisplayRunsChange = (displayRuns) => {
+        expectationState.displayRuns = displayRuns;
+        expectationViewModel.invalidateLayout();
+        rightPanel.updateContent();
+        redraw();
+    };
+
+    rightPanel.callbacks.onExpectationMaxStepsChange = () => {
+        _runExpectationBatch();
     };
 
     rightPanel.callbacks.onExpectationGammaChange = (gamma) => {

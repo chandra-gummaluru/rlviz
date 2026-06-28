@@ -85,8 +85,9 @@ class RightPanel {
             onVICellClick: null,            // (colIdx, stateId, actionId) => void
             onVIExplainClose: null,         // () => void
             onVIExplainStep: null,          // ('prev' | 'next') => void
-            onExpectationSamplingChange: null, // () => void
-            onExpectationGammaChange: null,   // (gamma) => void
+            onExpectationDisplayRunsChange: null, // (displayRuns) => void
+            onExpectationMaxStepsChange: null,    // (maxSteps) => void
+            onExpectationGammaChange: null,       // (gamma) => void
         };
     }
 
@@ -1399,7 +1400,7 @@ class RightPanel {
         runsSelect.changed(() => {
             const runs = parseInt(runsSelect.value(), 10);
             if (state) state.displayRuns = runs;
-            if (this.callbacks.onExpectationSamplingChange) this.callbacks.onExpectationSamplingChange();
+            if (this.callbacks.onExpectationDisplayRunsChange) this.callbacks.onExpectationDisplayRunsChange(runs);
         });
 
         // Max Steps (full width below)
@@ -1419,11 +1420,11 @@ class RightPanel {
         stepsInput.attribute('value', state ? String(state.maxSteps) : '100');
         stepsInput.addClass('panel-input');
         stepsInput.style('width', '80px');
-        stepsInput.input(() => {
+        stepsInput.changed(() => {
             const steps = parseInt(stepsInput.value(), 10);
             if (!isNaN(steps) && steps >= 1 && steps <= 1000) {
                 if (state) state.maxSteps = steps;
-                if (this.callbacks.onExpectationSamplingChange) this.callbacks.onExpectationSamplingChange();
+                if (this.callbacks.onExpectationMaxStepsChange) this.callbacks.onExpectationMaxStepsChange(steps);
             }
         });
     }
