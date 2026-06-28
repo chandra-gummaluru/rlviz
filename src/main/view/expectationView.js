@@ -19,6 +19,8 @@ class ExpectationView {
         this._rightPanel = null;
         this.onPlaybackStateChange = null;
         this._topOffset = 90;
+        this._imageCache = new Map();
+        this._backBtn = null;
     }
 
     setRightPanel(rightPanel) {
@@ -35,6 +37,8 @@ class ExpectationView {
             this._drawEmptyPrompt(canvasW, canvasH);
             return;
         }
+
+        this._ensureImagesLoaded();
 
         if (vm.focusedRunIndex !== null) {
             this._drawFocusedPanel(canvasW, canvasH);
@@ -136,6 +140,23 @@ class ExpectationView {
         }
     }
 
+    _ensureImagesLoaded() {
+        for (const node of this.graph.nodes) {
+            if (!node.image) continue;
+            const key = `${node.id}:${node.image}`;
+            if (this._imageCache.has(key)) continue;
+            const img = new Image();
+            img.onload = () => {
+                if (this.viewModel.interaction.mode === 'expectation') {
+                    if (typeof redraw === 'function') redraw();
+                }
+            };
+            img.onerror = () => { this._imageCache.set(key, 'failed'); };
+            this._imageCache.set(key, img);
+            img.src = node.image;
+        }
+    }
+
     _drawNode(node, color, alpha, fitScale) {
         const col = ColorUtils.applyAlpha(color, alpha);
         push();
@@ -143,8 +164,21 @@ class ExpectationView {
         fill(col);
         if (node.type === 'state') {
             circle(node.x, node.y, node.size * 2);
+            // State node image (circle-clipped)
+            if (node.image) {
+                const key = `${node.id}:${node.image}`;
+                const img = this._imageCache.get(key);
+                if (img && img !== 'failed' && img.complete && img.naturalWidth > 0) {
+                    drawingContext.save();
+                    drawingContext.beginPath();
+                    drawingContext.arc(node.x, node.y, node.size * 0.95, 0, Math.PI * 2);
+                    drawingContext.clip();
+                    drawingContext.globalAlpha = alpha / 255;
+                    drawingContext.drawImage(img, node.x - node.size, node.y - node.size, node.size * 2, node.size * 2);
+                    drawingContext.restore();
+                }
+            }
         } else {
-            // Action node: small diamond
             const s = node.size * 0.85;
             beginShape();
             vertex(node.x, node.y - s);
@@ -153,7 +187,6 @@ class ExpectationView {
             vertex(node.x - s, node.y);
             endShape(CLOSE);
         }
-        // Abbreviated name
         const label = node.name && node.name.length > 4 ? node.name.slice(0, 3) + '…' : (node.name || '');
         const screenFontSize = Math.max(6, node.size * 0.55);
         const worldFontSize = screenFontSize / (fitScale || 1);
@@ -434,6 +467,7 @@ class ExpectationView {
         cancelAnimationFrame(this._rafHandle);
         this._rafHandle = null;
         this._removeScrubber();
+        this._imageCache.clear();
     }
 
     _removeScrubber() {
