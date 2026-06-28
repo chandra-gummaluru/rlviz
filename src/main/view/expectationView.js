@@ -96,10 +96,12 @@ class ExpectationView {
                 this._drawNode(node, AppPalette.node.state, EXPECTATION_DIM_ALPHA, fitScale);
             }
 
+            // Draw text labels
+            this._drawTextLabels(fitScale);
+
             // Highlight visited nodes and edges
             const effectiveT = Math.min(currentT, rollout.numSteps);
             const visitedSlice = rollout.trace.slice(0, 2 * effectiveT + 1);
-            const visitedIds = new Set(visitedSlice.map(e => e.id));
 
             // Visited edges
             for (let k = 0; k + 1 < visitedSlice.length; k++) {
@@ -183,15 +185,37 @@ class ExpectationView {
             fill(ColorUtils.applyAlpha(color, Math.round(alpha * 0.65)));
             circle(node.x, node.y, node.size * 2);
         }
-        const label = node.name && node.name.length > 4 ? node.name.slice(0, 3) + '…' : (node.name || '');
-        const screenFontSize = Math.max(6, node.size * 0.55);
-        const worldFontSize = screenFontSize / (fitScale || 1);
-        fill(255);
-        textSize(worldFontSize);
+        // Skip name label when node has a visible image
+        const hasVisibleImage = node.image && (() => {
+            const key = `${node.id}:${node.image}`;
+            const img = this._imageCache.get(key);
+            return img && img !== 'failed' && img.complete && img.naturalWidth > 0;
+        })();
+        if (!hasVisibleImage) {
+            const label = node.name && node.name.length > 4 ? node.name.slice(0, 3) + '…' : (node.name || '');
+            const screenFontSize = Math.max(6, node.size * 0.55);
+            const worldFontSize = screenFontSize / (fitScale || 1);
+            fill(255);
+            textSize(worldFontSize);
+            textAlign(CENTER, CENTER);
+            textFont('Calibri, "Segoe UI", Tahoma, sans-serif');
+            text(label, node.x, node.y);
+        }
+        pop();
+    }
+
+    _drawTextLabels(fitScale) {
+        const labels = this.graph.textLabels;
+        if (!labels || labels.length === 0) return;
+        const worldFontSize = (label) => Math.max(6 / (fitScale || 1), label.fontSize);
+        fill(AppPalette.text.black);
+        noStroke();
         textAlign(CENTER, CENTER);
         textFont('Calibri, "Segoe UI", Tahoma, sans-serif');
-        text(label, node.x, node.y);
-        pop();
+        for (const label of labels) {
+            textSize(worldFontSize(label));
+            text(label.text, label.x, label.y);
+        }
     }
 
     _drawEdge(from, to, color, alpha) {
@@ -445,6 +469,9 @@ class ExpectationView {
             const node = this.graph.getNodeById(entry.id);
             if (node) this._drawNode(node, runColor, 255, fitScale);
         }
+
+        this._drawTextLabels(fitScale);
+
         pop();
         drawingContext.restore();
 
