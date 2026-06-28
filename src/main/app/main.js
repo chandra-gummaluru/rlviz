@@ -177,7 +177,7 @@ const onModeChange = (mode) => {
 
     // Leaving Expectation mode: clean up
     if (prevMode === 'expectation' && mode !== 'expectation') {
-        if (mainView && mainView.expectationView) mainView.expectationView.removeScrubber();
+        if (mainView && mainView.expectationView) mainView.expectationView.teardown();
         expectationState.resetData();
         expectationViewModel.invalidateLayout();
     }
@@ -540,6 +540,12 @@ function setup() {
                 valueIterationViewModel.showCalculations = enabled;
                 redraw();
             }
+        },
+        onExpectationPlay: () => {
+            if (mainView && mainView.expectationView) mainView.expectationView.startPlay();
+        },
+        onExpectationPause: () => {
+            if (mainView && mainView.expectationView) mainView.expectationView.stopPlay();
         }
     }, canvasViewModel);
     toolBar.setup(menuBar.getHeight());
@@ -698,6 +704,7 @@ function setup() {
 
     // Right panel Expectation callbacks
     const _runExpectationBatch = () => {
+        if (mainView && mainView.expectationView) mainView.expectationView.stopPlay();
         const startNode = canvasViewModel.startNode;
         if (!startNode) return;
         runExpectationInteractor.execute(new RunExpectationInputData(
@@ -723,6 +730,11 @@ function setup() {
 
     rightPanel.callbacks.onExpectationGammaChange = (gamma) => {
         updateExpectationGammaInteractor.execute(new UpdateExpectationGammaInputData(gamma));
+    };
+
+    // Expectation Play/Pause
+    expectationView.onPlaybackStateChange = (isPlaying) => {
+        if (toolBar) toolBar.setExpectationPlayMode(isPlaying ? 'pause' : 'play');
     };
 
     // Initialize

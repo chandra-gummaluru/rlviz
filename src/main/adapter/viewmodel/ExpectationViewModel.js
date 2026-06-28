@@ -2,7 +2,7 @@ class ExpectationViewModel {
     constructor() {
         this.panelLayout = null;
         this.layoutStale = true;
-        this.activeTab = 'line';
+        this.isPlaying = false;
         this.lastResponse = null;
         this.lastError = null;
     }

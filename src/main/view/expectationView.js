@@ -12,8 +12,13 @@ class ExpectationView {
         this.expectationState = expectationState;
         this.graph = graph;
         this._scrubberDiv = null;
+        this._scrubberSlider = null;
+        this._scrubberReadout = null;
         this._rafHandle = null;
+        this._playTimer = null;
         this._rightPanel = null;
+        this.onPlaybackStateChange = null;
+        this._topOffset = 90;
     }
 
     setRightPanel(rightPanel) {
@@ -195,8 +200,59 @@ class ExpectationView {
         text('Set a start state in Simulate mode to compute rollouts.', canvasW / 2, canvasH / 2);
     }
 
+    startPlay() {
+        const vm = this.expectationViewModel;
+        const state = this.expectationState;
+        if (vm.isPlaying || !state.computed) return;
+        if (state.currentT >= state.maxT) {
+            state.currentT = 0;
+            this._syncScrubber();
+        }
+        vm.isPlaying = true;
+        if (this.onPlaybackStateChange) this.onPlaybackStateChange(true);
+        this._scheduleNextTick();
+    }
+
+    _scheduleNextTick() {
+        const vm = this.expectationViewModel;
+        const state = this.expectationState;
+        this._playTimer = setTimeout(() => {
+            if (!vm.isPlaying) return;
+            state.currentT++;
+            this._syncScrubber();
+            if (typeof redraw === 'function') redraw();
+            if (this._rightPanel) this._rightPanel.updateExpectationData();
+            if (state.currentT >= state.maxT) {
+                this.stopPlay();
+            } else {
+                this._scheduleNextTick();
+            }
+        }, 250);
+    }
+
+    stopPlay() {
+        const vm = this.expectationViewModel;
+        if (this._playTimer !== null) {
+            clearTimeout(this._playTimer);
+            this._playTimer = null;
+        }
+        if (!vm.isPlaying) return;
+        vm.isPlaying = false;
+        if (this.onPlaybackStateChange) this.onPlaybackStateChange(false);
+    }
+
+    _syncScrubber() {
+        const state = this.expectationState;
+        if (!this._scrubberSlider) return;
+        this._scrubberSlider.value = String(state.currentT);
+        if (this._scrubberReadout) {
+            this._scrubberReadout.textContent = `${state.currentT} / ${state.maxT}`;
+        }
+    }
+
     setupScrubber(canvasW, canvasH, topOffset) {
-        this.removeScrubber();
+        this._removeScrubber();
+        this._topOffset = topOffset;
 
         const div = document.createElement('div');
         div.className = 'expectation-scrubber';
@@ -223,6 +279,7 @@ class ExpectationView {
         div.appendChild(readout);
 
         slider.addEventListener('input', () => {
+            this.stopPlay();
             const val = parseInt(slider.value, 10);
             readout.textContent = `${val} / ${this.expectationState.maxT}`;
             cancelAnimationFrame(this._rafHandle);
@@ -249,9 +306,14 @@ class ExpectationView {
         this._scrubberSlider.value = '0';
     }
 
-    removeScrubber() {
+    teardown() {
+        this.stopPlay();
         cancelAnimationFrame(this._rafHandle);
         this._rafHandle = null;
+        this._removeScrubber();
+    }
+
+    _removeScrubber() {
         if (this._scrubberDiv) {
             this._scrubberDiv.remove();
             this._scrubberDiv = null;
@@ -261,6 +323,7 @@ class ExpectationView {
     }
 
     resize(canvasW, canvasH, topOffset) {
+        this._topOffset = topOffset;
         if (this._scrubberDiv) {
             this._scrubberDiv.style.top = (topOffset + canvasH - EXPECTATION_SCRUBBER_H) + 'px';
             this._scrubberDiv.style.width = canvasW + 'px';
