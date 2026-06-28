@@ -1428,12 +1428,8 @@ class RightPanel {
         if (typeof Chart === 'undefined') return;
 
         const ctx = this._expectationLineCanvas.getContext('2d');
-        const currentT = state.currentT;
-        const means = state.getMeansOverTime();
-        const sigmas = state.getSigmasOverTime();
-        const labels = means.map((_, i) => i);
-        const upperBand = means.map((m, i) => m + sigmas[i]);
-        const lowerBand = means.map((m, i) => m - sigmas[i]);
+        const maxT = state.maxT;
+        const { labels, upperBand, means, lowerBand } = this._lineChartDatasetsAtT(state);
 
         this.expectationLineChartInst = new Chart(ctx, {
             type: 'line',
@@ -1445,20 +1441,31 @@ class RightPanel {
                     { label: 'E[G]', data: means, borderColor: AppPalette.expectation.scrubberLine,
                       borderWidth: 2, backgroundColor: 'rgba(42,120,214,0.12)', fill: false, pointRadius: 2, tension: 0.3 },
                     { label: 'E[G]-σ', data: lowerBand, borderColor: 'transparent',
-                      backgroundColor: 'rgba(42,120,214,0.12)', fill: '-1', pointRadius: 0, tension: 0.3 },
-                    { label: 'T', data: [{ x: currentT, y: means[currentT] ?? 0 }],
-                      type: 'scatter', backgroundColor: AppPalette.expectation.markerYellow, pointRadius: 6, showLine: false }
+                      backgroundColor: 'rgba(42,120,214,0.12)', fill: '-1', pointRadius: 0, tension: 0.3 }
                 ]
             },
             options: {
                 responsive: true, maintainAspectRatio: false,
+                animation: false,
                 plugins: { legend: { display: false } },
                 scales: {
-                    x: { ticks: { font: { size: 9 }, color: '#898781' }, grid: { color: '#e1e0d9' } },
+                    x: { min: 0, max: maxT, ticks: { font: { size: 9 }, color: '#898781' }, grid: { color: '#e1e0d9' } },
                     y: { ticks: { font: { size: 9 }, color: '#898781' }, grid: { color: '#e1e0d9' } }
                 }
             }
         });
+    }
+
+    _lineChartDatasetsAtT(state) {
+        const currentT = state.currentT;
+        const allMeans = state.getMeansOverTime();
+        const allSigmas = state.getSigmasOverTime();
+        const means = allMeans.slice(0, currentT + 1);
+        const sigmas = allSigmas.slice(0, currentT + 1);
+        const labels = means.map((_, i) => i);
+        const upperBand = means.map((m, i) => m + sigmas[i]);
+        const lowerBand = means.map((m, i) => m - sigmas[i]);
+        return { labels, upperBand, means, lowerBand };
     }
 
     _buildExpectationDistChart(state) {
@@ -1517,9 +1524,13 @@ class RightPanel {
         }
 
         if (this.expectationLineChartInst) {
-            const means = state.getMeansOverTime();
-            this.expectationLineChartInst.data.datasets[3].data = [{ x: currentT, y: means[currentT] ?? 0 }];
-            this.expectationLineChartInst.update('none');
+            const { labels, upperBand, means, lowerBand } = this._lineChartDatasetsAtT(state);
+            const chart = this.expectationLineChartInst;
+            chart.data.labels = labels;
+            chart.data.datasets[0].data = upperBand;
+            chart.data.datasets[1].data = means;
+            chart.data.datasets[2].data = lowerBand;
+            chart.update('none');
         }
 
         if (this.expectationDistChartInst) {

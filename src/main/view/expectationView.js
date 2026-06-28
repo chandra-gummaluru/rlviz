@@ -179,13 +179,9 @@ class ExpectationView {
                 }
             }
         } else {
-            const s = node.size * 0.85;
-            beginShape();
-            vertex(node.x, node.y - s);
-            vertex(node.x + s, node.y);
-            vertex(node.x, node.y + s);
-            vertex(node.x - s, node.y);
-            endShape(CLOSE);
+            // Action node: same circle, darker shade (65% alpha over white = visually darker)
+            fill(ColorUtils.applyAlpha(color, Math.round(alpha * 0.65)));
+            circle(node.x, node.y, node.size * 2);
         }
         const label = node.name && node.name.length > 4 ? node.name.slice(0, 3) + '…' : (node.name || '');
         const screenFontSize = Math.max(6, node.size * 0.55);
