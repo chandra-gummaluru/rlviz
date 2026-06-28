@@ -34,6 +34,7 @@ class ToolBar {
         // Mode toggle
         this.editToggleBtn = null;
         this.simulateToggleBtn = null;
+        this.expectationToggleBtn = null;
         this.viToggleBtn = null;
 
         this.currentMode = 'editor';
@@ -197,6 +198,13 @@ class ToolBar {
         this.simulateToggleBtn.addClass('toolbar-toggle--middle');
         this.simulateToggleBtn.mousePressed(() => this.switchMode('simulate'));
 
+        // Expectation toggle button
+        this.expectationToggleBtn = createButton('Expectation');
+        this.expectationToggleBtn.parent(this.rightToggleContainer);
+        this.expectationToggleBtn.addClass('toolbar-toggle');
+        this.expectationToggleBtn.addClass('toolbar-toggle--middle');
+        this.expectationToggleBtn.mousePressed(() => this.switchMode('expectation'));
+
         // Value Iteration toggle button
         this.viToggleBtn = createButton('Value Iter');
         this.viToggleBtn.parent(this.rightToggleContainer);
@@ -239,6 +247,7 @@ class ToolBar {
         // Clear all toggle active states
         this.editToggleBtn.removeClass('toolbar-toggle--active');
         this.simulateToggleBtn.removeClass('toolbar-toggle--active');
+        this.expectationToggleBtn.removeClass('toolbar-toggle--active');
         this.viToggleBtn.removeClass('toolbar-toggle--active');
 
         if (mode === 'editor') {
@@ -255,6 +264,8 @@ class ToolBar {
             this.setPlayPauseEnabled(true);
             this.setStepEnabled(true);
             this.simulateToggleBtn.addClass('toolbar-toggle--active');
+        } else if (mode === 'expectation') {
+            this.expectationToggleBtn.addClass('toolbar-toggle--active');
         } else if (mode === 'value_iteration') {
             this.viPlayPauseBtn.show();
             this.viStepBtn.show();

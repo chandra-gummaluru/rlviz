@@ -84,6 +84,11 @@ const AppPalette = deepFreeze({
         spinningArrow:       '#FF5722',
         spinLabelHighlight:  '#FFEB3B',
         spinLabelBackground: '#FFFFFF'
+    },
+    expectation: {
+        runColors: ['#2a78d6', '#1baf7a', '#eda100', '#4a3aa7', '#e34948', '#e87ba4', '#eb6834', '#6b8e23'],
+        scrubberLine: '#2a78d6',
+        markerYellow: '#FFD700'
     }
 });
 
