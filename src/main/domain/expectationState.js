@@ -1,9 +1,11 @@
+const EXPECTATION_TOTAL_RUNS = 128;
+
 class ExpectationState {
     constructor() {
         this.rollouts = [];
         this.currentT = 0;
         this.maxT = 0;
-        this.runs = 4;
+        this.displayRuns = 16;  // how many of the 128 to show in the grid
         this.maxSteps = 100;
         this.gamma = 0.9;
         this.computed = false;
@@ -34,6 +36,10 @@ class ExpectationState {
         this.policyFallbacks = [];
     }
 
+    getDisplaySlice() {
+        return this.rollouts.slice(0, this.displayRuns);
+    }
+
     _computeUtilities(rewards, gamma) {
         const utilities = [0];
         for (let k = 0; k < rewards.length; k++) {
@@ -47,19 +53,23 @@ class ExpectationState {
         return rollout.utilities[effectiveT];
     }
 
-    getUtilitiesAtT(t) {
+    getAllUtilitiesAtT(t) {
         return this.rollouts.map(r => this._getUtility(r, t));
+    }
+
+    getDisplayUtilitiesAtT(t) {
+        return this.getDisplaySlice().map(r => this._getUtility(r, t));
     }
 
     getMeanAtT(t) {
         if (!this.computed || this.rollouts.length === 0) return null;
-        const vals = this.getUtilitiesAtT(t);
+        const vals = this.getAllUtilitiesAtT(t);
         return vals.reduce((a, b) => a + b, 0) / vals.length;
     }
 
     getSigmaAtT(t) {
         if (!this.computed || this.rollouts.length === 0) return null;
-        const vals = this.getUtilitiesAtT(t);
+        const vals = this.getAllUtilitiesAtT(t);
         const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
         const variance = vals.reduce((a, b) => a + (b - mean) ** 2, 0) / vals.length;
         return Math.sqrt(variance);

@@ -1393,10 +1393,12 @@ class RightPanel {
         runsSelect.option('4', '4');
         runsSelect.option('8', '8');
         runsSelect.option('16', '16');
-        if (state) runsSelect.selected(String(state.runs));
+        runsSelect.option('32', '32');
+        runsSelect.option('64', '64');
+        if (state) runsSelect.selected(String(state.displayRuns));
         runsSelect.changed(() => {
             const runs = parseInt(runsSelect.value(), 10);
-            if (state) state.runs = runs;
+            if (state) state.displayRuns = runs;
             if (this.callbacks.onExpectationSamplingChange) this.callbacks.onExpectationSamplingChange();
         });
 
@@ -1534,7 +1536,7 @@ class RightPanel {
             });
         } else {
             // Distribution (scatter)
-            const utils = state.getUtilitiesAtT(currentT);
+            const utils = state.getAllUtilitiesAtT(currentT);
             const data = utils.map((u, i) => ({ x: u, y: i * EXPECTATION_Y_STEP }));
             const xVals = utils.filter(isFinite);
             const xMin = xVals.length > 0 ? Math.min(...xVals) : 0;
@@ -1595,7 +1597,7 @@ class RightPanel {
             }];
             chart.update('none');
         } else if (vm && vm.activeTab === 'distribution') {
-            const utils = state.getUtilitiesAtT(currentT);
+            const utils = state.getAllUtilitiesAtT(currentT);
             const data = utils.map((u, i) => ({ x: u, y: i * EXPECTATION_Y_STEP }));
             const xVals = utils.filter(isFinite);
             const xMin = xVals.length > 0 ? Math.min(...xVals) : 0;

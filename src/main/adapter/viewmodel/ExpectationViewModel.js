@@ -7,9 +7,9 @@ class ExpectationViewModel {
         this.lastError = null;
     }
 
-    computeLayout(canvasW, canvasH, N, graph) {
-        const cols = N <= 4 ? 2 : 4;
-        const rows = N <= 4 ? 2 : (N <= 8 ? 2 : 4);
+    computeLayout(canvasW, canvasH, displayRuns, graph) {
+        const GRID = { 4: [2,2], 8: [4,2], 16: [4,4], 32: [8,4], 64: [8,8] };
+        const [cols, rows] = GRID[displayRuns] || [4, 4];
         const panelW = Math.floor(canvasW / cols);
         const panelH = Math.floor(canvasH / rows);
 

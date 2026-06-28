@@ -8,16 +8,16 @@ class RunExpectationInteractor extends RunExpectationInputBoundary {
     }
 
     execute(inputData) {
-        const { startNodeId, policy, runs, maxSteps, gamma } = inputData;
+        const { startNodeId, policy, displayRuns, maxSteps, gamma } = inputData;
 
         const startNode = this.graph.getNodeById(startNodeId);
         if (!startNode || startNode.type !== 'state') {
             return this.outputBoundary.presentError('Start node is not a valid state.');
         }
 
-        const validRunCounts = [4, 8, 16];
-        if (!validRunCounts.includes(runs)) {
-            return this.outputBoundary.presentError(`Invalid run count: ${runs}. Must be 4, 8, or 16.`);
+        const validDisplayCounts = [4, 8, 16, 32, 64];
+        if (!validDisplayCounts.includes(displayRuns)) {
+            return this.outputBoundary.presentError(`Invalid display run count: ${displayRuns}. Must be 4, 8, 16, 32, or 64.`);
         }
         if (!Number.isInteger(maxSteps) || maxSteps < 1 || maxSteps > 1000) {
             return this.outputBoundary.presentError(`Invalid maxSteps: ${maxSteps}. Must be integer in [1, 1000].`);
@@ -30,7 +30,7 @@ class RunExpectationInteractor extends RunExpectationInputBoundary {
         const policyFallbacks = this._validatePolicy(policySnapshot);
 
         const rollouts = [];
-        for (let i = 0; i < runs; i++) {
+        for (let i = 0; i < EXPECTATION_TOTAL_RUNS; i++) {
             const trace = this.traceGenerator.generate(startNode, maxSteps * 2 + 1, policySnapshot);
             const rewardResult = this._extractRewards(trace);
             if (rewardResult.error) {
@@ -44,7 +44,7 @@ class RunExpectationInteractor extends RunExpectationInputBoundary {
 
         this.expectationState.setRollouts(rollouts);
         this.expectationState.gamma = gamma;
-        this.expectationState.runs = runs;
+        this.expectationState.displayRuns = displayRuns;
         this.expectationState.maxSteps = maxSteps;
         this.expectationState.policyFallbacks = policyFallbacks;
 

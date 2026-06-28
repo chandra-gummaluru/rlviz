@@ -209,7 +209,7 @@ const onModeChange = (mode) => {
             runExpectationInteractor.execute(new RunExpectationInputData(
                 startNode.id,
                 Object.assign({}, simulationState.policy),
-                expectationState.runs,
+                expectationState.displayRuns,
                 expectationState.maxSteps,
                 expectationState.gamma
             ));
@@ -703,7 +703,7 @@ function setup() {
         runExpectationInteractor.execute(new RunExpectationInputData(
             startNode.id,
             Object.assign({}, simulationState.policy),
-            expectationState.runs,
+            expectationState.displayRuns,
             expectationState.maxSteps,
             expectationState.gamma
         ));

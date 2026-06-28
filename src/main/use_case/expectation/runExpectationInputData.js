@@ -1,8 +1,8 @@
 class RunExpectationInputData {
-    constructor(startNodeId, policy, runs, maxSteps, gamma) {
+    constructor(startNodeId, policy, displayRuns, maxSteps, gamma) {
         this.startNodeId = startNodeId;
         this.policy = policy;
-        this.runs = runs;
+        this.displayRuns = displayRuns;
         this.maxSteps = maxSteps;
         this.gamma = gamma;
     }

@@ -32,7 +32,7 @@ class ExpectationView {
         }
 
         if (vm.layoutStale) {
-            vm.computeLayout(canvasW, canvasH - EXPECTATION_SCRUBBER_H, state.runs, this.graph);
+            vm.computeLayout(canvasW, canvasH - EXPECTATION_SCRUBBER_H, state.displayRuns, this.graph);
         }
         if (!vm.panelLayout) {
             this._drawEmptyPrompt(canvasW, canvasH);
@@ -49,10 +49,11 @@ class ExpectationView {
         const currentT = state.currentT;
         const runColors = AppPalette.expectation.runColors;
 
-        for (let i = 0; i < state.rollouts.length; i++) {
+        const displaySlice = state.getDisplaySlice();
+        for (let i = 0; i < displaySlice.length; i++) {
             const panel = panels[i];
             if (!panel) continue;
-            const rollout = state.rollouts[i];
+            const rollout = displaySlice[i];
             const runColor = runColors[i % runColors.length];
 
             drawingContext.save();
