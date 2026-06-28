@@ -11,6 +11,7 @@ class CanvasController {
     // ===== Mouse Input Handling =====
 
     handleMousePress(screenX, screenY) {
+        if (this.viewModel.interaction.mode === 'expectation') return;
         this._blurActiveTextInput();
 
         const world = this.viewModel.screenToWorld(screenX, screenY);
@@ -65,6 +66,7 @@ class CanvasController {
     }
 
     handleMouseMove(screenX, screenY) {
+        if (this.viewModel.interaction.mode === 'expectation') return false;
         if (this.viewModel.interaction.isInteracting()) return false;
 
         const world = this.viewModel.screenToWorld(screenX, screenY);
@@ -81,6 +83,7 @@ class CanvasController {
     }
 
     handleMouseDrag(screenX, screenY) {
+        if (this.viewModel.interaction.mode === 'expectation') return;
         const world = this.viewModel.screenToWorld(screenX, screenY);
         const x = world.x;
         const y = world.y;
@@ -147,6 +150,7 @@ class CanvasController {
     }
 
     handleMouseRelease(screenX, screenY) {
+        if (this.viewModel.interaction.mode === 'expectation') return;
         const world = this.viewModel.screenToWorld(screenX, screenY);
         const x = world.x;
         const y = world.y;
@@ -237,6 +241,7 @@ class CanvasController {
     // ===== Keyboard Input Handling =====
 
     handleKeyPress(key) {
+        if (this.viewModel.interaction.mode === 'expectation') return;
         // Don't intercept keys while a text input has focus
         const active = document.activeElement;
         if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) {
