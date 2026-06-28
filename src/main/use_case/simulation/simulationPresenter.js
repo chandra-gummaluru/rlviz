@@ -22,6 +22,7 @@ class SimulationPresenter extends SimulationOutputBoundary {
     }
 
     presentInitializationComplete() {
+        if (this.viewModel.interaction.mode === 'expectation') return;
         const isPlaying = this.viewModel.simulationState.isPlaying;
         const canAdvance = this.viewModel.simulationState.canAdvance();
         if (this.toolBar) this.toolBar.updateButtonStates(isPlaying, canAdvance);
@@ -76,11 +77,13 @@ class SimulationPresenter extends SimulationOutputBoundary {
     }
 
     presentTraceEnd() {
+        if (this.viewModel.interaction.mode === 'expectation') return;
         if (this.toolBar) this.toolBar.updateButtonStates(false, false);
         this.viewModel.lastOperationMessage = 'Simulation complete! Reached end of trace.';
     }
 
     presentPaused() {
+        if (this.viewModel.interaction.mode === 'expectation') return;
         const canAdvance = this.viewModel.simulationState.canAdvance();
         if (this.toolBar) this.toolBar.updateButtonStates(false, canAdvance);
         redraw();

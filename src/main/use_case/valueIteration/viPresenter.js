@@ -414,10 +414,12 @@ class VIPresenter extends VIOutputBoundary {
     }
 
     _updateRightPanel() {
+        if (this.viewModel.interaction.mode === 'expectation') return;
         if (this.rightPanel) this.rightPanel.updateContent();
     }
 
     _updateButtonStates() {
+        if (this.viewModel.interaction.mode === 'expectation') return;
         if (this.toolBar) {
             const viState = this.viewModel.valueIterationState;
             if (viState) {
