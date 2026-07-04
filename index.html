@@ -12,6 +12,9 @@
     <link rel="stylesheet" href="libraries/katex/katex.min.css">
     <script src="libraries/katex/katex.min.js"></script>
 
+    <!-- Chart.js for Expectation mode charts -->
+    <script src="libraries/chartjs/chart.umd.min.js"></script>
+
     <script src="libraries/p5.min.js"></script>
     <script src="libraries/p5.sound.min.js"></script>
   </head>
@@ -29,6 +32,7 @@
     <script src="src/main/domain/simulationState.js"></script>
     <script src="src/main/domain/traceGenerator.js"></script>
     <script src="src/main/domain/valueIterationState.js"></script>
+    <script src="src/main/domain/expectationState.js"></script>
 
     <!-- Use Case Layer - CreateNode -->
     <script src="src/main/use_case/createNode/createNodeInputBoundary.js"></script>
@@ -197,6 +201,16 @@
     <script src="src/main/use_case/valueIteration/viSkipInteractor.js"></script>
     <script src="src/main/use_case/valueIteration/viPresenter.js"></script>
 
+    <!-- Use Case Layer - Expectation -->
+    <script src="src/main/use_case/expectation/expectationOutputBoundary.js"></script>
+    <script src="src/main/use_case/expectation/runExpectationInputBoundary.js"></script>
+    <script src="src/main/use_case/expectation/runExpectationInputData.js"></script>
+    <script src="src/main/use_case/expectation/runExpectationInteractor.js"></script>
+    <script src="src/main/use_case/expectation/updateExpectationGammaInputBoundary.js"></script>
+    <script src="src/main/use_case/expectation/updateExpectationGammaInputData.js"></script>
+    <script src="src/main/use_case/expectation/updateExpectationGammaInteractor.js"></script>
+    <script src="src/main/use_case/expectation/expectationPresenter.js"></script>
+
     <!-- Presentation Shared -->
     <script src="src/main/view/helpers/AppPalette.js"></script>
 
@@ -208,6 +222,7 @@
     <script src="src/main/adapter/viewmodel/EdgeViewModel.js"></script>
     <script src="src/main/adapter/viewmodel/CanvasViewModel.js"></script>
     <script src="src/main/adapter/viewmodel/ValueIterationViewModel.js"></script>
+    <script src="src/main/adapter/viewmodel/ExpectationViewModel.js"></script>
 
     <!-- Adapter Layer - Controller -->
     <script src="src/main/adapter/controller/CanvasController.js"></script>
@@ -225,6 +240,7 @@
     <script src="src/main/view/rightPanel.js"></script>
     <script src="src/main/view/rewardParticleSystem.js"></script>
     <script src="src/main/view/valueIterationView.js"></script>
+    <script src="src/main/view/expectationView.js"></script>
     <script src="src/main/view/SimulationRenderer.js"></script>
     <script src="src/main/view/mainView.js"></script>
 

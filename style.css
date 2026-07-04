@@ -847,3 +847,52 @@ canvas {
   border-radius: 50%;
   transform: translate(-50%, -50%);
 }
+
+/* ── Expectation mode ─────────────────────────────────────────────────── */
+
+.expectation-scrubber {
+  position: absolute;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  border-top: 0.5px solid var(--border-light);
+  background: var(--surface-light);
+  box-sizing: border-box;
+  z-index: 10;
+  pointer-events: all;
+  font-family: var(--font-family);
+}
+
+.expectation-scrubber input[type="range"] {
+  flex: 1;
+}
+
+.expectation-scrubber .timeline-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.expectation-scrubber .t-readout {
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--text-dark);
+}
+
+.expectation-back-btn {
+  position: absolute;
+  z-index: 11;
+  background: var(--surface-light);
+  border: 0.5px solid var(--border-light);
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: var(--font-family);
+  color: var(--text-dark);
+  pointer-events: all;
+}
+.expectation-back-btn:hover { background: var(--surface-white); }

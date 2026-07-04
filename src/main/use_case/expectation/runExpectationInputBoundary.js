@@ -1,0 +1,3 @@
+class RunExpectationInputBoundary {
+    execute(inputData) {}
+}

@@ -31,9 +31,13 @@ class ToolBar {
         this.viShowCalcsLabel = null;
         this.viShowCalcsToggle = null;
 
+        // Expectation mode buttons
+        this.expectationPlayPauseBtn = null;
+
         // Mode toggle
         this.editToggleBtn = null;
         this.simulateToggleBtn = null;
+        this.expectationToggleBtn = null;
         this.viToggleBtn = null;
 
         this.currentMode = 'editor';
@@ -62,6 +66,9 @@ class ToolBar {
         // Create Simulate mode buttons
         this.createSimulateModeButtons();
 
+        // Create Expectation mode buttons
+        this.createExpectationModeButtons();
+
         // Create Value Iteration mode buttons
         this.createValueIterModeButtons();
 
@@ -85,6 +92,34 @@ class ToolBar {
 
         this.stepBtn = this.createButton('Step', () => this.callbacks.onStep(), 'toolbar-btn--step');
         this.rerunBtn = this.createButton('Rerun', () => this.callbacks.onRerun(), 'toolbar-btn--rerun');
+    }
+
+    createExpectationModeButtons() {
+        this.expectationPlayPauseBtn = this.createButton('Play', () => this.handleExpectationPlayPauseClick(), 'toolbar-btn--play');
+        this.expectationPlayPauseBtn.elt.dataset.mode = 'play';
+    }
+
+    handleExpectationPlayPauseClick() {
+        const mode = this.expectationPlayPauseBtn.elt.dataset.mode;
+        if (mode === 'play') {
+            if (this.callbacks.onExpectationPlay) this.callbacks.onExpectationPlay();
+        } else {
+            if (this.callbacks.onExpectationPause) this.callbacks.onExpectationPause();
+        }
+    }
+
+    setExpectationPlayMode(mode) {
+        if (!this.expectationPlayPauseBtn) return;
+        this.expectationPlayPauseBtn.elt.dataset.mode = mode;
+        if (mode === 'play') {
+            this.expectationPlayPauseBtn.html('Play');
+            this.expectationPlayPauseBtn.removeClass('toolbar-btn--pause');
+            this.expectationPlayPauseBtn.addClass('toolbar-btn--play');
+        } else {
+            this.expectationPlayPauseBtn.html('Pause');
+            this.expectationPlayPauseBtn.removeClass('toolbar-btn--play');
+            this.expectationPlayPauseBtn.addClass('toolbar-btn--pause');
+        }
     }
 
     createValueIterModeButtons() {
@@ -197,6 +232,13 @@ class ToolBar {
         this.simulateToggleBtn.addClass('toolbar-toggle--middle');
         this.simulateToggleBtn.mousePressed(() => this.switchMode('simulate'));
 
+        // Expectation toggle button
+        this.expectationToggleBtn = createButton('Expectation');
+        this.expectationToggleBtn.parent(this.rightToggleContainer);
+        this.expectationToggleBtn.addClass('toolbar-toggle');
+        this.expectationToggleBtn.addClass('toolbar-toggle--middle');
+        this.expectationToggleBtn.mousePressed(() => this.switchMode('expectation'));
+
         // Value Iteration toggle button
         this.viToggleBtn = createButton('Value Iter');
         this.viToggleBtn.parent(this.rightToggleContainer);
@@ -225,6 +267,7 @@ class ToolBar {
         this.playPauseBtn.hide();
         this.stepBtn.hide();
         this.rerunBtn.hide();
+        this.expectationPlayPauseBtn.hide();
         this.viPlayPauseBtn.hide();
         this.viStepBtn.hide();
         this.viSkipBtn.hide();
@@ -239,6 +282,7 @@ class ToolBar {
         // Clear all toggle active states
         this.editToggleBtn.removeClass('toolbar-toggle--active');
         this.simulateToggleBtn.removeClass('toolbar-toggle--active');
+        this.expectationToggleBtn.removeClass('toolbar-toggle--active');
         this.viToggleBtn.removeClass('toolbar-toggle--active');
 
         if (mode === 'editor') {
@@ -255,6 +299,10 @@ class ToolBar {
             this.setPlayPauseEnabled(true);
             this.setStepEnabled(true);
             this.simulateToggleBtn.addClass('toolbar-toggle--active');
+        } else if (mode === 'expectation') {
+            this.expectationPlayPauseBtn.show();
+            this.setExpectationPlayMode('play');
+            this.expectationToggleBtn.addClass('toolbar-toggle--active');
         } else if (mode === 'value_iteration') {
             this.viPlayPauseBtn.show();
             this.viStepBtn.show();

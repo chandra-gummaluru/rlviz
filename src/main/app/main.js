@@ -14,6 +14,12 @@ const valueIterationViewModel = new ValueIterationViewModel();
 canvasViewModel.valueIterationState = valueIterationState;
 canvasViewModel.valueIterationViewModel = valueIterationViewModel;
 
+// Expectation mode domain + ViewModel
+const expectationState = new ExpectationState();
+const expectationViewModel = new ExpectationViewModel();
+canvasViewModel.expectationState = expectationState;
+canvasViewModel.expectationViewModel = expectationViewModel;
+
 // Presenters for existing use cases
 const createNodePresenter = new CreateNodePresenter(canvasViewModel.interaction);
 const createEdgePresenter = new CreateEdgePresenter(canvasViewModel);
@@ -168,14 +174,62 @@ const onExportGraph = () => {
 
 const onModeChange = (mode) => {
     const prevMode = canvasViewModel.interaction.mode;
+
+    // Leaving Expectation mode: clean up
+    if (prevMode === 'expectation' && mode !== 'expectation') {
+        if (mainView && mainView.expectationView) mainView.expectationView.teardown();
+        expectationState.resetData();
+        expectationViewModel.invalidateLayout();
+    }
+
     canvasController.setMode(mode);
+
     if (prevMode === 'value_iteration' && mode !== 'value_iteration') {
         mathRenderer.clear();
         valueIterationViewModel?.clearExplanationDetail();
         if (rightPanel) rightPanel.updateContent();
     }
+
+    // Entering Expectation mode: pause animations, run rollouts
+    if (mode === 'expectation') {
+        if (simulationState.isPlaying && pauseInteractor) {
+            pauseInteractor.execute(new PauseInputData());
+        }
+        if (valueIterationState && valueIterationState.isPlaying && viPauseInteractor) {
+            viPauseInteractor.execute(new VIPauseInputData());
+        }
+
+        if (!checkAndRenormalizeIfNeeded(true)) {
+            redraw();
+            return;
+        }
+
+        const startNode = canvasViewModel.startNode;
+        if (startNode && runExpectationInteractor) {
+            runExpectationInteractor.execute(new RunExpectationInputData(
+                startNode.id,
+                Object.assign({}, simulationState.policy),
+                expectationState.displayRuns,
+                expectationState.maxSteps,
+                expectationState.gamma
+            ));
+        }
+
+        if (mainView && mainView.expectationView) {
+            const topOffset = (menuBar ? menuBar.getHeight() : 40) + (toolBar ? toolBar.getHeight() : 50);
+            const panelW = rightPanel ? rightPanel.getWidth() : 300;
+            const canvasW = windowWidth - panelW;
+            const canvasH = windowHeight - topOffset;
+            mainView.expectationView.setupScrubber(canvasW, canvasH, topOffset);
+        }
+    }
+
     redraw();
 };
+
+// Expectation interactors (initialized in setup)
+let runExpectationInteractor;
+let updateExpectationGammaInteractor;
 
 const onZoomIn = () => {
     canvasController.zoomIn(windowWidth / 2, windowHeight / 2);
@@ -261,8 +315,8 @@ const onToggleSpinningArrow = () => {
  * If found, prompt user to confirm auto-renormalization.
  * Returns true if simulation should proceed, false otherwise.
  */
-function checkAndRenormalizeIfNeeded() {
-    if (simulationState.replayInitialized) return true;
+function checkAndRenormalizeIfNeeded(forceCheck = false) {
+    if (!forceCheck && simulationState.replayInitialized) return true;
     const names = canvasController.getUnnormalizedActionNames();
     if (names.length === 0) return true;
     const proceed = confirm(
@@ -486,6 +540,12 @@ function setup() {
                 valueIterationViewModel.showCalculations = enabled;
                 redraw();
             }
+        },
+        onExpectationPlay: () => {
+            if (mainView && mainView.expectationView) mainView.expectationView.startPlay();
+        },
+        onExpectationPause: () => {
+            if (mainView && mainView.expectationView) mainView.expectationView.stopPlay();
         }
     }, canvasViewModel);
     toolBar.setup(menuBar.getHeight());
@@ -613,6 +673,73 @@ function setup() {
         }
     };
 
+    // Create Expectation presenter and interactors
+    const expectationPresenter = new ExpectationPresenter(canvasViewModel, expectationViewModel);
+    expectationPresenter.onComplete = () => {
+        if (rightPanel) rightPanel.updateContent();
+        redraw();
+    };
+    expectationPresenter.onError = (msg) => {
+        console.error('[Expectation] Error:', msg);
+        if (rightPanel) rightPanel.updateContent();
+    };
+
+    runExpectationInteractor = new RunExpectationInteractor(
+        graph, traceGenerator, expectationState, expectationPresenter
+    );
+    updateExpectationGammaInteractor = new UpdateExpectationGammaInteractor(
+        expectationState, expectationPresenter
+    );
+
+    // Create Expectation view
+    const expectationView = new ExpectationView(
+        canvasViewModel, expectationViewModel, expectationState, graph
+    );
+    expectationView.setRightPanel(rightPanel);
+    mainView.expectationView = expectationView;
+
+    // Attach expectation state/viewmodel to right panel
+    rightPanel.expectationState = expectationState;
+    rightPanel.expectationViewModel = expectationViewModel;
+
+    // Right panel Expectation callbacks
+    const _runExpectationBatch = () => {
+        if (mainView && mainView.expectationView) mainView.expectationView.stopPlay();
+        const startNode = canvasViewModel.startNode;
+        if (!startNode) return;
+        runExpectationInteractor.execute(new RunExpectationInputData(
+            startNode.id,
+            Object.assign({}, simulationState.policy),
+            expectationState.displayRuns,
+            expectationState.maxSteps,
+            expectationState.gamma
+        ));
+        if (expectationView) expectationView.updateScrubberMax();
+    };
+
+    rightPanel.callbacks.onExpectationDisplayRunsChange = (displayRuns) => {
+        expectationState.displayRuns = displayRuns;
+        if (expectationViewModel.focusedRunIndex !== null && expectationViewModel.focusedRunIndex >= displayRuns) {
+            if (expectationView) expectationView.exitFocusMode();
+        }
+        expectationViewModel.invalidateLayout();
+        rightPanel.updateContent();
+        redraw();
+    };
+
+    rightPanel.callbacks.onExpectationMaxStepsChange = () => {
+        _runExpectationBatch();
+    };
+
+    rightPanel.callbacks.onExpectationGammaChange = (gamma) => {
+        updateExpectationGammaInteractor.execute(new UpdateExpectationGammaInputData(gamma));
+    };
+
+    // Expectation Play/Pause
+    expectationView.onPlaybackStateChange = (isPlaying) => {
+        if (toolBar) toolBar.setExpectationPlayMode(isPlaying ? 'pause' : 'play');
+    };
+
     // Initialize
     mainView.setup();
 }
@@ -623,6 +750,10 @@ function draw() {
 
 function mousePressed() {
     if (!mainView) return;
+    if (canvasViewModel.interaction.mode === 'expectation' && mainView.expectationView) {
+        mainView.expectationView.handleClick(mouseX, mouseY);
+        return;
+    }
     mainView.mousePressed();
 }
 
@@ -643,6 +774,9 @@ function mouseMoved() {
 
 function keyPressed() {
     if (!mainView) return;
+    if (canvasViewModel.interaction.mode === 'expectation' && mainView.expectationView) {
+        mainView.expectationView.handleKey(key);
+    }
     return mainView.keyPressed();
 }
 

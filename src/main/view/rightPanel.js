@@ -7,6 +7,7 @@ const RP_PROB_SLIDER_STEP    = 0.01;
 const RP_VI_TABLE_MAX_H      = 400;    // px max height of the V(s) table
 const RP_REWARD_BAR_MAX      = 100;    // reward clamped to ±this for bar width
 const RP_REWARD_BAR_HALF_PCT = 50;     // percent representing one full half of bar
+const RP_EXPECTATION_Y_STEP  = 0.05;  // vertical jitter between distribution points
 // --- End constants ---
 
 // Right panel displaying MDP information and node editing
@@ -66,6 +67,11 @@ class RightPanel {
             totalReward: 0
         };
         this.simStatAnimationFrame = null;
+        this.expectationLineChartInst = null;
+        this.expectationDistChartInst = null;
+        this.expectationViewModel = null;
+        this.expectationState = null;
+        this._expectationStatsElements = null;
 
         this.callbacks = {
             onSpinningArrowToggle: (enabled) => {
@@ -78,9 +84,12 @@ class RightPanel {
                     this.controller.setSpinningArrowDuration(duration);
                 }
             },
-            onVICellClick: null,       // (colIdx, stateId, actionId) => void
-            onVIExplainClose: null,    // () => void
-            onVIExplainStep: null,     // ('prev' | 'next') => void
+            onVICellClick: null,            // (colIdx, stateId, actionId) => void
+            onVIExplainClose: null,         // () => void
+            onVIExplainStep: null,          // ('prev' | 'next') => void
+            onExpectationDisplayRunsChange: null, // (displayRuns) => void
+            onExpectationMaxStepsChange: null,    // (maxSteps) => void
+            onExpectationGammaChange: null,       // (gamma) => void
         };
     }
 
@@ -101,6 +110,15 @@ class RightPanel {
             this.simStatAnimationFrame = null;
         }
 
+        if (this.expectationLineChartInst) {
+            this.expectationLineChartInst.destroy();
+            this.expectationLineChartInst = null;
+        }
+        if (this.expectationDistChartInst) {
+            this.expectationDistChartInst.destroy();
+            this.expectationDistChartInst = null;
+        }
+
         // Recreate container so renderMathInElement always processes a fresh, unmodified DOM tree
         if (this.contentContainer) this.contentContainer.remove();
         this.contentContainer = createDiv();
@@ -108,12 +126,27 @@ class RightPanel {
 
         const selectedNode = this.viewModel.selection.selectedNode;
         const selectedEdge = this.viewModel.selection.selectedEdge;
-        const hoveredNode  = this.viewModel.interaction.hoveredNode;
-        const hoveredEdge  = this.viewModel.interaction.hoveredEdge;
         const isSimulateMode = this.viewModel.interaction.mode === 'simulate';
         const isVIMode = this.viewModel.interaction.mode === 'value_iteration';
 
-        if (isVIMode) {
+        const simState = this.viewModel.simulationState;
+        const simActive = isSimulateMode && simState && simState.replayInitialized;
+
+        const rawHoveredNode = this.viewModel.interaction.hoveredNode;
+        const rawHoveredEdge = this.viewModel.interaction.hoveredEdge;
+
+        const hoveredNode = simActive && rawHoveredNode
+            ? (simState.isNodeVisible(rawHoveredNode.id) ? rawHoveredNode : null)
+            : rawHoveredNode;
+        const hoveredEdge = simActive && rawHoveredEdge
+            ? (simState.isEdgeVisible(rawHoveredEdge.getFromNode().id, rawHoveredEdge.getToNode().id) ? rawHoveredEdge : null)
+            : rawHoveredEdge;
+
+        const isExpectationMode = this.viewModel.interaction.mode === 'expectation';
+
+        if (isExpectationMode) {
+            this.renderExpectationPanel();
+        } else if (isVIMode) {
             this.renderValueIterationPanel();
         } else if (selectedNode) {
             this.renderNodePanel(selectedNode, { readOnly: false });
@@ -639,29 +672,15 @@ class RightPanel {
             gammaContainer.parent(this.contentContainer);
             gammaContainer.addClass('panel-section-content');
 
-            const inputContainer = createDiv();
-            inputContainer.parent(gammaContainer);
-            inputContainer.addClass('panel-flex-row');
+            const { slider, valueDisplay } = RightPanelBuilder.sliderRow(
+                gammaContainer, 0, 1, this.discountFactor, 0.01
+            );
+            valueDisplay.html(this.discountFactor.toFixed(2));
 
-            const input = createInput(this.discountFactor.toString());
-            input.parent(inputContainer);
-            input.addClass('panel-input');
-            input.addClass('panel-input--small');
-            input.attribute('type', 'number');
-            input.attribute('step', '0.01');
-            input.attribute('min', '0');
-            input.attribute('max', '1');
-
-            input.input(() => {
-                const value = parseFloat(input.value());
-                if (!isNaN(value) && value >= 0 && value <= 1) {
-                    this.discountFactor = value;
-                }
+            slider.input(() => {
+                this.discountFactor = slider.value();
+                valueDisplay.html(parseFloat(slider.value()).toFixed(2));
             });
-
-            const desc = createDiv('Range: 0.0 - 1.0');
-            desc.parent(gammaContainer);
-            desc.addClass('panel-hint');
         });
 
         // Discounted return
@@ -1222,6 +1241,318 @@ class RightPanel {
 
     getWidth() {
         return this.width;
+    }
+
+    renderExpectationPanel() {
+        const state = this.expectationState;
+        const startNode = this.viewModel.startNode;
+
+        this.createSection('Discount Factor (γ)', () => {
+            const container = createDiv();
+            container.parent(this.contentContainer);
+            container.addClass('panel-section-content');
+
+            const gammaLabel = createDiv();
+            gammaLabel.parent(container);
+            gammaLabel.addClass('panel-label');
+            gammaLabel.elt.innerHTML = `γ = <strong>${state ? state.gamma.toFixed(2) : '0.90'}</strong>`;
+
+            const gammaSlider = createElement('input');
+            gammaSlider.parent(container);
+            gammaSlider.attribute('type', 'range');
+            gammaSlider.attribute('min', '0');
+            gammaSlider.attribute('max', '1');
+            gammaSlider.attribute('step', '0.01');
+            gammaSlider.attribute('value', state ? String(state.gamma) : '0.9');
+            gammaSlider.style('width', '100%');
+            gammaSlider.input(() => {
+                const g = parseFloat(gammaSlider.value());
+                gammaLabel.elt.innerHTML = `γ = <strong>${g.toFixed(2)}</strong>`;
+                if (state) state.gamma = g;
+                if (this.callbacks.onExpectationGammaChange) this.callbacks.onExpectationGammaChange(g);
+            });
+        });
+
+        this.createSection('Display Runs', () => {
+            const container = createDiv();
+            container.parent(this.contentContainer);
+            container.addClass('panel-section-content');
+
+            const runsSelect = createSelect();
+            runsSelect.parent(container);
+            runsSelect.addClass('panel-input');
+            ['4', '8', '16', '32', '64'].forEach(v => runsSelect.option(v, v));
+            if (state) runsSelect.selected(String(state.displayRuns));
+            runsSelect.changed(() => {
+                const runs = parseInt(runsSelect.value(), 10);
+                if (state) state.displayRuns = runs;
+                if (this.callbacks.onExpectationDisplayRunsChange) this.callbacks.onExpectationDisplayRunsChange(runs);
+            });
+        });
+
+        this.createSection('Max Steps', () => {
+            const container = createDiv();
+            container.parent(this.contentContainer);
+            container.addClass('panel-section-content');
+
+            const stepsInput = createElement('input');
+            stepsInput.parent(container);
+            stepsInput.attribute('type', 'number');
+            stepsInput.attribute('min', '1');
+            stepsInput.attribute('max', '1000');
+            stepsInput.attribute('value', state ? String(state.maxSteps) : '100');
+            stepsInput.addClass('panel-input');
+            stepsInput.style('width', '80px');
+            stepsInput.changed(() => {
+                const steps = parseInt(stepsInput.value(), 10);
+                if (!isNaN(steps) && steps >= 1 && steps <= 1000) {
+                    if (state) state.maxSteps = steps;
+                    if (this.callbacks.onExpectationMaxStepsChange) this.callbacks.onExpectationMaxStepsChange(steps);
+                }
+            });
+        });
+
+        if (!state || !state.computed || !startNode) {
+            const msg = createDiv('Set a start state in Simulate mode to compute rollouts.');
+            msg.parent(this.contentContainer);
+            msg.addClass('panel-hint');
+            msg.style('margin-top', '8px');
+            return;
+        }
+
+        this.createSection('Policy', () => {
+            const container = createDiv();
+            container.parent(this.contentContainer);
+            container.addClass('panel-section-content');
+
+            const policy = this.viewModel.simulationState ? this.viewModel.simulationState.policy : {};
+            const graph = this.viewModel.graph;
+            let detCount = 0, randomCount = 0;
+            for (const node of graph.nodes) {
+                if (node.type !== 'state' || !node.actions || node.actions.length === 0) continue;
+                if (policy[node.id] !== undefined && policy[node.id] !== null) { detCount++; }
+                else { randomCount++; }
+            }
+            let summaryText = detCount === 0
+                ? 'all Random'
+                : `${detCount} det. action(s), ${randomCount} Random`;
+            const staleCount = state.policyFallbacks ? state.policyFallbacks.length : 0;
+            if (staleCount > 0) summaryText += ` (⚠ ${staleCount} stale)`;
+
+            const summaryDiv = createDiv(summaryText);
+            summaryDiv.parent(container);
+            summaryDiv.style('font-size', '11px');
+            summaryDiv.style('color', AppPalette.text.secondary);
+
+            const hintDiv = createDiv('To change π, switch to Edit mode.');
+            hintDiv.parent(container);
+            hintDiv.style('font-size', '10px');
+            hintDiv.style('color', AppPalette.text.muted);
+            hintDiv.style('margin-top', '2px');
+        });
+
+        this.createSection('Statistics', () => {
+            const container = createDiv();
+            container.parent(this.contentContainer);
+            container.addClass('panel-section-content');
+
+            const row = createDiv();
+            row.parent(container);
+            row.style('display', 'flex');
+            row.style('justify-content', 'space-between');
+
+            const meanDiv = createDiv();
+            meanDiv.parent(row);
+            const meanLabel = createDiv('Mean G');
+            meanLabel.parent(meanDiv);
+            meanLabel.addClass('panel-label');
+            const meanVal = createDiv();
+            meanVal.parent(meanDiv);
+            meanVal.addClass('panel-stat-value--large-primary');
+            const mean = state.getMeanAtT(state.currentT);
+            meanVal.html(mean !== null ? mean.toFixed(2) : '—');
+
+            const sigmaDiv = createDiv();
+            sigmaDiv.parent(row);
+            sigmaDiv.style('text-align', 'right');
+            const sigmaLabel = createDiv('σ');
+            sigmaLabel.parent(sigmaDiv);
+            sigmaLabel.addClass('panel-label');
+            const sigmaVal = createDiv();
+            sigmaVal.parent(sigmaDiv);
+            sigmaVal.addClass('panel-stat-value--large-primary');
+            sigmaVal.style('color', AppPalette.text.muted);
+            const sigma = state.getSigmaAtT(state.currentT);
+            sigmaVal.html(sigma !== null ? sigma.toFixed(2) : '—');
+
+            this._expectationStatsElements = { meanVal, sigmaVal };
+        });
+
+        this.createSection('Line Chart', () => {
+            const container = createDiv();
+            container.parent(this.contentContainer);
+            container.addClass('panel-section-content');
+            container.style('height', '180px');
+            container.style('position', 'relative');
+
+            const canvas = createElement('canvas');
+            canvas.parent(container);
+            canvas.style('width', '100%');
+            canvas.style('height', '100%');
+            this._expectationLineCanvas = canvas.elt;
+            requestAnimationFrame(() => this._buildExpectationLineChart(state));
+        });
+
+        this.createSection('Distribution', () => {
+            const container = createDiv();
+            container.parent(this.contentContainer);
+            container.addClass('panel-section-content');
+            container.style('height', '180px');
+            container.style('position', 'relative');
+
+            const canvas = createElement('canvas');
+            canvas.parent(container);
+            canvas.style('width', '100%');
+            canvas.style('height', '100%');
+            this._expectationDistCanvas = canvas.elt;
+            requestAnimationFrame(() => this._buildExpectationDistChart(state));
+        });
+    }
+
+    _buildExpectationLineChart(state) {
+        if (this.expectationLineChartInst) {
+            this.expectationLineChartInst.destroy();
+            this.expectationLineChartInst = null;
+        }
+        if (!this._expectationLineCanvas || !state || !state.computed) return;
+        if (typeof Chart === 'undefined') return;
+
+        const ctx = this._expectationLineCanvas.getContext('2d');
+        const maxT = state.maxT;
+        const { labels, upperBand, means, lowerBand } = this._lineChartDatasetsAtT(state);
+
+        this.expectationLineChartInst = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels,
+                datasets: [
+                    { label: 'E[G]+σ', data: upperBand, borderColor: 'transparent',
+                      backgroundColor: 'rgba(42,120,214,0.12)', fill: '+1', pointRadius: 0, tension: 0.3 },
+                    { label: 'E[G]', data: means, borderColor: AppPalette.expectation.scrubberLine,
+                      borderWidth: 2, backgroundColor: 'rgba(42,120,214,0.12)', fill: false, pointRadius: 2, tension: 0.3 },
+                    { label: 'E[G]-σ', data: lowerBand, borderColor: 'transparent',
+                      backgroundColor: 'rgba(42,120,214,0.12)', fill: '-1', pointRadius: 0, tension: 0.3 }
+                ]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                animation: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { min: 0, max: maxT, ticks: { font: { size: 9 }, color: '#898781' }, grid: { color: '#e1e0d9' } },
+                    y: { ticks: { font: { size: 9 }, color: '#898781' }, grid: { color: '#e1e0d9' } }
+                }
+            }
+        });
+    }
+
+    _lineChartDatasetsAtT(state) {
+        const currentT = state.currentT;
+        const allMeans = state.getMeansOverTime();
+        const allSigmas = state.getSigmasOverTime();
+        const means = allMeans.slice(0, currentT + 1);
+        const sigmas = allSigmas.slice(0, currentT + 1);
+        const labels = means.map((_, i) => i);
+        const upperBand = means.map((m, i) => m + sigmas[i]);
+        const lowerBand = means.map((m, i) => m - sigmas[i]);
+        return { labels, upperBand, means, lowerBand };
+    }
+
+    _distChartStyles(state, focusedIdx) {
+        const allUtils = state.getAllUtilitiesAtT(state.currentT);
+        const data = allUtils.map((u, i) => ({ x: u, y: i * RP_EXPECTATION_Y_STEP }));
+        const bgColors = allUtils.map((_, i) =>
+            focusedIdx !== null && i === focusedIdx
+                ? AppPalette.expectation.runColors[i % 8]
+                : 'rgba(150,150,150,0.3)'
+        );
+        const radii = allUtils.map((_, i) => focusedIdx !== null && i === focusedIdx ? 8 : 3);
+        const xVals = allUtils.filter(isFinite);
+        const xMin = xVals.length > 0 ? Math.min(...xVals) : 0;
+        const xMax = xVals.length > 0 ? Math.max(...xVals) : 1;
+        const xPad = (xMax - xMin) * 0.1 || 1;
+        return { data, bgColors, radii, xMin: xMin - xPad, xMax: xMax + xPad };
+    }
+
+    _buildExpectationDistChart(state) {
+        if (this.expectationDistChartInst) {
+            this.expectationDistChartInst.destroy();
+            this.expectationDistChartInst = null;
+        }
+        if (!this._expectationDistCanvas || !state || !state.computed) return;
+        if (typeof Chart === 'undefined') return;
+
+        const focusedIdx = this.expectationViewModel ? this.expectationViewModel.focusedRunIndex : null;
+        const { data, bgColors, radii, xMin, xMax } = this._distChartStyles(state, focusedIdx);
+
+        this.expectationDistChartInst = new Chart(this._expectationDistCanvas.getContext('2d'), {
+            type: 'scatter',
+            data: {
+                datasets: [{
+                    label: 'Runs',
+                    data,
+                    backgroundColor: bgColors,
+                    pointRadius: radii
+                }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                animation: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { min: xMin, max: xMax,
+                         ticks: { font: { size: 9 }, color: '#898781' }, grid: { color: '#e1e0d9' } },
+                    y: { display: false }
+                }
+            }
+        });
+    }
+
+    updateExpectationData() {
+        const state = this.expectationState;
+        if (!state || !state.computed) return;
+
+        const currentT = state.currentT;
+        const mean = state.getMeanAtT(currentT);
+        const sigma = state.getSigmaAtT(currentT);
+
+        if (this._expectationStatsElements) {
+            const { meanVal, sigmaVal } = this._expectationStatsElements;
+            if (meanVal) meanVal.html(mean !== null ? mean.toFixed(2) : '—');
+            if (sigmaVal) sigmaVal.html(sigma !== null ? sigma.toFixed(2) : '—');
+        }
+
+        if (this.expectationLineChartInst) {
+            const { labels, upperBand, means, lowerBand } = this._lineChartDatasetsAtT(state);
+            const chart = this.expectationLineChartInst;
+            chart.data.labels = labels;
+            chart.data.datasets[0].data = upperBand;
+            chart.data.datasets[1].data = means;
+            chart.data.datasets[2].data = lowerBand;
+            chart.update('none');
+        }
+
+        if (this.expectationDistChartInst) {
+            const focusedIdx = this.expectationViewModel ? this.expectationViewModel.focusedRunIndex : null;
+            const { data, bgColors, radii, xMin, xMax } = this._distChartStyles(state, focusedIdx);
+            const chart = this.expectationDistChartInst;
+            chart.data.datasets[0].data = data;
+            chart.data.datasets[0].backgroundColor = bgColors;
+            chart.data.datasets[0].pointRadius = radii;
+            chart.options.scales.x.min = xMin;
+            chart.options.scales.x.max = xMax;
+            chart.update('none');
+        }
     }
 
     show() {

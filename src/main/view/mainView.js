@@ -81,6 +81,14 @@ class MainView {
     draw() {
         background(240);
 
+        // Expectation mode: delegate to expectation view
+        if (this.viewModel.interaction.mode === 'expectation' && this.expectationView) {
+            const usableW = windowWidth - (this.rightPanel ? this.rightPanel.getWidth() : 300);
+            const usableH = windowHeight - 90;
+            this.expectationView.draw(usableW, usableH);
+            return;
+        }
+
         // Value Iteration mode: delegate to VI view
         if (this.viewModel.interaction.mode === 'value_iteration' && this.valueIterationView) {
             push();
@@ -913,6 +921,8 @@ class MainView {
             return;
         }
 
+        if (this.viewModel.interaction.mode === 'expectation') return;
+
         // Handle panning
         if (this.viewModel.viewport.isPanning) {
             const dx = mouseX - this.viewModel.viewport.panStartX;
@@ -1042,6 +1052,8 @@ class MainView {
             return;
         }
 
+        if (this.viewModel.interaction.mode === 'expectation') return;
+
         // Zoom towards mouse position
         const zoomFactor = -event.delta * 0.001;
         const newZoom = this.viewModel.viewport.zoom * (1 + zoomFactor);
@@ -1111,6 +1123,9 @@ class MainView {
         resizeCanvas(canvasWidth, canvasHeight);
         this.canvas.position(0, this.TOP_BARS_HEIGHT);
         this._relayoutValueIterationIfActive(canvasWidth, canvasHeight);
+        if (this.expectationView && this.viewModel.interaction.mode === 'expectation') {
+            this.expectationView.resize(canvasWidth, canvasHeight, this.TOP_BARS_HEIGHT);
+        }
 
         // Update menu bar width
         if (this.menuBar) {
@@ -1138,6 +1153,9 @@ class MainView {
         resizeCanvas(canvasWidth, canvasHeight);
         this.canvas.position(0, this.TOP_BARS_HEIGHT);
         this._relayoutValueIterationIfActive(canvasWidth, canvasHeight);
+        if (this.expectationView && this.viewModel.interaction.mode === 'expectation') {
+            this.expectationView.resize(canvasWidth, canvasHeight, this.TOP_BARS_HEIGHT);
+        }
         redraw();
     }
 
