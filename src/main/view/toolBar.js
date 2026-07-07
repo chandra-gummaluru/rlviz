@@ -34,6 +34,9 @@ class ToolBar {
         // Expectation mode buttons
         this.expectationPlayPauseBtn = null;
 
+        this.helpBtn = null;
+        this.helpOverlay = null;
+
         // Mode toggle
         this.editToggleBtn = null;
         this.simulateToggleBtn = null;
@@ -47,7 +50,7 @@ class ToolBar {
         // Create main toolbar container
         this.toolBarElement = createDiv();
         this.toolBarElement.position(0, menuBarHeight);
-        this.toolBarElement.size(windowWidth, this.height);
+        this.toolBarElement.style('height', this.height + 'px');
         this.toolBarElement.addClass('toolbar');
 
         // Create left container for mode-dependent buttons
@@ -74,6 +77,9 @@ class ToolBar {
 
         // Create mode toggle
         this.createModeToggle();
+
+        // Create help button (after mode toggles so it appears to their right)
+        this.createHelpButton();
 
         // Show Edit mode by default
         this.setMode('editor');
@@ -247,6 +253,45 @@ class ToolBar {
         this.viToggleBtn.mousePressed(() => this.switchMode('value_iteration'));
     }
 
+    createHelpButton() {
+        this.helpBtn = createButton('?');
+        this.helpBtn.parent(this.rightToggleContainer);
+        this.helpBtn.addClass('toolbar-btn');
+        this.helpBtn.addClass('toolbar-btn--help');
+        this.helpBtn.mousePressed(() => this.showHelp());
+
+        this.helpOverlay = createDiv();
+        this.helpOverlay.addClass('help-overlay');
+
+        const modal = createDiv();
+        modal.addClass('help-modal');
+        modal.parent(this.helpOverlay);
+
+        const closeBtn = createButton('✕');
+        closeBtn.addClass('help-modal-close');
+        closeBtn.parent(modal);
+        closeBtn.mousePressed(() => this.hideHelp());
+
+        createElement('h2', 'How to Use RLViz').parent(modal);
+
+        createDiv(`
+            <p><strong>Editor mode:</strong> In Editor Mode, you can add/remove state and action nodes to the simulation. </p>
+            <p><strong>Simulate mode:</strong> In this mode, you can explore different policies for an agent. </p>
+            <p><strong>Value Iteration mode:</strong> In Value Iteration mode, you can see the Bellman equations in action. </p>
+        `).parent(modal);
+
+        this.helpOverlay.mousePressed(() => this.hideHelp());
+        modal.elt.addEventListener('click', e => e.stopPropagation());
+    }
+
+    showHelp() {
+        this.helpOverlay.addClass('visible');
+    }
+
+    hideHelp() {
+        this.helpOverlay.removeClass('visible');
+    }
+
     switchMode(newMode) {
         this.currentMode = newMode;
         this.setMode(newMode);
@@ -319,10 +364,8 @@ class ToolBar {
         }
     }
 
-    updateWidth(newWidth) {
-        if (this.toolBarElement) {
-            this.toolBarElement.size(newWidth, this.height);
-        }
+    updateWidth(_newWidth) {
+        // Width is managed by CSS (width: 100%); no-op
     }
 
     updatePosition(menuBarHeight) {

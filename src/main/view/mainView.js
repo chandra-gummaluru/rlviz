@@ -105,6 +105,14 @@ class MainView {
         translate(this.viewModel.viewport.panX, this.viewModel.viewport.panY);
         scale(this.viewModel.viewport.zoom);
 
+        // Update held node to cursor before rendering so it renders at cursor position
+        if (this.viewModel.interaction.heldNode && this.viewModel.interaction.placingMode) {
+            this.updateHeldNodePosition();
+        }
+        if (this.viewModel.interaction.heldTextLabel && this.viewModel.interaction.placingMode === 'textbox') {
+            this.updateHeldNodePosition();
+        }
+
         this.drawEdges();
         this.drawNodes();
         this.drawTextLabels();
@@ -157,12 +165,6 @@ class MainView {
             }
         }
 
-        if (this.viewModel.interaction.heldNode && this.viewModel.interaction.placingMode) {
-            this.updateHeldNodePosition();
-        }
-        if (this.viewModel.interaction.heldTextLabel && this.viewModel.interaction.placingMode === 'textbox') {
-            this.updateHeldNodePosition();
-        }
     }
 
     drawMessages() {
@@ -821,9 +823,12 @@ class MainView {
     }
 
     updateHeldNodePosition() {
-        // This is called during draw() when a node is being placed
-        // The controller already updates positions during drag, nothing to do here
-        redraw();
+        // Only track cursor when it's actually over the canvas
+        if (mouseX >= 0 && mouseX <= width && mouseY >= 0 && mouseY <= height) {
+            const world = this.viewModel.screenToWorld(mouseX, mouseY);
+            this.viewModel.interaction.heldNode.setPosition(world.x, world.y);
+        }
+        redraw(); // keep re-drawing so node stays visible and tracks cursor
     }
 
     mousePressed() {

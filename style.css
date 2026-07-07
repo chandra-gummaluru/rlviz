@@ -158,6 +158,8 @@ canvas {
   padding: 0 15px;
   border-bottom: 1px solid var(--border-light);
   z-index: var(--z-toolbar);
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .toolbar-left {
@@ -201,6 +203,61 @@ canvas {
 .toolbar-btn--pause { background-color: var(--color-warning); }
 .toolbar-btn--step { background-color: var(--color-primary); }
 .toolbar-btn--rerun { background-color: var(--color-purple); }
+
+.toolbar-btn--help {
+  background-color: var(--color-gray);
+  margin-left: 12px;
+}
+
+/* Help overlay backdrop */
+.help-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 1100;
+  align-items: center;
+  justify-content: center;
+}
+.help-overlay.visible {
+  display: flex;
+}
+
+/* Help modal content box */
+.help-modal {
+  background: var(--bg-white);
+  border-radius: 8px;
+  padding: 32px;
+  max-width: 520px;
+  width: 90%;
+  max-height: 70vh;
+  overflow-y: auto;
+  position: relative;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+}
+.help-modal h2 {
+  margin-top: 0;
+  font-family: var(--font-family);
+  color: var(--text-dark);
+}
+.help-modal p {
+  font-family: var(--font-family);
+  color: var(--text-medium);
+  line-height: 1.6;
+}
+.help-modal-close {
+  position: absolute;
+  top: 12px;
+  right: 16px;
+  background: none;
+  border: none;
+  font-size: 20px;
+  cursor: pointer;
+  color: var(--text-light);
+}
+.help-modal-close:hover {
+  color: var(--text-dark);
+}
 
 /* Mode toggle (segmented control) */
 .toolbar-toggle {
