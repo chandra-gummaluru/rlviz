@@ -32,6 +32,10 @@ class ToolBar {
         this.simulateToggleBtn = null;
         this.viToggleBtn = null;
 
+        // Help overlay
+        this.helpBtn = null;
+        this.helpOverlay = null;
+
         this.currentMode = 'editor';
     }
 
@@ -63,6 +67,9 @@ class ToolBar {
 
         // Create mode toggle
         this.createModeToggle();
+
+        // Create help button and overlay
+        this.createHelpButton();
 
         // Show Edit mode by default
         this.setMode('editor');
@@ -184,7 +191,46 @@ class ToolBar {
         this.viToggleBtn.parent(this.rightToggleContainer);
         this.viToggleBtn.addClass('toolbar-toggle');
         this.viToggleBtn.addClass('toolbar-toggle--last');
-        this.viToggleBtn.mousePressed(() => this.switchMode('value_iteration'));
+    }
+
+    createHelpButton() {
+        this.helpBtn = createButton('?');
+        this.helpBtn.parent(this.rightToggleContainer);
+        this.helpBtn.addClass('toolbar-btn');
+        this.helpBtn.addClass('toolbar-btn--help');
+        this.helpBtn.mousePressed(() => this.showHelp());
+
+        this.helpOverlay = createDiv();
+        this.helpOverlay.addClass('help-overlay');
+
+        const modal = createDiv();
+        modal.addClass('help-modal');
+        modal.parent(this.helpOverlay);
+
+        const closeBtn = createButton('✕');
+        closeBtn.addClass('help-modal-close');
+        closeBtn.parent(modal);
+        closeBtn.mousePressed(() => this.hideHelp());
+
+        createElement('h2', 'How to Use RLViz').parent(modal);
+
+        createDiv(`
+            <p><strong>Editor mode:</strong> In Editor Mode, you can add/remove state and action nodes to the simulation. </p>
+            <p><strong>Simulate mode:</strong> In this mode, you can explore different policies for an agent. </p>
+            <p><strong>Value Iteration mode:</strong> In Value Iteration mode, you can see the Bellman equations in action. </p>
+        `).parent(modal);
+
+        // Clicking the backdrop (outside modal) closes the overlay
+        this.helpOverlay.mousePressed(() => this.hideHelp());
+        modal.elt.addEventListener('click', e => e.stopPropagation());
+    }
+
+    showHelp() {
+        this.helpOverlay.addClass('visible');
+    }
+
+    hideHelp() {
+        this.helpOverlay.removeClass('visible');
     }
 
     switchMode(newMode) {
