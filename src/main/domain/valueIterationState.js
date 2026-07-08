@@ -34,6 +34,11 @@ class ValueIterationState {
 
         // Playback control
         this.isPlaying = false;
+
+        // Manual Q-value overrides (editable Q-table, "Learning Iteration" / P-unknown
+        // presentation only). Keyed `${stateId}:${actionId}`. Presentation-layer annotations,
+        // not domain-significant - excluded from graph import/export.
+        this.manualOverrides = {};
     }
 
     /**
@@ -43,6 +48,7 @@ class ValueIterationState {
     computeHistory(graph, T, gamma) {
         this.T = T;
         this.gamma = gamma;
+        this.manualOverrides = {};
 
         const states = graph.nodes.filter(n => n.type === 'state');
         // Sort states by y-position so VI animates top-to-bottom visually
@@ -229,5 +235,13 @@ class ValueIterationState {
     getBackupDetail(columnIndex, stateId) {
         if (columnIndex < 0 || columnIndex >= this.backupDetails.length) return null;
         return this.backupDetails[columnIndex][stateId] || null;
+    }
+
+    /** Manual override for a Q-value if one has been set (editable Q-table), else computedValue. */
+    getEffectiveQValue(stateId, actionId, computedValue) {
+        const key = `${stateId}:${actionId}`;
+        return Object.prototype.hasOwnProperty.call(this.manualOverrides, key)
+            ? this.manualOverrides[key]
+            : computedValue;
     }
 }

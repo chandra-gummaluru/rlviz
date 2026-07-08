@@ -13,7 +13,7 @@ class SetModeInteractor extends SetModeInputBoundary {
             throw new Error("OutputBoundary is required");
         }
         this.outputBoundary = outputBoundary;
-        this.validModes = ['editor', 'simulate', 'value_iteration', 'expectation'];
+        this.validModes = ['editor', 'simulate', 'values'];
     }
 
     /**
@@ -38,7 +38,7 @@ class SetModeInteractor extends SetModeInputBoundary {
         if (!this.validModes.includes(mode)) {
             const responseModel = {
                 success: false,
-                error: `Invalid mode: ${inputData.mode}. Must be 'editor', 'simulate', 'value_iteration', or 'expectation'`,
+                error: `Invalid mode: ${inputData.mode}. Must be 'editor', 'simulate', or 'values'`,
                 mode: null
             };
             this.outputBoundary.present(responseModel);

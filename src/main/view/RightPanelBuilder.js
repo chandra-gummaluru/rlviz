@@ -8,7 +8,7 @@ class RightPanelBuilder {
         const badge = createSpan(text);
         badge.parent(container);
         badge.style('background', bg);
-        badge.style('color', 'white');
+        badge.style('color', ColorUtils.contrastText(bg));
         badge.style('padding', '2px 8px');
         badge.style('border-radius', '4px');
         badge.style('font-size', '13px');

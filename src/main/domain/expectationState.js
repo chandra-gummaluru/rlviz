@@ -49,7 +49,9 @@ class ExpectationState {
     }
 
     _getUtility(rollout, t) {
-        const effectiveT = Math.min(t, rollout.numSteps);
+        // t may be fractional while the scrubber is being dragged (integer once released);
+        // floor it since utilities[] is indexed per whole step.
+        const effectiveT = Math.floor(Math.min(t, rollout.numSteps));
         return rollout.utilities[effectiveT];
     }
 

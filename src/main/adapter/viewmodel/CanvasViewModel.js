@@ -24,6 +24,23 @@ class CanvasViewModel {
         this.infoMessage = null;
         this.lastOperationError = null;
         this.lastOperationMessage = null;
+
+        // Bottom chart dock (Values mode). Starts closed/zero-height so canvas layout math
+        // doesn't reserve a gap before ChartDock.show() is called on entering Values mode.
+        this.dockState = {
+            open: false,
+            collapsed: false,
+            heightPx: 0,
+            preferredHeightPx: 132,
+            slot1Chart: 'convergence',
+            slot2Chart: 'histogram'
+        };
+
+        // Whether the VI pane presents itself as "Value Iteration" (P known, exact Bellman
+        // backup) or "Learning Iteration" (P unknown, teal->purpleT, editable Q-table). This is
+        // presentation-tier: the graph's real transition probabilities don't change, only what
+        // the UI claims to know/show.
+        this.modelKnown = true;
     }
 
     // Factory methods for creating presentation view models
@@ -42,12 +59,14 @@ class CanvasViewModel {
 
     set mode(value) {
         this.interaction.mode = value;
-        if (value !== 'value_iteration' && this.valueIterationState) {
-            this.valueIterationState.reset();
-        }
-        if (value !== 'value_iteration' && this.valueIterationViewModel) {
-            this.valueIterationViewModel.reset();
-        }
+    }
+
+    get valuesSubView() {
+        return this.interaction.valuesSubView;
+    }
+
+    set valuesSubView(value) {
+        this.interaction.valuesSubView = value;
     }
 
     get zoom() {

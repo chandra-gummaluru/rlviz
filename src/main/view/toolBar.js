@@ -3,7 +3,7 @@ class ToolBar {
     constructor(callbacks, canvasViewModel) {
         this.callbacks = callbacks;
         this.viewModel = canvasViewModel;
-        this.height = 50;
+        this.height = 54;
         this.toolBarElement = null;
         this.leftButtonsContainer = null;
         this.rightToggleContainer = null;
@@ -37,10 +37,15 @@ class ToolBar {
         // Mode toggle
         this.editToggleBtn = null;
         this.simulateToggleBtn = null;
-        this.expectationToggleBtn = null;
-        this.viToggleBtn = null;
+        this.valuesSlot = null;
+        this.valuesCollapsedLabel = null;
+        this.valuesExpanded = null;
+        this.mcSubBtn = null;
+        this.splitSubBtn = null;
+        this.viSubBtn = null;
 
         this.currentMode = 'editor';
+        this.modelKnown = true; // P known ("Value Iter") vs P unknown ("Learning Iter")
     }
 
     setup(menuBarHeight) {
@@ -232,19 +237,39 @@ class ToolBar {
         this.simulateToggleBtn.addClass('toolbar-toggle--middle');
         this.simulateToggleBtn.mousePressed(() => this.switchMode('simulate'));
 
-        // Expectation toggle button
-        this.expectationToggleBtn = createButton('Expectation');
-        this.expectationToggleBtn.parent(this.rightToggleContainer);
-        this.expectationToggleBtn.addClass('toolbar-toggle');
-        this.expectationToggleBtn.addClass('toolbar-toggle--middle');
-        this.expectationToggleBtn.mousePressed(() => this.switchMode('expectation'));
+        // Values slot: collapsed label by default, expands on hover to reveal MC | split | VI
+        this.valuesSlot = createDiv();
+        this.valuesSlot.parent(this.rightToggleContainer);
+        this.valuesSlot.addClass('toolbar-toggle');
+        this.valuesSlot.addClass('toolbar-toggle--last');
+        this.valuesSlot.addClass('toolbar-toggle--values-slot');
+        this.valuesSlot.mousePressed((event) => {
+            if (event && event.stopPropagation) event.stopPropagation();
+            this.switchMode('values');
+        });
 
-        // Value Iteration toggle button
-        this.viToggleBtn = createButton('Value Iter');
-        this.viToggleBtn.parent(this.rightToggleContainer);
-        this.viToggleBtn.addClass('toolbar-toggle');
-        this.viToggleBtn.addClass('toolbar-toggle--last');
-        this.viToggleBtn.mousePressed(() => this.switchMode('value_iteration'));
+        this.valuesCollapsedLabel = createSpan('Values');
+        this.valuesCollapsedLabel.parent(this.valuesSlot);
+        this.valuesCollapsedLabel.addClass('values-slot-label');
+
+        this.valuesExpanded = createDiv();
+        this.valuesExpanded.parent(this.valuesSlot);
+        this.valuesExpanded.addClass('values-slot-expanded');
+
+        this.mcSubBtn = this._createValuesSubButton('Monte Carlo', 'mc');
+        this.splitSubBtn = this._createValuesSubButton('⇄', 'split');
+        this.viSubBtn = this._createValuesSubButton('Value Iter', 'vi');
+    }
+
+    _createValuesSubButton(label, subView) {
+        const btn = createButton(label);
+        btn.parent(this.valuesExpanded);
+        btn.addClass('values-sub-btn');
+        btn.mousePressed((event) => {
+            if (event && event.stopPropagation) event.stopPropagation();
+            this._selectValuesSubView(subView);
+        });
+        return btn;
     }
 
     switchMode(newMode) {
@@ -253,6 +278,70 @@ class ToolBar {
 
         if (this.callbacks.onModeChange) {
             this.callbacks.onModeChange(newMode);
+        }
+    }
+
+    // Activates Values mode (if needed) and switches its sub-view; used by the slot's
+    // expanded MC | split | VI buttons, which pick a sub-view directly rather than just
+    // reopening the slot at whatever sub-view was last active (that's switchMode('values')).
+    _selectValuesSubView(subView) {
+        this.setMode('values');
+        this._applyValuesSubViewButtons(subView);
+
+        if (this.callbacks.onModeChange) this.callbacks.onModeChange('values');
+        if (this.callbacks.onValuesSubViewChange) this.callbacks.onValuesSubViewChange(subView);
+    }
+
+    // Shows/hides the MC and VI button sets for the given sub-view ('mc' | 'vi' | 'split'),
+    // hiding both first so it's safe to call repeatedly/idempotently. subView === null hides all.
+    _applyValuesSubViewButtons(subView) {
+        this.expectationPlayPauseBtn.hide();
+        this.viPlayPauseBtn.hide();
+        this.viStepBtn.hide();
+        this.viSkipBtn.hide();
+        this.viResetBtn.hide();
+        this.viTLabel.hide();
+        this.viTInput.hide();
+        this.viPerActionLabel.hide();
+        this.viPerActionToggle.hide();
+        this.viShowCalcsLabel.hide();
+        this.viShowCalcsToggle.hide();
+
+        if (!subView) return;
+
+        if (subView === 'mc' || subView === 'split') {
+            this.expectationPlayPauseBtn.show();
+            this.setExpectationPlayMode('play');
+        }
+        if (subView === 'vi' || subView === 'split') {
+            this.viPlayPauseBtn.show();
+            this.viStepBtn.show();
+            this.viSkipBtn.show();
+            this.viResetBtn.show();
+            this.viTLabel.show();
+            this.viTInput.show();
+            this.viPerActionLabel.show();
+            this.viPerActionToggle.show();
+            this.viShowCalcsLabel.show();
+            this.viShowCalcsToggle.show();
+            this.setVIPlayPauseMode('play');
+        }
+
+        this._setValuesCollapsedLabel(subView);
+    }
+
+    _setValuesCollapsedLabel(subView) {
+        if (!this.valuesCollapsedLabel) return;
+        const viLabel = this.modelKnown ? 'Value Iter' : 'Learning Iter';
+        const labels = { mc: 'Monte Carlo', vi: viLabel, split: `MC ⇄ ${this.modelKnown ? 'VI' : 'LI'}` };
+        this.valuesCollapsedLabel.html(labels[subView] || 'Values');
+    }
+
+    setModelKnown(known) {
+        this.modelKnown = known;
+        if (this.viSubBtn) this.viSubBtn.html(known ? 'Value Iter' : 'Learning Iter');
+        if (this.viewModel && this.viewModel.valuesSubView) {
+            this._setValuesCollapsedLabel(this.viewModel.valuesSubView);
         }
     }
 
@@ -267,23 +356,12 @@ class ToolBar {
         this.playPauseBtn.hide();
         this.stepBtn.hide();
         this.rerunBtn.hide();
-        this.expectationPlayPauseBtn.hide();
-        this.viPlayPauseBtn.hide();
-        this.viStepBtn.hide();
-        this.viSkipBtn.hide();
-        this.viResetBtn.hide();
-        this.viTLabel.hide();
-        this.viTInput.hide();
-        this.viPerActionLabel.hide();
-        this.viPerActionToggle.hide();
-        this.viShowCalcsLabel.hide();
-        this.viShowCalcsToggle.hide();
+        this._applyValuesSubViewButtons(null);
 
         // Clear all toggle active states
         this.editToggleBtn.removeClass('toolbar-toggle--active');
         this.simulateToggleBtn.removeClass('toolbar-toggle--active');
-        this.expectationToggleBtn.removeClass('toolbar-toggle--active');
-        this.viToggleBtn.removeClass('toolbar-toggle--active');
+        this.valuesSlot.removeClass('toolbar-toggle--active');
 
         if (mode === 'editor') {
             this.addStateBtn.show();
@@ -299,23 +377,10 @@ class ToolBar {
             this.setPlayPauseEnabled(true);
             this.setStepEnabled(true);
             this.simulateToggleBtn.addClass('toolbar-toggle--active');
-        } else if (mode === 'expectation') {
-            this.expectationPlayPauseBtn.show();
-            this.setExpectationPlayMode('play');
-            this.expectationToggleBtn.addClass('toolbar-toggle--active');
-        } else if (mode === 'value_iteration') {
-            this.viPlayPauseBtn.show();
-            this.viStepBtn.show();
-            this.viSkipBtn.show();
-            this.viResetBtn.show();
-            this.viTLabel.show();
-            this.viTInput.show();
-            this.viPerActionLabel.show();
-            this.viPerActionToggle.show();
-            this.viShowCalcsLabel.show();
-            this.viShowCalcsToggle.show();
-            this.setVIPlayPauseMode('play');
-            this.viToggleBtn.addClass('toolbar-toggle--active');
+        } else if (mode === 'values') {
+            const subView = (this.viewModel && this.viewModel.valuesSubView) || 'mc';
+            this._applyValuesSubViewButtons(subView);
+            this.valuesSlot.addClass('toolbar-toggle--active');
         }
     }
 

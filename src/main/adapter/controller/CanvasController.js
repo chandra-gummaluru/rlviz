@@ -6,12 +6,19 @@ class CanvasController {
         this.copiedNodeData = null;
         this.lastClickedNodeForCopy = null;
         this.preferLastClickedNodeForCopy = false;
+        // Mode-transition side effects (registered by main.js once all views exist), keyed by
+        // mode/sub-view name: { onLeave, onEnter, onLeaveSubView, onEnterSubView }
+        this.modeLifecycle = null;
+    }
+
+    registerModeLifecycle(hooks) {
+        this.modeLifecycle = hooks;
     }
 
     // ===== Mouse Input Handling =====
 
     handleMousePress(screenX, screenY) {
-        if (this.viewModel.interaction.mode === 'expectation') return;
+        if (this.viewModel.interaction.mode === 'values') return;
         this._blurActiveTextInput();
 
         const world = this.viewModel.screenToWorld(screenX, screenY);
@@ -66,7 +73,7 @@ class CanvasController {
     }
 
     handleMouseMove(screenX, screenY) {
-        if (this.viewModel.interaction.mode === 'expectation') return false;
+        if (this.viewModel.interaction.mode === 'values') return false;
         if (this.viewModel.interaction.isInteracting()) return false;
 
         const world = this.viewModel.screenToWorld(screenX, screenY);
@@ -83,7 +90,7 @@ class CanvasController {
     }
 
     handleMouseDrag(screenX, screenY) {
-        if (this.viewModel.interaction.mode === 'expectation') return;
+        if (this.viewModel.interaction.mode === 'values') return;
         const world = this.viewModel.screenToWorld(screenX, screenY);
         const x = world.x;
         const y = world.y;
@@ -150,7 +157,7 @@ class CanvasController {
     }
 
     handleMouseRelease(screenX, screenY) {
-        if (this.viewModel.interaction.mode === 'expectation') return;
+        if (this.viewModel.interaction.mode === 'values') return;
         const world = this.viewModel.screenToWorld(screenX, screenY);
         const x = world.x;
         const y = world.y;
@@ -241,7 +248,7 @@ class CanvasController {
     // ===== Keyboard Input Handling =====
 
     handleKeyPress(key) {
-        if (this.viewModel.interaction.mode === 'expectation') return;
+        if (this.viewModel.interaction.mode === 'values') return;
         // Don't intercept keys while a text input has focus
         const active = document.activeElement;
         if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) {
@@ -304,7 +311,7 @@ class CanvasController {
                 // Calculate center of canvas in world coordinates
                 // Canvas is full window width and height minus top bars
                 const canvasWidth = window.innerWidth;
-                const canvasHeight = window.innerHeight - 90; // menu bar (40px) + toolbar (50px)
+                const canvasHeight = window.innerHeight - 96; // menu bar (42px) + toolbar (54px)
                 const screenCenterX = canvasWidth / 2;
                 const screenCenterY = canvasHeight / 2;
 
@@ -433,6 +440,13 @@ class CanvasController {
     }
 
     setMode(mode) {
+        const prevMode = this.viewModel.mode;
+        const isRealTransition = prevMode !== mode;
+
+        if (isRealTransition && this.modeLifecycle?.onLeave?.[prevMode]) {
+            this.modeLifecycle.onLeave[prevMode](prevMode, mode);
+        }
+
         if (this.interactors.setMode) {
             const inputData = new SetModeInputData(mode);
             this.interactors.setMode.execute(inputData);
@@ -440,6 +454,47 @@ class CanvasController {
         this.viewModel.selection.clearSelection();
         this.viewModel.interaction.clearEditorFocus();
         this.preferLastClickedNodeForCopy = false;
+
+        if (isRealTransition && this.modeLifecycle?.onEnter?.[mode]) {
+            this.modeLifecycle.onEnter[mode](mode, prevMode);
+        }
+    }
+
+    // Switches the sub-view shown within Values mode ('mc' | 'vi' | 'split'). Does not itself
+    // change the top-level mode — callers should call setMode('values') first if needed.
+    setValuesSubView(subView) {
+        const prevSubView = this.viewModel.valuesSubView;
+        const isRealTransition = prevSubView !== subView;
+
+        if (isRealTransition && this.modeLifecycle?.onLeaveSubView?.[prevSubView]) {
+            this.modeLifecycle.onLeaveSubView[prevSubView](prevSubView, subView);
+        }
+
+        if (this.interactors.setValuesSubView) {
+            const inputData = new SetValuesSubViewInputData(subView);
+            this.interactors.setValuesSubView.execute(inputData);
+        }
+
+        if (isRealTransition && this.modeLifecycle?.onEnterSubView?.[subView]) {
+            this.modeLifecycle.onEnterSubView[subView](subView, prevSubView);
+        }
+    }
+
+    // Toggles the VI pane between "Value Iteration" (P known) and "Learning Iteration"
+    // (P unknown) presentation. No domain/algorithm change - see setManualQOverride for the
+    // accompanying editable-Q-table affordance.
+    setModelKnown(known) {
+        this.viewModel.modelKnown = !!known;
+    }
+
+    // Presentation-layer manual override for a displayed Q-value, used only while
+    // modelKnown === false (editable Q-table). Bypasses the Command/undo pattern, matching the
+    // existing setTransitionProbability/setTransitionReward precedent for lightweight edits.
+    setManualQOverride(stateId, actionId, value) {
+        const viState = this.viewModel.valueIterationState;
+        if (!viState) return;
+        if (!isFinite(value)) return;
+        viState.manualOverrides[`${stateId}:${actionId}`] = value;
     }
 
     /**

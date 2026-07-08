@@ -7,7 +7,6 @@ const RP_PROB_SLIDER_STEP    = 0.01;
 const RP_VI_TABLE_MAX_H      = 400;    // px max height of the V(s) table
 const RP_REWARD_BAR_MAX      = 100;    // reward clamped to ±this for bar width
 const RP_REWARD_BAR_HALF_PCT = 50;     // percent representing one full half of bar
-const RP_EXPECTATION_Y_STEP  = 0.05;  // vertical jitter between distribution points
 // --- End constants ---
 
 // Right panel displaying MDP information and node editing
@@ -53,7 +52,7 @@ class RightPanel {
     constructor(viewModel, controller) {
         this.viewModel = viewModel;
         this.controller = controller;
-        this.width = 300;
+        this.width = 272;
         this.panelElement = null;
         this.contentContainer = null;
         this.onPanelResize = null;
@@ -67,11 +66,8 @@ class RightPanel {
             totalReward: 0
         };
         this.simStatAnimationFrame = null;
-        this.expectationLineChartInst = null;
-        this.expectationDistChartInst = null;
         this.expectationViewModel = null;
         this.expectationState = null;
-        this._expectationStatsElements = null;
 
         this.callbacks = {
             onSpinningArrowToggle: (enabled) => {
@@ -87,6 +83,8 @@ class RightPanel {
             onVICellClick: null,            // (colIdx, stateId, actionId) => void
             onVIExplainClose: null,         // () => void
             onVIExplainStep: null,          // ('prev' | 'next') => void
+            onModelKnownToggle: null,       // (known: boolean) => void
+            onManualQOverride: null,        // (stateId, actionId, value) => void
             onExpectationDisplayRunsChange: null, // (displayRuns) => void
             onExpectationMaxStepsChange: null,    // (maxSteps) => void
             onExpectationGammaChange: null,       // (gamma) => void
@@ -110,15 +108,6 @@ class RightPanel {
             this.simStatAnimationFrame = null;
         }
 
-        if (this.expectationLineChartInst) {
-            this.expectationLineChartInst.destroy();
-            this.expectationLineChartInst = null;
-        }
-        if (this.expectationDistChartInst) {
-            this.expectationDistChartInst.destroy();
-            this.expectationDistChartInst = null;
-        }
-
         // Recreate container so renderMathInElement always processes a fresh, unmodified DOM tree
         if (this.contentContainer) this.contentContainer.remove();
         this.contentContainer = createDiv();
@@ -127,7 +116,10 @@ class RightPanel {
         const selectedNode = this.viewModel.selection.selectedNode;
         const selectedEdge = this.viewModel.selection.selectedEdge;
         const isSimulateMode = this.viewModel.interaction.mode === 'simulate';
-        const isVIMode = this.viewModel.interaction.mode === 'value_iteration';
+        const isValuesMode = this.viewModel.interaction.mode === 'values';
+        const valuesSubView = this.viewModel.valuesSubView;
+        const isMCView = isValuesMode && (valuesSubView === 'mc' || valuesSubView === 'split');
+        const isVIMode = isValuesMode && (valuesSubView === 'vi' || valuesSubView === 'split');
 
         const simState = this.viewModel.simulationState;
         const simActive = isSimulateMode && simState && simState.replayInitialized;
@@ -142,10 +134,15 @@ class RightPanel {
             ? (simState.isEdgeVisible(rawHoveredEdge.getFromNode().id, rawHoveredEdge.getToNode().id) ? rawHoveredEdge : null)
             : rawHoveredEdge;
 
-        const isExpectationMode = this.viewModel.interaction.mode === 'expectation';
+        if (isMCView || isVIMode) {
+            // Shared across mc / vi / split so P known-unknown is always visible in Values mode,
+            // rendered once even in split view (which stacks both panels below).
+            this._renderModelKnownToggle(this.contentContainer, this.viewModel.modelKnown);
+        }
 
-        if (isExpectationMode) {
+        if (isMCView) {
             this.renderExpectationPanel();
+            if (isVIMode) this.renderValueIterationPanel(); // split: stack both panels
         } else if (isVIMode) {
             this.renderValueIterationPanel();
         } else if (selectedNode) {
@@ -240,7 +237,7 @@ class RightPanel {
                 label.parent(row);
                 label.style('font-size', '12px');
                 label.style('font-weight', '600');
-                label.style('color', '#444');
+                label.style('color', AppPalette.text.secondary);
 
                 const select = createSelect();
                 select.parent(row);
@@ -578,6 +575,7 @@ class RightPanel {
     renderValueIterationPanel() {
         const viState = this.viewModel.valueIterationState;
         const viViewModel = this.viewModel.valueIterationViewModel;
+        const modelKnown = this.viewModel.modelKnown;
 
         // Explanation mode: show explanation + Q-table only (not the full VI panel)
         const explanationDetail = viViewModel?.explanationDetail;
@@ -591,21 +589,26 @@ class RightPanel {
                 const qTableContainer = createDiv();
                 qTableContainer.parent(this.contentContainer);
                 qTableContainer.addClass('q-table-scroll');
-                this._renderQTable(qTableContainer, viState, viViewModel);
+                this._renderQTable(qTableContainer, viState, viViewModel, modelKnown);
             }
             return;
         }
 
         // Title
-        const title = createDiv('Value Iteration');
+        const title = createDiv(modelKnown ? 'Value Iteration' : 'Learning Iteration');
         title.parent(this.contentContainer);
         title.addClass('panel-title');
 
-        // Bellman equation
+        // Bellman equation (P known) / descriptive copy (P unknown - no learning algorithm runs,
+        // the student edits the Q-table directly)
         const eqDiv = createDiv();
         eqDiv.parent(this.contentContainer);
         eqDiv.addClass('panel-section-content');
-        eqDiv.elt.innerHTML = renderKatex('V_t(s) = \\max_a \\sum_{s\'} P(s\'|s,a)[R + \\gamma V_{t+1}(s\')]', true);
+        if (modelKnown) {
+            eqDiv.elt.innerHTML = renderKatex('V_t(s) = \\max_a \\sum_{s\'} P(s\'|s,a)[R + \\gamma V_{t+1}(s\')]', true);
+        } else {
+            eqDiv.html('P is unknown, so the true action values can\'t be computed. Manually estimate them below.');
+        }
 
         // Parameters
         const paramsDiv = createDiv();
@@ -613,10 +616,20 @@ class RightPanel {
         paramsDiv.addClass('panel-section-content');
         paramsDiv.style('margin-top', '10px');
 
-        const gammaLine = createDiv();
-        gammaLine.elt.innerHTML = `<strong>Discount (${renderKatex('\\gamma', false)}):</strong> ${this.discountFactor}`;
-        gammaLine.parent(paramsDiv);
-        gammaLine.style('margin-bottom', '4px');
+        const gammaLabel = createDiv();
+        gammaLabel.parent(paramsDiv);
+        gammaLabel.addClass('panel-label');
+        gammaLabel.elt.innerHTML = `Discount (${renderKatex('\\gamma', false)}) = <strong>${this.discountFactor.toFixed(2)}</strong>`;
+
+        const { slider: gammaSlider } = RightPanelBuilder.sliderRow(
+            paramsDiv, 0, 1, this.discountFactor, 0.01
+        );
+        gammaSlider.input(() => {
+            const g = parseFloat(gammaSlider.value());
+            this.discountFactor = g;
+            gammaLabel.elt.innerHTML = `Discount (${renderKatex('\\gamma', false)}) = <strong>${g.toFixed(2)}</strong>`;
+        });
+
         if (viState && viState.initialized) {
             const tLine = createDiv(`<strong>Horizon (T):</strong> ${viState.T}`);
             tLine.parent(paramsDiv);
@@ -633,11 +646,16 @@ class RightPanel {
             tableTitle.parent(this.contentContainer);
             tableTitle.addClass('panel-section-title');
             tableTitle.style('margin-top', '15px');
+            if (!modelKnown) {
+                const editHint = createDiv('Click a value to edit it.');
+                editHint.parent(this.contentContainer);
+                editHint.addClass('panel-hint');
+            }
 
             const qTableContainer = createDiv();
             qTableContainer.parent(this.contentContainer);
             qTableContainer.addClass('q-table-scroll');
-            this._renderQTable(qTableContainer, viState, viViewModel);
+            this._renderQTable(qTableContainer, viState, viViewModel, modelKnown);
         } else if (viState && !viState.initialized) {
             const hint = createDiv('Press Play, Step, or Skip to compute Q-values.');
             hint.parent(this.contentContainer);
@@ -645,6 +663,29 @@ class RightPanel {
             hint.style('margin-top', '10px');
         }
 
+    }
+
+    _renderModelKnownToggle(parentDiv, modelKnown) {
+        const row = createDiv();
+        row.parent(parentDiv);
+        row.addClass('model-known-toggle');
+        row.style('margin-bottom', '8px');
+
+        const knownBtn = createButton('P known');
+        knownBtn.parent(row);
+        knownBtn.addClass('model-known-toggle-btn');
+        if (modelKnown) knownBtn.addClass('model-known-toggle-btn--active');
+        knownBtn.mousePressed(() => {
+            if (this.callbacks.onModelKnownToggle) this.callbacks.onModelKnownToggle(true);
+        });
+
+        const unknownBtn = createButton('P unknown');
+        unknownBtn.parent(row);
+        unknownBtn.addClass('model-known-toggle-btn');
+        if (!modelKnown) unknownBtn.addClass('model-known-toggle-btn--active');
+        unknownBtn.mousePressed(() => {
+            if (this.callbacks.onModelKnownToggle) this.callbacks.onModelKnownToggle(false);
+        });
     }
 
     renderSimulationPanel() {
@@ -795,7 +836,7 @@ class RightPanel {
 
     }
 
-    _renderQTable(container, viState, viViewModel) {
+    _renderQTable(container, viState, viViewModel, modelKnown = true) {
         const tableEl = document.createElement('table');
         tableEl.className = 'q-table';
 
@@ -855,26 +896,32 @@ class RightPanel {
                     } else if (viViewModel.isQValueRevealed(colIdx, stateId, aq.actionId)) {
                         const qVals = viState.getQValues(colIdx, stateId);
                         const qEntry = qVals.find(q => q.actionId === aq.actionId);
-                        const val = qEntry ? qEntry.qValue : 0;
+                        const computedVal = qEntry ? qEntry.qValue : 0;
+                        const val = viState.getEffectiveQValue(stateId, aq.actionId, computedVal);
                         td.textContent = val.toFixed(2);
                         td.classList.add('q-table-cell--revealed');
                         if (viState.bestActions[colIdx] &&
                             viState.bestActions[colIdx][stateId] === aq.actionId) {
                             td.classList.add('q-table-cell--best');
                         }
-                        td.classList.add('q-table-cell--clickable');
-                        const activeExplain = this.viewModel.valueIterationViewModel?.explanationDetail;
-                        if (activeExplain &&
-                            activeExplain.columnIndex === colIdx &&
-                            activeExplain.stateId === stateId &&
-                            activeExplain.actionId === aq.actionId) {
-                            td.classList.add('q-table-cell--explaining');
-                        }
-                        td.addEventListener('click', () => {
-                            if (this.callbacks.onVICellClick) {
-                                this.callbacks.onVICellClick(colIdx, stateId, aq.actionId);
+                        if (modelKnown) {
+                            td.classList.add('q-table-cell--clickable');
+                            const activeExplain = this.viewModel.valueIterationViewModel?.explanationDetail;
+                            if (activeExplain &&
+                                activeExplain.columnIndex === colIdx &&
+                                activeExplain.stateId === stateId &&
+                                activeExplain.actionId === aq.actionId) {
+                                td.classList.add('q-table-cell--explaining');
                             }
-                        });
+                            td.addEventListener('click', () => {
+                                if (this.callbacks.onVICellClick) {
+                                    this.callbacks.onVICellClick(colIdx, stateId, aq.actionId);
+                                }
+                            });
+                        } else {
+                            td.classList.add('q-table-cell--editable');
+                            td.addEventListener('click', () => this._startEditingQCell(td, stateId, aq.actionId, val));
+                        }
                     } else {
                         td.textContent = '?';
                         td.classList.add('q-table-cell--unknown');
@@ -899,6 +946,45 @@ class RightPanel {
 
         tableEl.appendChild(tbody);
         container.elt.appendChild(tableEl);
+    }
+
+    // Editable Q-table (P unknown): click a revealed cell to replace it with a number input;
+    // Enter/blur commits via onManualQOverride, Escape reverts without committing.
+    _startEditingQCell(td, stateId, actionId, currentValue) {
+        if (td.querySelector('input')) return;
+        td.textContent = '';
+
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.step = '0.01';
+        input.value = currentValue.toFixed(2);
+        input.className = 'q-table-cell-input';
+        td.appendChild(input);
+        input.focus();
+        input.select();
+
+        let settled = false;
+        const commit = () => {
+            if (settled) return;
+            settled = true;
+            const parsed = parseFloat(input.value);
+            if (isFinite(parsed) && this.callbacks.onManualQOverride) {
+                this.callbacks.onManualQOverride(stateId, actionId, parsed);
+            } else {
+                this.updateContent();
+            }
+        };
+        const cancel = () => {
+            if (settled) return;
+            settled = true;
+            this.updateContent();
+        };
+
+        input.addEventListener('blur', commit);
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+            else if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+        });
     }
 
     _formatCount(value) {
@@ -1189,7 +1275,7 @@ class RightPanel {
     _setupResizeHandle() {
         const PANEL_MIN = 200;
         const PANEL_MAX = 500;
-        const PANEL_DEFAULT = 300;
+        const PANEL_DEFAULT = 272;
 
         const handle = document.createElement('div');
         handle.className = 'panel-resize-handle';
@@ -1351,209 +1437,13 @@ class RightPanel {
             hintDiv.style('margin-top', '2px');
         });
 
-        this.createSection('Statistics', () => {
-            const container = createDiv();
-            container.parent(this.contentContainer);
-            container.addClass('panel-section-content');
-
-            const row = createDiv();
-            row.parent(container);
-            row.style('display', 'flex');
-            row.style('justify-content', 'space-between');
-
-            const meanDiv = createDiv();
-            meanDiv.parent(row);
-            const meanLabel = createDiv('Mean G');
-            meanLabel.parent(meanDiv);
-            meanLabel.addClass('panel-label');
-            const meanVal = createDiv();
-            meanVal.parent(meanDiv);
-            meanVal.addClass('panel-stat-value--large-primary');
-            const mean = state.getMeanAtT(state.currentT);
-            meanVal.html(mean !== null ? mean.toFixed(2) : '—');
-
-            const sigmaDiv = createDiv();
-            sigmaDiv.parent(row);
-            sigmaDiv.style('text-align', 'right');
-            const sigmaLabel = createDiv('σ');
-            sigmaLabel.parent(sigmaDiv);
-            sigmaLabel.addClass('panel-label');
-            const sigmaVal = createDiv();
-            sigmaVal.parent(sigmaDiv);
-            sigmaVal.addClass('panel-stat-value--large-primary');
-            sigmaVal.style('color', AppPalette.text.muted);
-            const sigma = state.getSigmaAtT(state.currentT);
-            sigmaVal.html(sigma !== null ? sigma.toFixed(2) : '—');
-
-            this._expectationStatsElements = { meanVal, sigmaVal };
-        });
-
-        this.createSection('Line Chart', () => {
-            const container = createDiv();
-            container.parent(this.contentContainer);
-            container.addClass('panel-section-content');
-            container.style('height', '180px');
-            container.style('position', 'relative');
-
-            const canvas = createElement('canvas');
-            canvas.parent(container);
-            canvas.style('width', '100%');
-            canvas.style('height', '100%');
-            this._expectationLineCanvas = canvas.elt;
-            requestAnimationFrame(() => this._buildExpectationLineChart(state));
-        });
-
-        this.createSection('Distribution', () => {
-            const container = createDiv();
-            container.parent(this.contentContainer);
-            container.addClass('panel-section-content');
-            container.style('height', '180px');
-            container.style('position', 'relative');
-
-            const canvas = createElement('canvas');
-            canvas.parent(container);
-            canvas.style('width', '100%');
-            canvas.style('height', '100%');
-            this._expectationDistCanvas = canvas.elt;
-            requestAnimationFrame(() => this._buildExpectationDistChart(state));
-        });
     }
 
-    _buildExpectationLineChart(state) {
-        if (this.expectationLineChartInst) {
-            this.expectationLineChartInst.destroy();
-            this.expectationLineChartInst = null;
-        }
-        if (!this._expectationLineCanvas || !state || !state.computed) return;
-        if (typeof Chart === 'undefined') return;
-
-        const ctx = this._expectationLineCanvas.getContext('2d');
-        const maxT = state.maxT;
-        const { labels, upperBand, means, lowerBand } = this._lineChartDatasetsAtT(state);
-
-        this.expectationLineChartInst = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels,
-                datasets: [
-                    { label: 'E[G]+σ', data: upperBand, borderColor: 'transparent',
-                      backgroundColor: 'rgba(42,120,214,0.12)', fill: '+1', pointRadius: 0, tension: 0.3 },
-                    { label: 'E[G]', data: means, borderColor: AppPalette.expectation.scrubberLine,
-                      borderWidth: 2, backgroundColor: 'rgba(42,120,214,0.12)', fill: false, pointRadius: 2, tension: 0.3 },
-                    { label: 'E[G]-σ', data: lowerBand, borderColor: 'transparent',
-                      backgroundColor: 'rgba(42,120,214,0.12)', fill: '-1', pointRadius: 0, tension: 0.3 }
-                ]
-            },
-            options: {
-                responsive: true, maintainAspectRatio: false,
-                animation: false,
-                plugins: { legend: { display: false } },
-                scales: {
-                    x: { min: 0, max: maxT, ticks: { font: { size: 9 }, color: '#898781' }, grid: { color: '#e1e0d9' } },
-                    y: { ticks: { font: { size: 9 }, color: '#898781' }, grid: { color: '#e1e0d9' } }
-                }
-            }
-        });
-    }
-
-    _lineChartDatasetsAtT(state) {
-        const currentT = state.currentT;
-        const allMeans = state.getMeansOverTime();
-        const allSigmas = state.getSigmasOverTime();
-        const means = allMeans.slice(0, currentT + 1);
-        const sigmas = allSigmas.slice(0, currentT + 1);
-        const labels = means.map((_, i) => i);
-        const upperBand = means.map((m, i) => m + sigmas[i]);
-        const lowerBand = means.map((m, i) => m - sigmas[i]);
-        return { labels, upperBand, means, lowerBand };
-    }
-
-    _distChartStyles(state, focusedIdx) {
-        const allUtils = state.getAllUtilitiesAtT(state.currentT);
-        const data = allUtils.map((u, i) => ({ x: u, y: i * RP_EXPECTATION_Y_STEP }));
-        const bgColors = allUtils.map((_, i) =>
-            focusedIdx !== null && i === focusedIdx
-                ? AppPalette.expectation.runColors[i % 8]
-                : 'rgba(150,150,150,0.3)'
-        );
-        const radii = allUtils.map((_, i) => focusedIdx !== null && i === focusedIdx ? 8 : 3);
-        const xVals = allUtils.filter(isFinite);
-        const xMin = xVals.length > 0 ? Math.min(...xVals) : 0;
-        const xMax = xVals.length > 0 ? Math.max(...xVals) : 1;
-        const xPad = (xMax - xMin) * 0.1 || 1;
-        return { data, bgColors, radii, xMin: xMin - xPad, xMax: xMax + xPad };
-    }
-
-    _buildExpectationDistChart(state) {
-        if (this.expectationDistChartInst) {
-            this.expectationDistChartInst.destroy();
-            this.expectationDistChartInst = null;
-        }
-        if (!this._expectationDistCanvas || !state || !state.computed) return;
-        if (typeof Chart === 'undefined') return;
-
-        const focusedIdx = this.expectationViewModel ? this.expectationViewModel.focusedRunIndex : null;
-        const { data, bgColors, radii, xMin, xMax } = this._distChartStyles(state, focusedIdx);
-
-        this.expectationDistChartInst = new Chart(this._expectationDistCanvas.getContext('2d'), {
-            type: 'scatter',
-            data: {
-                datasets: [{
-                    label: 'Runs',
-                    data,
-                    backgroundColor: bgColors,
-                    pointRadius: radii
-                }]
-            },
-            options: {
-                responsive: true, maintainAspectRatio: false,
-                animation: false,
-                plugins: { legend: { display: false } },
-                scales: {
-                    x: { min: xMin, max: xMax,
-                         ticks: { font: { size: 9 }, color: '#898781' }, grid: { color: '#e1e0d9' } },
-                    y: { display: false }
-                }
-            }
-        });
-    }
-
-    updateExpectationData() {
-        const state = this.expectationState;
-        if (!state || !state.computed) return;
-
-        const currentT = state.currentT;
-        const mean = state.getMeanAtT(currentT);
-        const sigma = state.getSigmaAtT(currentT);
-
-        if (this._expectationStatsElements) {
-            const { meanVal, sigmaVal } = this._expectationStatsElements;
-            if (meanVal) meanVal.html(mean !== null ? mean.toFixed(2) : '—');
-            if (sigmaVal) sigmaVal.html(sigma !== null ? sigma.toFixed(2) : '—');
-        }
-
-        if (this.expectationLineChartInst) {
-            const { labels, upperBand, means, lowerBand } = this._lineChartDatasetsAtT(state);
-            const chart = this.expectationLineChartInst;
-            chart.data.labels = labels;
-            chart.data.datasets[0].data = upperBand;
-            chart.data.datasets[1].data = means;
-            chart.data.datasets[2].data = lowerBand;
-            chart.update('none');
-        }
-
-        if (this.expectationDistChartInst) {
-            const focusedIdx = this.expectationViewModel ? this.expectationViewModel.focusedRunIndex : null;
-            const { data, bgColors, radii, xMin, xMax } = this._distChartStyles(state, focusedIdx);
-            const chart = this.expectationDistChartInst;
-            chart.data.datasets[0].data = data;
-            chart.data.datasets[0].backgroundColor = bgColors;
-            chart.data.datasets[0].pointRadius = radii;
-            chart.options.scales.x.min = xMin;
-            chart.options.scales.x.max = xMax;
-            chart.update('none');
-        }
-    }
+    // Per-tick refresh hook called by ExpectationView (scrubber move, play tick, focus toggle).
+    // The MC right-panel content (gamma/display-runs/max-steps/policy) doesn't depend on
+    // currentT or the focused run, so there's nothing to refresh here - the bottom chart dock
+    // (Convergence/Histogram/Q-table/MC-tree) is what live-updates on those events instead.
+    updateExpectationData() {}
 
     show() {
         if (this.panelElement) {

@@ -59,6 +59,13 @@ class MainView {
 
         // Value Iteration view (set after construction)
         this.valueIterationView = null;
+
+        // Bottom chart dock (Values mode; instantiated in a later phase)
+        this.chartDock = null;
+
+        // Cached dot-grid background layer; rebuilt on resize/theme change, not every redraw()
+        this._dotGridLayer = null;
+        this._dotGridTheme = null;
     }
 
     setup() {
@@ -71,32 +78,89 @@ class MainView {
         // Suppress browser context menu so right-click can be used for canvas interactions
         this.canvas.elt.addEventListener('contextmenu', e => e.preventDefault());
 
-        // Set global text font to Calibri
-        textFont('Calibri, "Segoe UI", Tahoma, sans-serif');
+        // Set global text font
+        textFont(Typography.sans());
+
+        this.invalidateDotGrid();
 
         noLoop();
         redraw();
     }
 
-    draw() {
-        background(240);
+    // Rebuilt lazily on next draw() when canvas size or theme has changed.
+    invalidateDotGrid() {
+        this._dotGridLayer = null;
+    }
 
-        // Expectation mode: delegate to expectation view
-        if (this.viewModel.interaction.mode === 'expectation' && this.expectationView) {
-            const usableW = windowWidth - (this.rightPanel ? this.rightPanel.getWidth() : 300);
-            const usableH = windowHeight - 90;
-            this.expectationView.draw(usableW, usableH);
-            return;
+    // Height the chart dock currently reserves at the bottom of the values-mode canvas area
+    // (0 while closed or before it's mounted).
+    getDockHeight() {
+        return this.chartDock ? this.chartDock.getReservedHeight() : 0;
+    }
+
+    // Called by ChartDock when the user drags/collapses it, so the values-mode layout
+    // (pane sizes, scrubber position) re-accounts for the new reserved height.
+    onDockResize() {
+        if (this.viewModel.interaction.mode !== 'values') return;
+        const canvasWidth = windowWidth - this.RIGHT_PANEL_WIDTH;
+        const canvasHeight = windowHeight - this.TOP_BARS_HEIGHT;
+        const paneWidths = this._valuesPaneWidths(canvasWidth);
+        const valuesHeight = canvasHeight - this.getDockHeight();
+        this._relayoutValueIterationIfActive(paneWidths.vi, valuesHeight);
+        if (this.expectationView && (this.viewModel.valuesSubView === 'mc' || this.viewModel.valuesSubView === 'split')) {
+            this.expectationView.resize(paneWidths.mc, valuesHeight, this.TOP_BARS_HEIGHT);
         }
+        redraw();
+    }
 
-        // Value Iteration mode: delegate to VI view
-        if (this.viewModel.interaction.mode === 'value_iteration' && this.valueIterationView) {
-            push();
-            translate(this.viewModel.viewport.panX, this.viewModel.viewport.panY);
-            scale(this.viewModel.viewport.zoom);
-            this.valueIterationView.draw();
-            pop();
-            this.drawZoomIndicator();
+    _buildDotGridLayer(w, h) {
+        const spacing = 22;
+        const g = createGraphics(Math.max(1, Math.floor(w)), Math.max(1, Math.floor(h)));
+        g.clear();
+        g.noStroke();
+        g.fill(AppPalette.border.gridDot);
+        for (let x = spacing / 2; x < w; x += spacing) {
+            for (let y = spacing / 2; y < h; y += spacing) {
+                g.circle(x, y, 1.4);
+            }
+        }
+        return g;
+    }
+
+    _ensureDotGridLayer() {
+        const theme = AppPalette.getTheme();
+        if (this._dotGridLayer && this._dotGridTheme === theme
+            && this._dotGridLayer.width === width && this._dotGridLayer.height === height) {
+            return this._dotGridLayer;
+        }
+        if (this._dotGridLayer) this._dotGridLayer.remove();
+        this._dotGridLayer = this._buildDotGridLayer(width, height);
+        this._dotGridTheme = theme;
+        return this._dotGridLayer;
+    }
+
+    draw() {
+        background(AppPalette.surface.canvas);
+        image(this._ensureDotGridLayer(), 0, 0);
+
+        // Values mode: delegate to the MC / VI / split sub-view
+        if (this.viewModel.interaction.mode === 'values') {
+            const usableW = windowWidth - this.RIGHT_PANEL_WIDTH;
+            const usableH = windowHeight - this.TOP_BARS_HEIGHT - this.getDockHeight();
+            const subView = this.viewModel.valuesSubView;
+
+            if (subView === 'mc' && this.expectationView) {
+                this.expectationView.draw(usableW, usableH);
+            } else if (subView === 'vi' && this.valueIterationView) {
+                push();
+                translate(this.viewModel.viewport.panX, this.viewModel.viewport.panY);
+                scale(this.viewModel.viewport.zoom);
+                this.valueIterationView.draw();
+                pop();
+                this.drawZoomIndicator();
+            } else if (subView === 'split') {
+                this._drawSplitPanes(usableW, usableH);
+            }
             return;
         }
 
@@ -163,6 +227,48 @@ class MainView {
         if (this.viewModel.interaction.heldTextLabel && this.viewModel.interaction.placingMode === 'textbox') {
             this.updateHeldNodePosition();
         }
+    }
+
+    // Effective pane widths for the current Values sub-view: full width for 'mc'/'vi' (single
+    // pane owns the whole canvas), half each for 'split'.
+    _valuesPaneWidths(canvasWidth) {
+        if (this.viewModel.valuesSubView === 'split') {
+            const half = canvasWidth / 2;
+            return { mc: half, vi: half };
+        }
+        return { mc: canvasWidth, vi: canvasWidth };
+    }
+
+    // Renders the MC pane (left half) and VI pane (right half) side by side, each clipped and
+    // translated into its half of the canvas so both views' existing draw code — which assumes
+    // it owns the full canvas — can be reused unmodified, just called with half-width.
+    _drawSplitPanes(usableW, usableH) {
+        const paneW = usableW / 2;
+
+        if (this.expectationView) {
+            drawingContext.save();
+            drawingContext.beginPath();
+            drawingContext.rect(0, 0, paneW, usableH);
+            drawingContext.clip();
+            this.expectationView.draw(paneW, usableH);
+            drawingContext.restore();
+        }
+
+        if (this.valueIterationView) {
+            drawingContext.save();
+            drawingContext.beginPath();
+            drawingContext.rect(paneW, 0, paneW, usableH);
+            drawingContext.clip();
+            push();
+            translate(paneW, 0);
+            translate(this.viewModel.viewport.panX, this.viewModel.viewport.panY);
+            scale(this.viewModel.viewport.zoom);
+            this.valueIterationView.draw();
+            pop();
+            drawingContext.restore();
+        }
+
+        this.drawZoomIndicator();
     }
 
     drawMessages() {
@@ -368,8 +474,9 @@ class MainView {
                 textSize(16);
                 text(node.name, labelPos.x, labelPos.y);
             } else {
-                // Only draw text if no image
-                fill(255, 255, 255, nodeAlpha);
+                // Only draw text if no image - contrast-pick against the node's actual fill
+                // color so labels stay legible as node fill colors change with theme/palette.
+                fill(this.applyAlphaToColor(ColorUtils.contrastText(color), nodeAlpha));
                 noStroke();
                 textAlign(CENTER, CENTER);
                 textSize(14);
@@ -921,7 +1028,8 @@ class MainView {
             return;
         }
 
-        if (this.viewModel.interaction.mode === 'expectation') return;
+        // MC's mini-panel grid doesn't use pan/zoom; VI (including its pane in split view) does.
+        if (this.viewModel.interaction.mode === 'values' && this.viewModel.valuesSubView === 'mc') return;
 
         // Handle panning
         if (this.viewModel.viewport.isPanning) {
@@ -976,6 +1084,15 @@ class MainView {
     }
 
     mouseMoved() {
+        if (this.viewModel.interaction.mode === 'values' && this.viewModel.valuesSubView === 'mc' && this.expectationView) {
+            const hoverChanged = this.expectationView.handleMouseMove(mouseX, mouseY);
+            if (hoverChanged) {
+                redraw();
+                if (this.chartDock) this.chartDock.refresh();
+            }
+            return;
+        }
+
         const hoverChanged = this.controller.handleMouseMove(mouseX, mouseY);
         if (hoverChanged && this.rightPanel) {
             this.rightPanel.updateContent();
@@ -1052,7 +1169,8 @@ class MainView {
             return;
         }
 
-        if (this.viewModel.interaction.mode === 'expectation') return;
+        // MC's mini-panel grid doesn't use pan/zoom; VI (including its pane in split view) does.
+        if (this.viewModel.interaction.mode === 'values' && this.viewModel.valuesSubView === 'mc') return;
 
         // Zoom towards mouse position
         const zoomFactor = -event.delta * 0.001;
@@ -1122,9 +1240,13 @@ class MainView {
 
         resizeCanvas(canvasWidth, canvasHeight);
         this.canvas.position(0, this.TOP_BARS_HEIGHT);
-        this._relayoutValueIterationIfActive(canvasWidth, canvasHeight);
-        if (this.expectationView && this.viewModel.interaction.mode === 'expectation') {
-            this.expectationView.resize(canvasWidth, canvasHeight, this.TOP_BARS_HEIGHT);
+        if (this.chartDock) this.chartDock.updateBounds(0, canvasWidth);
+        const valuesHeight = canvasHeight - this.getDockHeight();
+        const paneWidths = this._valuesPaneWidths(canvasWidth);
+        this._relayoutValueIterationIfActive(paneWidths.vi, valuesHeight);
+        if (this.expectationView && this.viewModel.interaction.mode === 'values'
+            && (this.viewModel.valuesSubView === 'mc' || this.viewModel.valuesSubView === 'split')) {
+            this.expectationView.resize(paneWidths.mc, valuesHeight, this.TOP_BARS_HEIGHT);
         }
 
         // Update menu bar width
@@ -1152,15 +1274,20 @@ class MainView {
         const canvasHeight = windowHeight - this.TOP_BARS_HEIGHT;
         resizeCanvas(canvasWidth, canvasHeight);
         this.canvas.position(0, this.TOP_BARS_HEIGHT);
-        this._relayoutValueIterationIfActive(canvasWidth, canvasHeight);
-        if (this.expectationView && this.viewModel.interaction.mode === 'expectation') {
-            this.expectationView.resize(canvasWidth, canvasHeight, this.TOP_BARS_HEIGHT);
+        if (this.chartDock) this.chartDock.updateBounds(0, canvasWidth);
+        const valuesHeight = canvasHeight - this.getDockHeight();
+        const paneWidths = this._valuesPaneWidths(canvasWidth);
+        this._relayoutValueIterationIfActive(paneWidths.vi, valuesHeight);
+        if (this.expectationView && this.viewModel.interaction.mode === 'values'
+            && (this.viewModel.valuesSubView === 'mc' || this.viewModel.valuesSubView === 'split')) {
+            this.expectationView.resize(paneWidths.mc, valuesHeight, this.TOP_BARS_HEIGHT);
         }
         redraw();
     }
 
     _relayoutValueIterationIfActive(canvasWidth, canvasHeight) {
-        if (this.viewModel.interaction.mode !== 'value_iteration') return;
+        if (this.viewModel.interaction.mode !== 'values') return;
+        if (this.viewModel.valuesSubView !== 'vi' && this.viewModel.valuesSubView !== 'split') return;
         const viState = this.viewModel.valueIterationState;
         const viViewModel = this.viewModel.valueIterationViewModel;
         if (!viState || !viViewModel || !viState.initialized) return;

@@ -48,4 +48,34 @@ class ColorUtils {
 
         return c;
     }
+
+    // Picks a light or dark label color that stays readable against a given fill color,
+    // so node labels stay legible as node fill colors change with theme/palette tuning.
+    static contrastText(c) {
+        let r, g, b;
+        if (typeof c === 'object' && c !== null && typeof c.levels !== 'undefined') {
+            r = red(c); g = green(c); b = blue(c);
+        } else if (typeof c === 'string') {
+            const hexMatch = c.match(/^#([0-9a-fA-F]{3,6})$/);
+            if (hexMatch) {
+                let hex = hexMatch[1];
+                if (hex.length === 3) {
+                    hex = hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2];
+                }
+                r = parseInt(hex.substring(0, 2), 16);
+                g = parseInt(hex.substring(2, 4), 16);
+                b = parseInt(hex.substring(4, 6), 16);
+            } else {
+                const rgbMatch = c.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+                if (rgbMatch) {
+                    r = parseInt(rgbMatch[1], 10);
+                    g = parseInt(rgbMatch[2], 10);
+                    b = parseInt(rgbMatch[3], 10);
+                }
+            }
+        }
+        if (r === undefined) return '#FFFFFF';
+        const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+        return luminance > 0.6 ? '#1a1a1a' : '#FFFFFF';
+    }
 }

@@ -6,6 +6,9 @@ class ExpectationViewModel {
         this.focusedRunIndex = null;
         this.lastResponse = null;
         this.lastError = null;
+        // Index (within the displayed slice) of the currently hovered mini-panel / chart-dock
+        // element; drives live-linking highlights across the grid and (in a later phase) charts.
+        this.hoveredRun = null;
     }
 
     computeLayout(canvasW, canvasH, displayRuns, graph) {
@@ -52,7 +55,14 @@ class ExpectationViewModel {
         const fitScale = Math.max(0.01, Math.min(usableW / bbW, usableH / bbH));
 
         const offsetX = (panelW - bbW * fitScale) / 2 - minX * fitScale;
-        const offsetY = LABEL_H + (panelH - LABEL_H - bbH * fitScale) / 2 - minY * fitScale;
+
+        // Center within the FULL panel height (not just the region below the label),
+        // so content isn't visually skewed toward the bottom of the card. Clamp so the
+        // bounding box never rides up under the label row.
+        const minTop = LABEL_H + PADDING;
+        const centeredTop = (panelH - bbH * fitScale) / 2;
+        const top = Math.max(centeredTop, minTop);
+        const offsetY = top - minY * fitScale;
 
         return { offsetX, offsetY, fitScale };
     }

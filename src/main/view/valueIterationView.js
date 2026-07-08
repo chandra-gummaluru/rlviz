@@ -82,16 +82,35 @@ class VITweenEngine {
 
 // View for Value Iteration visualization — renders unrolled columns
 class ValueIterationView {
-    constructor(canvasViewModel) {
+    constructor(canvasViewModel, layout) {
         this.viewModel = canvasViewModel;
         this.ACTION_NODE_RADIUS = VI_ACTION_NODE_RADIUS;
         this.tween = new VITweenEngine();
         this._lastPhaseKey = null;
         this._lastVisibleColumnCount = 0;
+        // Accessors for the real right-panel width / top-bars height / toolbar height, so
+        // placeholder/status-strip layout stays correct even if those dimensions change (panel
+        // resize, spec dimension updates) instead of duplicating magic numbers here.
+        this.layout = layout || { getPanelWidth: () => 272, getTopOffset: () => 96, getBottomOffset: () => 54 };
     }
 
     get viState() {
         return this.viewModel.valueIterationState;
+    }
+
+    // "Value Iteration" (teal, P known) vs "Learning Iteration" (purpleT, P unknown) accent set.
+    // Same shape as AppPalette.valueIteration; see AppPalette.js's learningIteration namespace.
+    get viColors() {
+        return this.viewModel.modelKnown ? AppPalette.valueIteration : AppPalette.learningIteration;
+    }
+
+    // "p = 0.80" (P known) vs "p = ?" (P unknown) for simple transition-probability labels.
+    _pLabel(probability) {
+        return this.viewModel.modelKnown ? `p = ${probability.toFixed(2)}` : 'p = ?';
+    }
+
+    _pLabelColor(fallback) {
+        return this.viewModel.modelKnown ? fallback : AppPalette.text.placeholder;
     }
 
     get viViewModel() {
@@ -167,9 +186,9 @@ class ValueIterationView {
         noStroke();
         textAlign(CENTER, CENTER);
         textSize(18);
-        textFont('Calibri, "Segoe UI", Tahoma, sans-serif');
+        textFont(Typography.sans());
         text('Set T and click Play to start Value Iteration',
-            (windowWidth - 300) / 2, (windowHeight - 90) / 2);
+            (windowWidth - this.layout.getPanelWidth()) / 2, (windowHeight - this.layout.getTopOffset()) / 2);
         pop();
     }
 
@@ -226,13 +245,16 @@ class ValueIterationView {
             noStroke();
             textAlign(CENTER, CENTER);
             textSize(14);
-            textFont('Calibri, "Segoe UI", Tahoma, sans-serif');
+            textFont(Typography.sans());
             text(stateNode.name, stateNode.x, stateNode.y - 6);
 
             if (isRevealed) {
-                mathRenderer.draw(drawingContext, `V = ${stateNode.value.toFixed(2)}`,
+                const label = this.viewModel.modelKnown
+                    ? `V = ${stateNode.value.toFixed(2)}`
+                    : `Q̂ = ${stateNode.value.toFixed(2)}`;
+                mathRenderer.draw(drawingContext, label,
                     stateNode.x, stateNode.y + 10,
-                    { color: AppPalette.text.black, em: 11, alpha, alignX: 'center', alignY: 'middle' });
+                    { color: this.viColors.result, em: 11, alpha, alignX: 'center', alignY: 'middle' });
             }
         }
 
@@ -291,8 +313,8 @@ class ValueIterationView {
                     const ey = toStateNode.y - toStateNode.radius * sin(ang);
                     const midX = (sx + ex) / 2;
                     const midY = (sy + ey) / 2 - 10;
-                    mathRenderer.draw(drawingContext, `p = ${probability.toFixed(2)}`,
-                        midX, midY, { color: AppPalette.border.canvasDark, em: 10, alpha, alignX: 'center', alignY: 'middle' });
+                    mathRenderer.draw(drawingContext, this._pLabel(probability),
+                        midX, midY, { color: this._pLabelColor(AppPalette.border.canvasDark), em: 10, alpha, alignX: 'center', alignY: 'middle' });
                     if (reward !== 0) {
                         const rColor = reward > 0 ? AppPalette.reward.positive : AppPalette.reward.negative;
                         mathRenderer.draw(drawingContext, `r = ${reward.toFixed(1)}`,
@@ -404,7 +426,7 @@ class ValueIterationView {
             let color, em;
             if (line.type === 'header') { color = AppPalette.text.nearBlack; em = 13; }
             else if (line.type === 'best')   { color = AppPalette.reward.positive; em = 11; }
-            else if (line.type === 'result') { color = AppPalette.valueIteration.result; em = 12; }
+            else if (line.type === 'result') { color = this.viColors.result; em = 12; }
             else                             { color = AppPalette.text.medium; em = 11; }
 
             mathRenderer.draw(drawingContext, line.text, boxX + 8, ly,
@@ -417,9 +439,9 @@ class ValueIterationView {
         const text = this._getStatusText(detail);
         if (!text) return;
 
-        const canvasW = windowWidth - 300;
+        const canvasW = windowWidth - this.layout.getPanelWidth();
         const x = 16;
-        const y = windowHeight - 54;
+        const y = windowHeight - this.layout.getBottomOffset();
         const w = Math.min(canvasW - 32, 620);
         const h = 34;
 
@@ -518,8 +540,8 @@ class ValueIterationView {
                     const labelX = (action.x + t.toX) / 2;
                     const labelY = (action.y + t.toY) / 2 - 8;
                     const aVal = Math.round(200 * labelP);
-                    mathRenderer.draw(drawingContext, `p = ${t.probability.toFixed(2)}`,
-                        labelX, labelY, { color: AppPalette.border.canvasDark, em: 9, alpha: aVal });
+                    mathRenderer.draw(drawingContext, this._pLabel(t.probability),
+                        labelX, labelY, { color: this._pLabelColor(AppPalette.border.canvasDark), em: 9, alpha: aVal });
                     if (isComputed || showRewardForAction) {
                         mathRenderer.draw(drawingContext, `r = ${t.reward.toFixed(1)}`,
                             labelX, labelY + 11, { color: AppPalette.text.medium, em: 9, alpha: aVal });
@@ -553,7 +575,7 @@ class ValueIterationView {
             const isBest = action.actionId === detail.bestActionId;
             mathRenderer.draw(drawingContext, `Q = ${action.qValue.toFixed(2)}`,
                 action.x, action.y + this.ACTION_NODE_RADIUS + 4,
-                { color: isBest ? AppPalette.valueIteration.best : AppPalette.text.medium, em: 10, alignX: 'center', alignY: 'top' });
+                { color: isBest ? this.viColors.best : AppPalette.text.medium, em: 10, alignX: 'center', alignY: 'top' });
         });
     }
 
@@ -626,7 +648,7 @@ class ValueIterationView {
         const maxTrans = Math.max(...allActions.map(a => a.transitions.length), 1);
 
         // Table layout
-        const font = 'Calibri, "Segoe UI", Tahoma, sans-serif';
+        const font = Typography.mono();
         const rowH = 28;
         const headerH = 30;
         const actionColW = 50;
@@ -750,8 +772,8 @@ class ValueIterationView {
                     const term = `${t.probability.toFixed(2)}\\cdot[${t.reward.toFixed(0)}+${gamma}\\cdot${t.nextValue.toFixed(0)}]=${t.term.toFixed(2)}`;
                     mathRenderer.draw(drawingContext, term, cx, cy, { color: AppPalette.text.mediumDark, em: 9 });
                 } else {
-                    mathRenderer.draw(drawingContext, `p = ${t.probability.toFixed(2)}`,
-                        cx, cy, { color: AppPalette.text.light, em: 10 });
+                    mathRenderer.draw(drawingContext, this._pLabel(t.probability),
+                        cx, cy, { color: this._pLabelColor(AppPalette.text.light), em: 10 });
                 }
             }
 
@@ -782,7 +804,7 @@ class ValueIterationView {
                 noStroke();
                 textSize(10);
                 textAlign(CENTER, CENTER);
-                textFont('Calibri, "Segoe UI", Tahoma, sans-serif');
+                textFont(Typography.mono());
                 text('—', qx, qcy);
             }
         }
@@ -797,7 +819,7 @@ class ValueIterationView {
             const vMaxLatex = `V(\\text{${_viLatexEscape(detail.stateName)}}) = \\max = ${detail.value.toFixed(2)}`;
             mathRenderer.draw(drawingContext, vMaxLatex,
                 tableX + tableW - 10, vRowY + rowH / 2,
-                { color: AppPalette.valueIteration.result, em: 12, alignX: 'right', alignY: 'middle' });
+                { color: this.viColors.result, em: 12, alignX: 'right', alignY: 'middle' });
         }
 
         pop();
@@ -844,8 +866,8 @@ class ValueIterationView {
                 const labelX = (action.x + t.toX) / 2;
                 const labelY = (action.y + t.toY) / 2 - 8;
                 const aVal = Math.round(200 * labelP);
-                mathRenderer.draw(drawingContext, `p = ${t.probability.toFixed(2)}`,
-                    labelX, labelY, { color: AppPalette.border.canvasDark, em: 9, alpha: aVal });
+                mathRenderer.draw(drawingContext, this._pLabel(t.probability),
+                    labelX, labelY, { color: this._pLabelColor(AppPalette.border.canvasDark), em: 9, alpha: aVal });
                 const isComputed = showReward && (ti < transCount);
                 if (isComputed) {
                     mathRenderer.draw(drawingContext, `r = ${t.reward.toFixed(1)}`,
@@ -866,8 +888,8 @@ class ValueIterationView {
 
             const labelX = (action.x + t.toX) / 2;
             const labelY = (action.y + t.toY) / 2 - 8;
-            mathRenderer.draw(drawingContext, `p = ${t.probability.toFixed(2)}`,
-                labelX, labelY, { color: AppPalette.border.canvasDark, em: 9 });
+            mathRenderer.draw(drawingContext, this._pLabel(t.probability),
+                labelX, labelY, { color: this._pLabelColor(AppPalette.border.canvasDark), em: 9 });
             if (showRewards) {
                 mathRenderer.draw(drawingContext, `r = ${t.reward.toFixed(1)}`,
                     labelX, labelY + 11, { color: AppPalette.text.medium, em: 9 });
@@ -880,7 +902,7 @@ class ValueIterationView {
         const isBest = action.actionId === detail.bestActionId;
         mathRenderer.draw(drawingContext, `Q = ${action.qValue.toFixed(2)}`,
             action.x, action.y + this.ACTION_NODE_RADIUS + 4,
-            { color: isBest ? AppPalette.valueIteration.best : AppPalette.text.medium, em: 10, alignX: 'center', alignY: 'top' });
+            { color: isBest ? this.viColors.best : AppPalette.text.medium, em: 10, alignX: 'center', alignY: 'top' });
     }
 
     /** Draw a small diamond shape for an action node. fillColor is a pre-computed p5 color. */
@@ -904,7 +926,7 @@ class ValueIterationView {
         noStroke();
         textAlign(CENTER, CENTER);
         textSize(10);
-        textFont('Calibri, "Segoe UI", Tahoma, sans-serif');
+        textFont(Typography.sans());
         text(name, x, y);
 
         pop();
@@ -1006,7 +1028,7 @@ class ValueIterationView {
 
     _drawStaticVBadge(detail, alpha = 220) {
         const latex = `V_{${detail.timestep}}(\\text{${_viLatexEscape(detail.stateName)}}) = ${detail.value.toFixed(2)}`;
-        const color = AppPalette.valueIteration.badge;
+        const color = this.viColors.badge;
         const em = 13;
         const vx = detail.stateX;
         const vy = detail.stateY + detail.stateRadius + 16;
@@ -1046,7 +1068,7 @@ class ValueIterationView {
         const currentLatex = countP >= 1
             ? finalLatex
             : `V_{${detail.timestep}}(\\text{${escapedName}}) = ${displayValue.toFixed(2)}`;
-        const badgeColor = AppPalette.valueIteration.badge;
+        const badgeColor = this.viColors.badge;
         const em = 13;
         const vx = detail.stateX;
         const vy = detail.stateY + detail.stateRadius + 16;
@@ -1077,7 +1099,7 @@ class ValueIterationView {
                 noStroke();
                 textSize(em);
                 textAlign(CENTER, CENTER);
-                textFont('Calibri, "Segoe UI", Tahoma, sans-serif');
+                textFont(Typography.math());
                 if (typeof drawingContext !== 'undefined') drawingContext.globalAlpha *= textAlpha / 255;
                 text(mathRenderer._plainText(currentLatex), vx, vy);
                 pop();
@@ -1145,7 +1167,7 @@ class ValueIterationView {
                 this.tween.start(this._phaseId(detail, 'node_pulse'), VI_DUR_NODE_PULSE, 'easeOut');
                 // Pre-warm the final badge label so KaTeX image is ready by the time countP reaches 1
                 const _prewarmLatex = `V_{${detail.timestep}}(\\text{${_viLatexEscape(detail.stateName)}}) = ${detail.value.toFixed(2)}`;
-                mathRenderer.getCachedSize(_prewarmLatex, AppPalette.valueIteration.badge, 13);
+                mathRenderer.getCachedSize(_prewarmLatex, this.viColors.badge, 13);
                 break;
             }
         }

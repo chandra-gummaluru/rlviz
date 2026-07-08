@@ -2,8 +2,9 @@
 class MenuBar {
     constructor(callbacks) {
         this.callbacks = callbacks;
-        this.height = 40;
+        this.height = 42;
         this.menuBarElement = null;
+        this.themeToggleBtn = null;
         this.menus = {
             file: null,
             edit: null,
@@ -54,6 +55,39 @@ class MenuBar {
             { type: 'separator' },
             { label: 'Spinning Arrow', action: () => this.callbacks.onToggleSpinningArrow(), key: 'spinningArrow', check: true }
         ]);
+
+        this._createRightSection();
+    }
+
+    _createRightSection() {
+        const right = createDiv();
+        right.parent(this.menuBarElement);
+        right.addClass('menubar-right');
+
+        this.themeToggleBtn = createButton('');
+        this.themeToggleBtn.parent(right);
+        this.themeToggleBtn.addClass('menubar-theme-toggle');
+        this.themeToggleBtn.attribute('title', 'Toggle light / dark theme');
+        this.themeToggleBtn.mousePressed(() => {
+            AppPalette.toggleTheme();
+            this._updateThemeIcon();
+        });
+        this._updateThemeIcon();
+
+        const wordmark = createSpan('rlviz');
+        wordmark.parent(right);
+        wordmark.addClass('menubar-wordmark');
+
+        const tagline = createSpan('MDP editor · simulator');
+        tagline.parent(right);
+        tagline.addClass('menubar-tagline');
+    }
+
+    // Glyph reflects the destination theme: sun while dark (click for light), moon while light
+    // (click for dark).
+    _updateThemeIcon() {
+        if (!this.themeToggleBtn) return;
+        this.themeToggleBtn.html(AppPalette.getTheme() === 'dark' ? '☀' : '☾');
     }
 
     createMenu(menuKey, menuLabel, items) {

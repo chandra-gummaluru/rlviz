@@ -1,4 +1,4 @@
-const EXPECTATION_SCRUBBER_H = 36;
+const EXPECTATION_SCRUBBER_H = ExpectationScrubber.HEIGHT_PX;
 const EXPECTATION_LABEL_H = 18;
 const EXPECTATION_PADDING = 12;
 const EXPECTATION_ARROW_SIZE = 8;
@@ -11,20 +11,27 @@ class ExpectationView {
         this.expectationViewModel = expectationViewModel;
         this.expectationState = expectationState;
         this.graph = graph;
-        this._scrubberDiv = null;
-        this._scrubberSlider = null;
-        this._scrubberReadout = null;
-        this._rafHandle = null;
+        this._scrubber = null;
         this._playTimer = null;
         this._rightPanel = null;
+        this._chartDock = null;
         this.onPlaybackStateChange = null;
-        this._topOffset = 90;
+        this._topOffset = 96; // corrected immediately by resize(), matches menubar(42) + toolbar(54)
         this._imageCache = new Map();
         this._backBtn = null;
     }
 
     setRightPanel(rightPanel) {
         this._rightPanel = rightPanel;
+    }
+
+    setChartDock(chartDock) {
+        this._chartDock = chartDock;
+    }
+
+    _notifyDataChanged() {
+        if (this._rightPanel) this._rightPanel.updateExpectationData();
+        if (this._chartDock) this._chartDock.refresh();
     }
 
     draw(canvasW, canvasH) {
@@ -64,11 +71,13 @@ class ExpectationView {
         const runColors = AppPalette.expectation.runColors;
 
         const displaySlice = state.getDisplaySlice();
+        const hoveredRun = vm.hoveredRun;
         for (let i = 0; i < displaySlice.length; i++) {
             const panel = panels[i];
             if (!panel) continue;
             const rollout = displaySlice[i];
             const runColor = runColors[i % runColors.length];
+            const isHovered = hoveredRun === i;
 
             drawingContext.save();
             drawingContext.beginPath();
@@ -76,9 +85,9 @@ class ExpectationView {
             drawingContext.clip();
 
             // Draw panel background
-            fill(AppPalette.surface.white);
+            fill(isHovered ? AppPalette.surface.hoverCard : AppPalette.surface.card);
             noStroke();
-            rect(panel.x, panel.y, panel.w, panel.h);
+            rect(panel.x, panel.y, panel.w, panel.h, 9);
 
             push();
             translate(panel.x + offsetX, panel.y + offsetY);
@@ -125,20 +134,27 @@ class ExpectationView {
             pop();
             drawingContext.restore();
 
-            // Panel label (screen space, after restore)
+            // Panel label (screen space, after restore): "#NN" muted mono (left) + "G = x.xx"
+            // mono, green/red by sign (right)
             const utility = state._getUtility(rollout, currentT);
             noStroke();
-            fill(AppPalette.text.primary);
             textSize(10);
-            textAlign(LEFT, TOP);
-            textFont('Calibri, "Segoe UI", Tahoma, sans-serif');
-            text(`Run ${i + 1}  G=${utility.toFixed(1)}`, panel.x + 4, panel.y + 3);
+            textFont(Typography.mono());
 
-            // Panel border
+            textAlign(LEFT, TOP);
+            fill(AppPalette.text.placeholder);
+            text(`#${String(i + 1).padStart(2, '0')}`, panel.x + 4, panel.y + 3);
+
+            textAlign(RIGHT, TOP);
+            fill(utility >= 0 ? AppPalette.reward.positive : AppPalette.reward.negative);
+            text(`G = ${utility.toFixed(2)}`, panel.x + panel.w - 4, panel.y + 3);
+
+            // Panel border - only the color changes on hover, not the stroke weight, so the
+            // border doesn't visually "jump" in thickness as the mouse moves across the grid.
             noFill();
-            stroke(AppPalette.border.medium);
-            strokeWeight(0.5);
-            rect(panel.x, panel.y, panel.w, panel.h);
+            stroke(isHovered ? AppPalette.accent.orange : AppPalette.border.medium);
+            strokeWeight(1);
+            rect(panel.x, panel.y, panel.w, panel.h, 9);
         }
     }
 
@@ -149,7 +165,7 @@ class ExpectationView {
             if (this._imageCache.has(key)) continue;
             const img = new Image();
             img.onload = () => {
-                if (this.viewModel.interaction.mode === 'expectation') {
+                if (this.viewModel.interaction.mode === 'values') {
                     if (typeof redraw === 'function') redraw();
                 }
             };
@@ -198,7 +214,7 @@ class ExpectationView {
             fill(255);
             textSize(worldFontSize);
             textAlign(CENTER, CENTER);
-            textFont('Calibri, "Segoe UI", Tahoma, sans-serif');
+            textFont(Typography.sans());
             text(label, node.x, node.y);
         }
         pop();
@@ -211,7 +227,7 @@ class ExpectationView {
         fill(AppPalette.text.black);
         noStroke();
         textAlign(CENTER, CENTER);
-        textFont('Calibri, "Segoe UI", Tahoma, sans-serif');
+        textFont(Typography.sans());
         for (const label of labels) {
             textSize(worldFontSize(label));
             text(label.text, label.x, label.y);
@@ -254,7 +270,7 @@ class ExpectationView {
         noStroke();
         textSize(14);
         textAlign(CENTER, CENTER);
-        textFont('Calibri, "Segoe UI", Tahoma, sans-serif');
+        textFont(Typography.sans());
         text('Set a start state in Simulate mode to compute rollouts.', canvasW / 2, canvasH / 2);
     }
 
@@ -279,7 +295,7 @@ class ExpectationView {
             state.currentT++;
             this._syncScrubber();
             if (typeof redraw === 'function') redraw();
-            if (this._rightPanel) this._rightPanel.updateExpectationData();
+            this._notifyDataChanged();
             if (state.currentT >= state.maxT) {
                 this.stopPlay();
             } else {
@@ -300,11 +316,8 @@ class ExpectationView {
     }
 
     _syncScrubber() {
-        const state = this.expectationState;
-        if (!this._scrubberSlider) return;
-        this._scrubberSlider.value = String(state.currentT);
-        if (this._scrubberReadout) {
-            this._scrubberReadout.textContent = `${state.currentT} / ${state.maxT}`;
+        if (this._scrubber) {
+            this._scrubber.updatePosition(this.expectationState.currentT);
         }
     }
 
@@ -312,56 +325,27 @@ class ExpectationView {
         this._removeScrubber();
         this._topOffset = topOffset;
 
-        const div = document.createElement('div');
-        div.className = 'expectation-scrubber';
-        div.style.left = '0px';
-        div.style.top = (topOffset + canvasH - EXPECTATION_SCRUBBER_H) + 'px';
-        div.style.width = canvasW + 'px';
-
-        const label = document.createElement('span');
-        label.className = 'timeline-label';
-        label.textContent = 'T =';
-        div.appendChild(label);
-
-        const slider = document.createElement('input');
-        slider.type = 'range';
-        slider.min = '0';
-        slider.max = String(this.expectationState.maxT);
-        slider.step = '1';
-        slider.value = '0';
-        div.appendChild(slider);
-
-        const readout = document.createElement('span');
-        readout.className = 't-readout';
-        readout.textContent = `0 / ${this.expectationState.maxT}`;
-        div.appendChild(readout);
-
-        slider.addEventListener('input', () => {
+        this._scrubber = new ExpectationScrubber(this.expectationState, (t, isFinal) => {
             this.stopPlay();
-            const val = parseInt(slider.value, 10);
-            readout.textContent = `${val} / ${this.expectationState.maxT}`;
-            cancelAnimationFrame(this._rafHandle);
-            this._rafHandle = requestAnimationFrame(() => {
-                this.expectationState.currentT = val;
-                if (typeof redraw === 'function') redraw();
-                if (this._rightPanel) this._rightPanel.updateExpectationData();
-            });
+            this.expectationState.currentT = t;
+            if (typeof redraw === 'function') redraw();
+            this._notifyDataChanged();
         });
 
-        document.body.appendChild(div);
-        this._scrubberDiv = div;
-        this._scrubberSlider = slider;
-        this._scrubberReadout = readout;
+        const y = topOffset + canvasH - EXPECTATION_SCRUBBER_H;
+        this._scrubber.mount(0, y, canvasW);
+
+        const vm = this.expectationViewModel;
+        const focusedRollout = vm.focusedRunIndex !== null
+            ? this.expectationState.getDisplaySlice()[vm.focusedRunIndex]
+            : null;
+        this._scrubber.setRolloutForRewardDots(focusedRollout);
     }
 
     updateScrubberMax() {
-        if (!this._scrubberSlider) return;
-        const maxT = this.expectationState.maxT;
-        this._scrubberSlider.max = String(maxT);
-        if (this._scrubberReadout) {
-            this._scrubberReadout.textContent = `0 / ${maxT}`;
-        }
-        this._scrubberSlider.value = '0';
+        if (!this._scrubber) return;
+        this._scrubber.rebuildForNewMaxT();
+        this._scrubber.updatePosition(0);
     }
 
     handleClick(mx, my) {
@@ -383,13 +367,41 @@ class ExpectationView {
         }
     }
 
+    // Updates expectationViewModel.hoveredRun for the grid's own hover highlight and (later
+    // phase) the chart dock's live-linking. Returns true if the hovered run changed, so callers
+    // can redraw only when needed.
+    handleMouseMove(mx, my) {
+        const vm = this.expectationViewModel;
+        const state = this.expectationState;
+        const prevHovered = vm.hoveredRun;
+
+        if (!state.computed || vm.focusedRunIndex !== null) {
+            vm.hoveredRun = null;
+            return prevHovered !== null;
+        }
+
+        const { panels } = vm.panelLayout || { panels: [] };
+        let hovered = null;
+        for (let i = 0; i < panels.length; i++) {
+            const p = panels[i];
+            if (mx >= p.x && mx <= p.x + p.w && my >= p.y && my <= p.y + p.h) {
+                hovered = i;
+                break;
+            }
+        }
+        vm.hoveredRun = hovered;
+        return hovered !== prevHovered;
+    }
+
     enterFocusMode(index) {
         const state = this.expectationState;
         const vm = this.expectationViewModel;
         if (index < 0 || index >= state.getDisplaySlice().length) return;
         vm.focusedRunIndex = index;
+        vm.hoveredRun = null;
         this._createBackButton();
-        if (this._rightPanel) this._rightPanel.updateExpectationData();
+        if (this._scrubber) this._scrubber.setRolloutForRewardDots(state.getDisplaySlice()[index]);
+        this._notifyDataChanged();
         if (typeof redraw === 'function') redraw();
     }
 
@@ -399,7 +411,8 @@ class ExpectationView {
         vm.focusedRunIndex = null;
         this._removeBackButton();
         vm.invalidateLayout();
-        if (this._rightPanel) this._rightPanel.updateExpectationData();
+        if (this._scrubber) this._scrubber.setRolloutForRewardDots(null);
+        this._notifyDataChanged();
         if (typeof redraw === 'function') redraw();
     }
 
@@ -445,7 +458,7 @@ class ExpectationView {
         drawingContext.rect(0, 0, canvasW, availH);
         drawingContext.clip();
 
-        fill(AppPalette.surface.white);
+        fill(AppPalette.surface.card);
         noStroke();
         rect(0, 0, canvasW, availH);
 
@@ -479,36 +492,32 @@ class ExpectationView {
 
         const utility = state._getUtility(rollout, currentT);
         noStroke();
-        fill(AppPalette.text.primary);
+        fill(AppPalette.accent.yellow);
         textSize(13);
         textAlign(LEFT, TOP);
-        textFont('Calibri, "Segoe UI", Tahoma, sans-serif');
-        text(`Run ${vm.focusedRunIndex + 1}  G = ${utility.toFixed(2)}`, 48, 10);
+        textFont(Typography.mono());
+        text(`Run ${String(vm.focusedRunIndex + 1).padStart(2, '0')} · G = ${utility.toFixed(2)}`, 48, 10);
     }
 
     teardown() {
         this.stopPlay();
         this.exitFocusMode();
-        cancelAnimationFrame(this._rafHandle);
-        this._rafHandle = null;
         this._removeScrubber();
         this._imageCache.clear();
     }
 
     _removeScrubber() {
-        if (this._scrubberDiv) {
-            this._scrubberDiv.remove();
-            this._scrubberDiv = null;
-            this._scrubberSlider = null;
-            this._scrubberReadout = null;
+        if (this._scrubber) {
+            this._scrubber.destroy();
+            this._scrubber = null;
         }
     }
 
     resize(canvasW, canvasH, topOffset) {
         this._topOffset = topOffset;
-        if (this._scrubberDiv) {
-            this._scrubberDiv.style.top = (topOffset + canvasH - EXPECTATION_SCRUBBER_H) + 'px';
-            this._scrubberDiv.style.width = canvasW + 'px';
+        if (this._scrubber) {
+            const y = topOffset + canvasH - EXPECTATION_SCRUBBER_H;
+            this._scrubber.resize(0, y, canvasW);
         }
         this.expectationViewModel.invalidateLayout();
     }

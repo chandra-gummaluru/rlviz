@@ -34,6 +34,10 @@ class VIPresenter extends VIOutputBoundary {
         this.rightPanel = rightPanel;
     }
 
+    setChartDock(chartDock) {
+        this.chartDock = chartDock;
+    }
+
     presentLayoutNeeded(canvasWidth, canvasHeight) {
         if (this.viViewModel) {
             const viState = this.viewModel.valueIterationState;
@@ -414,12 +418,13 @@ class VIPresenter extends VIOutputBoundary {
     }
 
     _updateRightPanel() {
-        if (this.viewModel.interaction.mode === 'expectation') return;
+        if (this.chartDock) this.chartDock.refresh();
+        if (this.viewModel.interaction.mode === 'values' && this.viewModel.valuesSubView === 'mc') return;
         if (this.rightPanel) this.rightPanel.updateContent();
     }
 
     _updateButtonStates() {
-        if (this.viewModel.interaction.mode === 'expectation') return;
+        if (this.viewModel.interaction.mode === 'values' && this.viewModel.valuesSubView === 'mc') return;
         if (this.toolBar) {
             const viState = this.viewModel.valueIterationState;
             if (viState) {

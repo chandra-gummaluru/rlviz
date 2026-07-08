@@ -27,6 +27,7 @@ const serializeGraphPresenter = new SerializeGraphPresenter(canvasViewModel);
 const undoPresenter = new UndoPresenter(canvasViewModel);
 const redoPresenter = new RedoPresenter(canvasViewModel);
 const setModePresenter = new SetModePresenter(canvasViewModel);
+const setValuesSubViewPresenter = new SetValuesSubViewPresenter(canvasViewModel);
 const zoomPresenter = new ZoomPresenter(canvasViewModel.viewport);
 const importGraphPresenter = new ImportGraphPresenter(canvasViewModel);
 
@@ -48,6 +49,7 @@ const serializeGraphInteractor = new SerializeGraphInteractor(graph, serializeGr
 const undoInteractor = new UndoInteractor(commandHistory, undoPresenter);
 const redoInteractor = new RedoInteractor(commandHistory, redoPresenter);
 const setModeInteractor = new SetModeInteractor(setModePresenter);
+const setValuesSubViewInteractor = new SetValuesSubViewInteractor(setValuesSubViewPresenter);
 const zoomInInteractor = new ZoomInInteractor(zoomPresenter);
 const zoomOutInteractor = new ZoomOutInteractor(zoomPresenter);
 const importGraphInteractor = new ImportGraphInteractor(graph, importGraphPresenter);
@@ -76,6 +78,7 @@ const canvasController = new CanvasController(canvasViewModel, {
     undo: undoInteractor,
     redo: redoInteractor,
     setMode: setModeInteractor,
+    setValuesSubView: setValuesSubViewInteractor,
     zoomIn: zoomInInteractor,
     zoomOut: zoomOutInteractor,
     importGraph: importGraphInteractor,
@@ -172,58 +175,102 @@ const onExportGraph = () => {
     URL.revokeObjectURL(url);
 };
 
+// ===== Values-mode sub-view lifecycle (registered on canvasController below) =====
+// mc/split entry: pause other playback, run MC rollouts, set up the scrubber. Mirrors what
+// entering the old standalone 'expectation' mode used to do.
+function enterMCSubView() {
+    if (simulationState.isPlaying && pauseInteractor) {
+        pauseInteractor.execute(new PauseInputData());
+    }
+    if (valueIterationState && valueIterationState.isPlaying && viPauseInteractor) {
+        viPauseInteractor.execute(new VIPauseInputData());
+    }
+
+    if (!checkAndRenormalizeIfNeeded(true)) {
+        redraw();
+        return;
+    }
+
+    const startNode = canvasViewModel.startNode;
+    if (startNode && runExpectationInteractor) {
+        runExpectationInteractor.execute(new RunExpectationInputData(
+            startNode.id,
+            Object.assign({}, simulationState.policy),
+            expectationState.displayRuns,
+            expectationState.maxSteps,
+            expectationState.gamma
+        ));
+    }
+
+    if (mainView && mainView.expectationView) {
+        const topOffset = mainView.TOP_BARS_HEIGHT;
+        const panelW = rightPanel ? rightPanel.getWidth() : 272;
+        const fullCanvasW = windowWidth - panelW;
+        const canvasH = windowHeight - topOffset - mainView.getDockHeight();
+        const canvasW = mainView._valuesPaneWidths(fullCanvasW).mc;
+        mainView.expectationView.setupScrubber(canvasW, canvasH, topOffset);
+    }
+    if (mainView && mainView.chartDock) mainView.chartDock.refresh();
+}
+
+function leaveMCSubView() {
+    if (mainView && mainView.expectationView) mainView.expectationView.teardown();
+    expectationState.resetData();
+    expectationViewModel.invalidateLayout();
+}
+
+function leaveVISubView() {
+    mathRenderer.clear();
+    valueIterationViewModel?.clearExplanationDetail();
+    valueIterationState.reset();
+    valueIterationViewModel.reset();
+    if (rightPanel) rightPanel.updateContent();
+}
+
+canvasController.registerModeLifecycle({
+    onLeave: {
+        // Leaving Values mode entirely tears down both sub-views' state unconditionally,
+        // regardless of which sub-view was active (matches the old exclusive-mode behavior).
+        values: () => {
+            leaveMCSubView();
+            leaveVISubView();
+            if (mainView && mainView.chartDock) mainView.chartDock.hide();
+        }
+    },
+    onEnter: {
+        // Cold-entry into Values mode (e.g. clicking the collapsed slot) runs whatever the
+        // current sub-view's enter logic is, same as explicitly selecting that sub-view.
+        values: () => {
+            if (mainView && mainView.chartDock) {
+                mainView.chartDock.updateBounds(0, windowWidth - mainView.RIGHT_PANEL_WIDTH);
+                mainView.chartDock.show();
+            }
+            const sv = canvasViewModel.valuesSubView;
+            if (sv === 'mc' || sv === 'split') enterMCSubView();
+        }
+    },
+    onEnterSubView: {
+        mc: enterMCSubView,
+        vi: () => {}, // VI has no "run on enter" behavior - starts via explicit Play click
+        split: enterMCSubView
+    },
+    onLeaveSubView: {
+        mc: leaveMCSubView,
+        vi: leaveVISubView,
+        split: () => {
+            leaveMCSubView();
+            leaveVISubView();
+        }
+    }
+});
+
 const onModeChange = (mode) => {
-    const prevMode = canvasViewModel.interaction.mode;
-
-    // Leaving Expectation mode: clean up
-    if (prevMode === 'expectation' && mode !== 'expectation') {
-        if (mainView && mainView.expectationView) mainView.expectationView.teardown();
-        expectationState.resetData();
-        expectationViewModel.invalidateLayout();
-    }
-
     canvasController.setMode(mode);
+    redraw();
+};
 
-    if (prevMode === 'value_iteration' && mode !== 'value_iteration') {
-        mathRenderer.clear();
-        valueIterationViewModel?.clearExplanationDetail();
-        if (rightPanel) rightPanel.updateContent();
-    }
-
-    // Entering Expectation mode: pause animations, run rollouts
-    if (mode === 'expectation') {
-        if (simulationState.isPlaying && pauseInteractor) {
-            pauseInteractor.execute(new PauseInputData());
-        }
-        if (valueIterationState && valueIterationState.isPlaying && viPauseInteractor) {
-            viPauseInteractor.execute(new VIPauseInputData());
-        }
-
-        if (!checkAndRenormalizeIfNeeded(true)) {
-            redraw();
-            return;
-        }
-
-        const startNode = canvasViewModel.startNode;
-        if (startNode && runExpectationInteractor) {
-            runExpectationInteractor.execute(new RunExpectationInputData(
-                startNode.id,
-                Object.assign({}, simulationState.policy),
-                expectationState.displayRuns,
-                expectationState.maxSteps,
-                expectationState.gamma
-            ));
-        }
-
-        if (mainView && mainView.expectationView) {
-            const topOffset = (menuBar ? menuBar.getHeight() : 40) + (toolBar ? toolBar.getHeight() : 50);
-            const panelW = rightPanel ? rightPanel.getWidth() : 300;
-            const canvasW = windowWidth - panelW;
-            const canvasH = windowHeight - topOffset;
-            mainView.expectationView.setupScrubber(canvasW, canvasH, topOffset);
-        }
-    }
-
+const onValuesSubViewChange = (subView) => {
+    canvasController.setValuesSubView(subView);
     redraw();
 };
 
@@ -330,10 +377,13 @@ function checkAndRenormalizeIfNeeded(forceCheck = false) {
 }
 
 // Value Iteration callbacks
-const getVICanvasDimensions = () => ({
-    width: windowWidth - rightPanel.getWidth(),
-    height: windowHeight - 90
-});
+const getVICanvasDimensions = () => {
+    const fullWidth = windowWidth - rightPanel.getWidth();
+    return {
+        width: mainView._valuesPaneWidths(fullWidth).vi,
+        height: windowHeight - mainView.TOP_BARS_HEIGHT - mainView.getDockHeight()
+    };
+};
 
 const onVIPlay = () => {
     if (!runVIInteractor || !viPlayInteractor) return;
@@ -499,6 +549,10 @@ const onReset = () => {
 };
 
 // p5.js lifecycle hooks
+function preload() {
+    Typography.preload();
+}
+
 function setup() {
     // Create menu bar (Row 1)
     menuBar = new MenuBar({
@@ -525,6 +579,7 @@ function setup() {
         onStep: onStep,
         onRerun: onReset,
         onModeChange: onModeChange,
+        onValuesSubViewChange: onValuesSubViewChange,
         onVIPlay: onVIPlay,
         onVIPause: onVIPause,
         onVIStep: onVIStep,
@@ -556,9 +611,21 @@ function setup() {
 
     // Set right panel reference in setModePresenter so it can update when mode changes
     setModePresenter.setRightPanel(rightPanel);
+    setValuesSubViewPresenter.setRightPanel(rightPanel);
 
     mainView = new MainView(canvasViewModel, canvasController, menuBar, toolBar, rightPanel);
     rightPanel.onPanelResize = (w) => mainView.onPanelResize(w);
+
+    const chartDock = new ChartDock(canvasViewModel, expectationState, expectationViewModel, valueIterationState);
+    chartDock.setup();
+    chartDock.onResize = () => mainView.onDockResize();
+    mainView.chartDock = chartDock;
+
+    AppPalette._onThemeChange = () => {
+        mainView.invalidateDotGrid();
+        rightPanel.updateContent();
+        if (menuBar) menuBar._updateThemeIcon();
+    };
 
     // Create simulation presenter and interactors
     simulationPresenter = new SimulationPresenter(canvasViewModel);
@@ -581,6 +648,7 @@ function setup() {
     viPresenter = new VIPresenter(canvasViewModel);
     viPresenter.setToolBar(toolBar);
     viPresenter.setRightPanel(rightPanel);
+    viPresenter.setChartDock(mainView.chartDock);
 
     runVIInteractor = new RunVIInteractor(graph, valueIterationState, viPresenter);
     viPlayInteractor = new VIPlayInteractor(valueIterationState, viPresenter, valueIterationViewModel);
@@ -590,7 +658,11 @@ function setup() {
     viSkipInteractor = new VISkipInteractor(valueIterationState, viPresenter, valueIterationViewModel);
 
     // Create Value Iteration view
-    const valueIterationView = new ValueIterationView(canvasViewModel);
+    const valueIterationView = new ValueIterationView(canvasViewModel, {
+        getPanelWidth: () => rightPanel.getWidth(),
+        getTopOffset: () => mainView.TOP_BARS_HEIGHT,
+        getBottomOffset: () => toolBar.getHeight()
+    });
     mainView.valueIterationView = valueIterationView;
 
     // VI explanation phase constants (local to setup; labels/counts passed into buildExplanationDetail)
@@ -642,6 +714,21 @@ function setup() {
     };
 
     rightPanel.callbacks.onVICellClick = onVICellClick;
+
+    rightPanel.callbacks.onModelKnownToggle = (known) => {
+        canvasController.setModelKnown(known);
+        if (toolBar) toolBar.setModelKnown(known);
+        rightPanel.updateContent();
+        if (mainView && mainView.chartDock) mainView.chartDock.refresh();
+        redraw();
+    };
+
+    rightPanel.callbacks.onManualQOverride = (stateId, actionId, value) => {
+        canvasController.setManualQOverride(stateId, actionId, value);
+        rightPanel.updateContent();
+        if (mainView && mainView.chartDock) mainView.chartDock.refresh();
+        redraw();
+    };
 
     rightPanel.callbacks.onVIExplainClose = () => {
         valueIterationViewModel?.clearExplanationDetail();
@@ -696,6 +783,7 @@ function setup() {
         canvasViewModel, expectationViewModel, expectationState, graph
     );
     expectationView.setRightPanel(rightPanel);
+    expectationView.setChartDock(mainView.chartDock);
     mainView.expectationView = expectationView;
 
     // Attach expectation state/viewmodel to right panel
@@ -750,7 +838,9 @@ function draw() {
 
 function mousePressed() {
     if (!mainView) return;
-    if (canvasViewModel.interaction.mode === 'expectation' && mainView.expectationView) {
+    // 'split' sub-view click routing (dispatch to the correct pane) lands in the split-pane
+    // rendering work; for now only the full-width 'mc' sub-view forwards clicks directly.
+    if (canvasViewModel.interaction.mode === 'values' && canvasViewModel.valuesSubView === 'mc' && mainView.expectationView) {
         mainView.expectationView.handleClick(mouseX, mouseY);
         return;
     }
@@ -774,7 +864,7 @@ function mouseMoved() {
 
 function keyPressed() {
     if (!mainView) return;
-    if (canvasViewModel.interaction.mode === 'expectation' && mainView.expectationView) {
+    if (canvasViewModel.interaction.mode === 'values' && canvasViewModel.valuesSubView === 'mc' && mainView.expectationView) {
         mainView.expectationView.handleKey(key);
     }
     return mainView.keyPressed();
