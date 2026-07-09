@@ -872,9 +872,9 @@ class CanvasController {
         }
     }
 
-    createTextLabel(text) {
+    createTextLabel(text, x = 0, y = 0) {
         if (this.interactors.createTextLabel) {
-            this.interactors.createTextLabel.execute(CreateTextLabelInputData.forExecution(text, 0, 0, 16));
+            this.interactors.createTextLabel.execute(CreateTextLabelInputData.forExecution(text, x, y, 16));
         }
     }
 

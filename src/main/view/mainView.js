@@ -968,8 +968,12 @@ class MainView {
         const world = this.viewModel.viewport.screenToWorld(mouseX, mouseY);
         const target = GeometricHelper.findEntityAtPosition(this.viewModel.graph, world.x, world.y);
 
-        // If clicking on empty canvas and not placing a node, start panning
-        if (target.type === 'none' && !this.viewModel.interaction.placingMode) {
+        // If clicking on empty canvas and not placing a node (or about to place a text
+        // label), start panning. Without the textLabelRequested check, clicking empty
+        // canvas to place a text label - the common case - was swallowed by panning and
+        // never reached the textLabelRequested handling below.
+        if (target.type === 'none' && !this.viewModel.interaction.placingMode &&
+            !this.viewModel.interaction.textLabelRequested) {
             this.viewModel.viewport.isPanning = true;
             this.viewModel.viewport.panStartX = mouseX;
             this.viewModel.viewport.panStartY = mouseY;
@@ -1007,7 +1011,7 @@ class MainView {
 
         // Check if text label input was requested
         if (this.viewModel.interaction.textLabelRequested) {
-            this.promptForTextLabel();
+            this.promptForTextLabel(world.x, world.y);
         }
 
         // Check if rename was requested
@@ -1143,10 +1147,10 @@ class MainView {
         redraw();
     }
 
-    promptForTextLabel() {
+    promptForTextLabel(worldX, worldY) {
         const text = prompt('Enter text label:');
         if (text && text.trim()) {
-            this.controller.createTextLabel(text.trim());
+            this.controller.createTextLabel(text.trim(), worldX, worldY);
         }
         this.viewModel.interaction.textLabelRequested = false;
         redraw();
