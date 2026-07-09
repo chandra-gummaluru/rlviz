@@ -8,7 +8,7 @@ class RunExpectationInteractor extends RunExpectationInputBoundary {
     }
 
     execute(inputData) {
-        const { startNodeId, policy, displayRuns, maxSteps, gamma } = inputData;
+        const { startNodeId, policy, displayRuns, maxSteps, gamma, policyWeights = {} } = inputData;
 
         const startNode = this.graph.getNodeById(startNodeId);
         if (!startNode || startNode.type !== 'state') {
@@ -27,11 +27,12 @@ class RunExpectationInteractor extends RunExpectationInputBoundary {
         }
 
         const policySnapshot = Object.assign({}, policy);
-        const policyFallbacks = this._validatePolicy(policySnapshot);
+        const policyWeightsSnapshot = Object.assign({}, policyWeights);
+        const policyFallbacks = this._validatePolicy(policySnapshot).concat(this._validatePolicyWeights(policyWeightsSnapshot));
 
         const rollouts = [];
         for (let i = 0; i < EXPECTATION_TOTAL_RUNS; i++) {
-            const trace = this.traceGenerator.generate(startNode, maxSteps * 2 + 1, policySnapshot);
+            const trace = this.traceGenerator.generate(startNode, maxSteps * 2 + 1, policySnapshot, policyWeightsSnapshot);
             const rewardResult = this._extractRewards(trace);
             if (rewardResult.error) {
                 return this.outputBoundary.presentError(rewardResult.error);
@@ -73,6 +74,26 @@ class RunExpectationInteractor extends RunExpectationInputBoundary {
             if (!stateNode) continue;
             if (!stateNode.actions.includes(Number(actionId))) {
                 fallbacks.push({ stateId: Number(stateId), configuredActionId: Number(actionId), reason: 'action_not_available' });
+            }
+        }
+        return fallbacks;
+    }
+
+    // Mirrors _validatePolicy for weighted-random policies: reports (once per state) when a
+    // configured weight references an action no longer on that state (e.g. deleted after the
+    // weight was set) - sampling itself already silently drops such entries and redistributes
+    // across the rest (see TraceGenerator.selectRandomAction), this just surfaces it in the UI.
+    _validatePolicyWeights(policyWeightsSnapshot) {
+        const fallbacks = [];
+        for (const [stateId, weights] of Object.entries(policyWeightsSnapshot)) {
+            const stateNode = this.graph.getNodeById(Number(stateId));
+            if (!stateNode) continue;
+            const validActionIds = new Set(stateNode.actions.map(Number));
+            const staleActionId = Object.keys(weights)
+                .map(Number)
+                .find(actionId => !validActionIds.has(actionId));
+            if (staleActionId !== undefined) {
+                fallbacks.push({ stateId: Number(stateId), configuredActionId: staleActionId, reason: 'action_not_available' });
             }
         }
         return fallbacks;

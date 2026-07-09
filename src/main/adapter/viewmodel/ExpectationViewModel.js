@@ -11,7 +11,13 @@ class ExpectationViewModel {
         this.hoveredRun = null;
     }
 
-    computeLayout(canvasW, canvasH, displayRuns, graph) {
+    // topOffset (default 0): pixels to push every panel down by, e.g. to clear a floating pill
+    // overlapping the top of the canvas. Baked directly into each panel's stored y so drawing
+    // and mouse hit-testing (handleClick/handleMouseMove in expectationView.js, which compare
+    // raw mouse coordinates against panel.x/panel.y) stay consistent with a single source of
+    // truth, rather than applying a separate draw-time transform hit-testing would need to
+    // duplicate.
+    computeLayout(canvasW, canvasH, displayRuns, graph, topOffset = 0) {
         const GRID = { 4: [2,2], 8: [4,2], 16: [4,4], 32: [8,4], 64: [8,8] };
         const [cols, rows] = GRID[displayRuns] || [4, 4];
         const panelW = Math.floor(canvasW / cols);
@@ -20,7 +26,7 @@ class ExpectationViewModel {
         const panels = [];
         for (let r = 0; r < rows; r++) {
             for (let c = 0; c < cols; c++) {
-                panels.push({ x: c * panelW, y: r * panelH, w: panelW, h: panelH });
+                panels.push({ x: c * panelW, y: topOffset + r * panelH, w: panelW, h: panelH });
             }
         }
 

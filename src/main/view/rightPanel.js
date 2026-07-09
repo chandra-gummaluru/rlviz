@@ -5,8 +5,6 @@ const RP_REWARD_SLIDER_MIN   = -100;
 const RP_REWARD_SLIDER_MAX   = 100;
 const RP_PROB_SLIDER_STEP    = 0.01;
 const RP_VI_TABLE_MAX_H      = 400;    // px max height of the V(s) table
-const RP_REWARD_BAR_MAX      = 100;    // reward clamped to ±this for bar width
-const RP_REWARD_BAR_HALF_PCT = 50;     // percent representing one full half of bar
 // --- End constants ---
 
 // Right panel displaying MDP information and node editing
@@ -83,11 +81,10 @@ class RightPanel {
             onVICellClick: null,            // (colIdx, stateId, actionId) => void
             onVIExplainClose: null,         // () => void
             onVIExplainStep: null,          // ('prev' | 'next') => void
-            onModelKnownToggle: null,       // (known: boolean) => void
             onManualQOverride: null,        // (stateId, actionId, value) => void
-            onExpectationDisplayRunsChange: null, // (displayRuns) => void
             onExpectationMaxStepsChange: null,    // (maxSteps) => void
             onExpectationGammaChange: null,       // (gamma) => void
+            onInitialStateChange: null,           // () => void - re-run MC rollouts for the new s0
         };
     }
 
@@ -115,14 +112,15 @@ class RightPanel {
 
         const selectedNode = this.viewModel.selection.selectedNode;
         const selectedEdge = this.viewModel.selection.selectedEdge;
-        const isSimulateMode = this.viewModel.interaction.mode === 'simulate';
+        const isBuildMode = this.viewModel.interaction.mode === 'build';
+        const isPolicyMode = this.viewModel.interaction.mode === 'policy';
         const isValuesMode = this.viewModel.interaction.mode === 'values';
         const valuesSubView = this.viewModel.valuesSubView;
-        const isMCView = isValuesMode && (valuesSubView === 'mc' || valuesSubView === 'split');
-        const isVIMode = isValuesMode && (valuesSubView === 'vi' || valuesSubView === 'split');
+        const isMCView = isValuesMode && valuesSubView === 'mc';
+        const isVIMode = isValuesMode && valuesSubView === 'vi';
 
         const simState = this.viewModel.simulationState;
-        const simActive = isSimulateMode && simState && simState.replayInitialized;
+        const simActive = (isBuildMode || isPolicyMode) && simState && simState.replayInitialized;
 
         const rawHoveredNode = this.viewModel.interaction.hoveredNode;
         const rawHoveredEdge = this.viewModel.interaction.hoveredEdge;
@@ -134,34 +132,47 @@ class RightPanel {
             ? (simState.isEdgeVisible(rawHoveredEdge.getFromNode().id, rawHoveredEdge.getToNode().id) ? rawHoveredEdge : null)
             : rawHoveredEdge;
 
-        if (isMCView || isVIMode) {
-            // Shared across mc / vi / split so P known-unknown is always visible in Values mode,
-            // rendered once even in split view (which stacks both panels below).
-            this._renderModelKnownToggle(this.contentContainer, this.viewModel.modelKnown);
-        }
-
         if (isMCView) {
             this.renderExpectationPanel();
-            if (isVIMode) this.renderValueIterationPanel(); // split: stack both panels
         } else if (isVIMode) {
             this.renderValueIterationPanel();
         } else if (selectedNode) {
-            this.renderNodePanel(selectedNode, { readOnly: false });
+            // Editable in both Build and Policy - Policy's canvas is identical to Build's, only
+            // the default (nothing-selected) panel below differs between the two.
+            this.renderNodePanel(selectedNode, { readOnly: !(isBuildMode || isPolicyMode) });
         } else if (selectedEdge) {
             this.renderEdgePanel(selectedEdge);
         } else if (hoveredNode) {
             this.renderNodePanel(hoveredNode, { readOnly: true });
         } else if (hoveredEdge) {
             this.renderEdgePanel(hoveredEdge);
-        } else if (isSimulateMode) {
-            this.renderSimulationPanel();
-        } else {
-            this.renderMDPInfoPanel();
+        } else if (isBuildMode) {
+            this.renderBuildPanel();
+        } else if (isPolicyMode) {
+            this.renderPolicyModePanel();
         }
 
+        if (isValuesMode) this._renderEstimateVsExact();
     }
 
-    renderMDPInfoPanel() {
+    // Build mode's default (nothing selected/hovered) inspector content: Parameters, Initial
+    // State, Policy π, then Utility G - in that order per the unified Build/Values workspace
+    // spec. Steps is no longer shown as its own big number (see _renderStepsAndUtility) - the t
+    // progress bar below already shows how far into the episode the simulation is.
+    renderBuildPanel() {
+        this.createSection('Parameters', () => {
+            const paramsDiv = createDiv();
+            paramsDiv.parent(this.contentContainer);
+            paramsDiv.addClass('panel-section-content');
+            this._renderGammaSlider(paramsDiv);
+            this._renderTProgressBar(paramsDiv);
+        });
+
+        this.renderInitialStateSection();
+        this._renderStepsAndUtility();
+    }
+
+    renderInitialStateSection() {
         // Initial State (s₀) Section
         this.createSection('Initial State', () => {
             const s0Container = createDiv();
@@ -200,12 +211,63 @@ class RightPanel {
                     const node = this.viewModel.graph.nodes.find(n => n.id === Number(val));
                     this.viewModel.startNode = node || null;
                 }
+                // Monte Carlo's rollouts are generated FROM the start node, so a stale/absent
+                // computation left over from before this change would make Play silently no-op
+                // (ExpectationView.startPlay() returns early while !state.computed) - re-run in
+                // the background whenever this changes while in Values mode, not just on the
+                // MC pane specifically, so switching over to it later already has fresh data.
+                if (this.callbacks.onInitialStateChange && this.viewModel.interaction.mode === 'values') {
+                    this.callbacks.onInitialStateChange();
+                }
                 if (typeof redraw === 'function') redraw();
             });
         });
+    }
 
-        // Policy (π) Section
-        this.createSection('Policy', () => {
+    // Deterministic-mode action-segment row (one button per action, active = current policy
+    // choice) - used by Policy mode's fuller Policy π section (_renderPolicyModeSection).
+    _renderPolicyActionSegments(row, stateNode, actions, currentAction) {
+        const segRow = createDiv();
+        segRow.parent(row);
+        segRow.addClass('policy-segmented-row');
+
+        actions.forEach(actionId => {
+            const actionNode = this.viewModel.graph.nodes.find(n => n.type === 'action' && n.id === actionId);
+            if (!actionNode) return;
+            const btn = createButton(actionNode.name);
+            btn.parent(segRow);
+            btn.addClass('policy-segmented-btn');
+            if (currentAction === actionId) btn.addClass('policy-segmented-btn--active');
+            btn.mousePressed(() => {
+                this.controller.setPolicyAction(stateNode.id, actionId);
+                this.updateContent();
+                redraw();
+            });
+        });
+    }
+
+    // Policy mode's default (nothing selected/hovered) inspector content: Parameters, Initial
+    // State, then the fuller Policy π section (adds the Random-with-weights editor on top of
+    // Build's simple Deterministic-only toggle).
+    renderPolicyModePanel() {
+        this.createSection('Parameters', () => {
+            const paramsDiv = createDiv();
+            paramsDiv.parent(this.contentContainer);
+            paramsDiv.addClass('panel-section-content');
+            this._renderGammaSlider(paramsDiv);
+            this._renderTProgressBar(paramsDiv);
+        });
+
+        this.renderInitialStateSection();
+        this._renderPolicyModeSection();
+    }
+
+    // Policy π section (Policy mode only): per-state Deterministic|Random toggle, where Random
+    // reveals an editable weighted-probability distribution. Reads/writes
+    // simulationState.policy/policyWeights, the shared source of truth also consumed by Build's
+    // simulation and Monte Carlo's rollouts.
+    _renderPolicyModeSection() {
+        this.createSection('Policy π', () => {
             const policyDiv = createDiv();
             policyDiv.parent(this.contentContainer);
 
@@ -217,49 +279,151 @@ class RightPanel {
                 return;
             }
 
-            const note = createDiv('Select π(s). Random chooses uniformly among available actions.');
-            note.parent(policyDiv);
-            note.addClass('panel-hint');
-            note.style('margin-bottom', '8px');
-
             const simulationState = this.viewModel.simulationState;
+            let firstNonTerminal = null;
+            let firstNonTerminalMode = null;
 
             states.forEach(stateNode => {
                 const row = createDiv();
                 row.parent(policyDiv);
-                row.style('display', 'grid');
-                row.style('grid-template-columns', 'minmax(0, 1fr) minmax(110px, 1.2fr)');
-                row.style('gap', '8px');
-                row.style('align-items', 'center');
-                row.style('margin-bottom', '8px');
+                row.addClass('policy-state-row');
 
-                const label = createDiv(`π(${stateNode.name})`);
+                const label = createDiv(stateNode.name);
                 label.parent(row);
-                label.style('font-size', '12px');
-                label.style('font-weight', '600');
-                label.style('color', AppPalette.text.secondary);
+                label.addClass('policy-state-label');
 
-                const select = createSelect();
-                select.parent(row);
-                select.addClass('panel-input');
-                select.option('Random', '');
+                const actions = stateNode.actions || [];
+                if (actions.length === 0) {
+                    const terminal = createDiv('— terminal');
+                    terminal.parent(row);
+                    terminal.addClass('policy-terminal-label');
+                    return;
+                }
 
-                (stateNode.actions || []).forEach(actionId => {
-                    const actionNode = this.viewModel.graph.nodes.find(n => n.type === 'action' && n.id === actionId);
-                    if (actionNode) {
-                        select.option(actionNode.name, String(actionId));
+                if (!firstNonTerminal) {
+                    firstNonTerminal = stateNode;
+                    firstNonTerminalMode = simulationState.getPolicyMode(stateNode.id);
+                }
+
+                const policyMode = simulationState.getPolicyMode(stateNode.id);
+                const isDeterministic = policyMode === 'deterministic';
+                const isWeighted = policyMode === 'weighted';
+                const currentAction = simulationState.getPolicyAction(stateNode.id);
+
+                const drToggle = createDiv();
+                drToggle.parent(row);
+                drToggle.addClass('policy-det-random-toggle');
+
+                const detBtn = createButton('Deterministic');
+                detBtn.parent(drToggle);
+                detBtn.addClass('policy-det-random-btn');
+                if (isDeterministic) detBtn.addClass('policy-det-random-btn--active');
+                detBtn.mousePressed(() => {
+                    if (!isDeterministic) {
+                        this.controller.setPolicyAction(stateNode.id, actions[0]);
+                        this.updateContent();
+                        redraw();
                     }
                 });
 
-                const selectedAction = simulationState.getPolicyAction(stateNode.id);
-                select.selected(selectedAction === null ? '' : String(selectedAction));
-                select.changed(() => {
-                    const selectedValue = select.value();
-                    simulationState.setPolicyAction(stateNode.id, selectedValue === '' ? null : Number(selectedValue));
+                const randBtn = createButton('Random');
+                randBtn.parent(drToggle);
+                randBtn.addClass('policy-det-random-btn');
+                if (!isDeterministic) randBtn.addClass('policy-det-random-btn--active');
+                randBtn.mousePressed(() => {
+                    // Seed equal weights the first time this state enters weighted mode, so
+                    // every action starts with a real, sampled-from entry rather than siblings
+                    // silently getting zero probability the moment only one slider is touched.
+                    if (!isWeighted) {
+                        this.controller.initPolicyWeightsUniform(stateNode.id, actions);
+                        this.updateContent();
+                        redraw();
+                    }
                 });
+
+                if (isDeterministic) {
+                    this._renderPolicyActionSegments(row, stateNode, actions, currentAction);
+                } else if (isWeighted) {
+                    this._renderPolicyWeightSliders(row, stateNode, actions);
+                }
+                // else: untouched-uniform - no extra content, matching Build's simple section;
+                // clicking "Random" (already active by default) seeds real weights via
+                // initPolicyWeightsUniform, which is what actually reveals the sliders.
+            });
+
+            if (firstNonTerminal) {
+                const hint = createDiv();
+                hint.parent(policyDiv);
+                hint.addClass('panel-hint');
+                hint.style('margin-top', '8px');
+
+                if (firstNonTerminalMode === 'weighted') {
+                    hint.html('stochastic π · sampled each step · edge width ∝ probability');
+                } else {
+                    const stateIndex = states.findIndex(s => s.id === firstNonTerminal.id);
+                    const action = simulationState.getPolicyAction(firstNonTerminal.id);
+                    const actionNode = action !== null
+                        ? this.viewModel.graph.nodes.find(n => n.type === 'action' && n.id === action)
+                        : null;
+                    const rhs = actionNode ? latexNodeName(actionNode.name) : '\\text{random}';
+                    hint.elt.innerHTML = renderKatex(`\\pi(s_{${stateIndex}}) = ${rhs}`)
+                        + ' <span class="panel-hint-suffix">· used by Simulate and Values</span>';
+                }
+            }
+        });
+    }
+
+    // Random-mode weight editor: one independent slider per action (raw weight, not forced to
+    // sum to 1 - see SimulationState's "normalize at sample time" design). Dragging updates the
+    // live normalized-percentage readouts for every sibling slider in this state (not just the
+    // one being dragged) without a full panel rebuild, matching the established
+    // commit-on-input/redraw-live pattern; a full refresh happens naturally on the next
+    // updateContent() (e.g. switching states or the Deterministic|Random toggle).
+    _renderPolicyWeightSliders(row, stateNode, actions) {
+        const simulationState = this.viewModel.simulationState;
+        const weights = simulationState.getPolicyWeights(stateNode.id) || {};
+
+        const sliderContainer = createDiv();
+        sliderContainer.parent(row);
+        sliderContainer.addClass('policy-weight-sliders');
+
+        const readouts = [];
+
+        const refreshReadouts = () => {
+            const currentWeights = simulationState.getPolicyWeights(stateNode.id) || {};
+            const sum = actions.reduce((s, id) => s + (currentWeights[id] ?? 0), 0);
+            readouts.forEach(({ actionId, valueDisplay }) => {
+                const w = currentWeights[actionId] ?? 0;
+                const pct = sum > 0 ? w / sum : 1 / actions.length;
+                valueDisplay.html(`π = ${pct.toFixed(2)}`);
+            });
+        };
+
+        actions.forEach(actionId => {
+            const actionNode = this.viewModel.graph.nodes.find(n => n.type === 'action' && n.id === actionId);
+            if (!actionNode) return;
+
+            const weightRow = createDiv();
+            weightRow.parent(sliderContainer);
+            weightRow.addClass('policy-weight-row');
+
+            const nameLabel = createDiv(actionNode.name);
+            nameLabel.parent(weightRow);
+            nameLabel.addClass('policy-weight-name');
+
+            const rawWeight = weights[actionId] ?? 0;
+            const { slider, valueDisplay } = RightPanelBuilder.sliderRow(weightRow, 0, 1, rawWeight, 0.01);
+            readouts.push({ actionId, valueDisplay });
+
+            slider.input(() => {
+                const newValue = parseFloat(slider.value());
+                this.controller.setPolicyWeight(stateNode.id, actionId, newValue);
+                refreshReadouts();
+                redraw();
             });
         });
 
+        refreshReadouts();
     }
 
     renderNodePanel(node, { readOnly = false } = {}) {
@@ -577,6 +741,19 @@ class RightPanel {
         const viViewModel = this.viewModel.valueIterationViewModel;
         const modelKnown = this.viewModel.modelKnown;
 
+        // Values mode's own top-of-panel Parameters section (shared γ, used by Simulate/VI) -
+        // the Method panel's only access point since Phase 3 retired the old global top-strip.
+        // Not duplicated on the MC panel, which already has its own distinct "Discount Factor
+        // (γ)" section driving expectationState.gamma, a logically separate value.
+        this.createSection('Parameters', () => {
+            const paramsDiv = createDiv();
+            paramsDiv.parent(this.contentContainer);
+            paramsDiv.addClass('panel-section-content');
+            this._renderGammaSlider(paramsDiv);
+        });
+
+        this.renderInitialStateSection();
+
         // Explanation mode: show explanation + Q-table only (not the full VI panel)
         const explanationDetail = viViewModel?.explanationDetail;
         if (explanationDetail) {
@@ -594,20 +771,42 @@ class RightPanel {
             return;
         }
 
+        // Title, equation, and Convergence copy all resolve through the 2x2 method matrix -
+        // known:full/unknown:full are the only quadrants with a real computation difference
+        // (Bellman backup vs "P unknown" notice); the two partial-observability quadrants reuse
+        // the same numbers under illustrative labels (see valueIterationView.js's _beliefFor).
+        const observability = this.viewModel.observability;
+        const matrixEntry = ValuesMethodMatrix.resolve(modelKnown, observability);
+        const matrixKey = ValuesMethodMatrix.key(modelKnown, observability);
+
         // Title
-        const title = createDiv(modelKnown ? 'Value Iteration' : 'Learning Iteration');
+        const title = createDiv(matrixEntry.title);
         title.parent(this.contentContainer);
         title.addClass('panel-title');
 
-        // Bellman equation (P known) / descriptive copy (P unknown - no learning algorithm runs,
-        // the student edits the Q-table directly)
+        // Update-equation header - only the two partial-observability quadrants get one
+        // (matching the design reference); known:full/unknown:full are unchanged.
+        if (matrixKey === 'known:partial' || matrixKey === 'unknown:partial') {
+            const equationTitle = createDiv(matrixKey === 'known:partial' ? 'Belief Update' : 'PO Q-Learning Update');
+            equationTitle.parent(this.contentContainer);
+            equationTitle.addClass('panel-hint');
+            equationTitle.style('font-weight', '600');
+            equationTitle.style('margin-bottom', '4px');
+        }
+
+        // Bellman/update equation (P known) / descriptive copy (P unknown - no learning
+        // algorithm runs, the student edits the Q-table directly)
         const eqDiv = createDiv();
         eqDiv.parent(this.contentContainer);
         eqDiv.addClass('panel-section-content');
-        if (modelKnown) {
+        if (matrixKey === 'known:full') {
             eqDiv.elt.innerHTML = renderKatex('V_t(s) = \\max_a \\sum_{s\'} P(s\'|s,a)[R + \\gamma V_{t+1}(s\')]', true);
-        } else {
+        } else if (matrixKey === 'unknown:full') {
             eqDiv.html('P is unknown, so the true action values can\'t be computed. Manually estimate them below.');
+        } else if (matrixKey === 'known:partial') {
+            eqDiv.elt.innerHTML = renderKatex('V(b) = \\max_a \\sum_{s\'} P(s\'|s,a)[R + \\gamma V(b\')]', true);
+        } else {
+            eqDiv.elt.innerHTML = renderKatex('Q(b,a) \\leftarrow Q + \\alpha[r + \\gamma \\max_{a\'} Q(b\',a\') - Q]', true);
         }
 
         // Parameters
@@ -615,20 +814,6 @@ class RightPanel {
         paramsDiv.parent(this.contentContainer);
         paramsDiv.addClass('panel-section-content');
         paramsDiv.style('margin-top', '10px');
-
-        const gammaLabel = createDiv();
-        gammaLabel.parent(paramsDiv);
-        gammaLabel.addClass('panel-label');
-        gammaLabel.elt.innerHTML = `Discount (${renderKatex('\\gamma', false)}) = <strong>${this.discountFactor.toFixed(2)}</strong>`;
-
-        const { slider: gammaSlider } = RightPanelBuilder.sliderRow(
-            paramsDiv, 0, 1, this.discountFactor, 0.01
-        );
-        gammaSlider.input(() => {
-            const g = parseFloat(gammaSlider.value());
-            this.discountFactor = g;
-            gammaLabel.elt.innerHTML = `Discount (${renderKatex('\\gamma', false)}) = <strong>${g.toFixed(2)}</strong>`;
-        });
 
         if (viState && viState.initialized) {
             const tLine = createDiv(`<strong>Horizon (T):</strong> ${viState.T}`);
@@ -638,6 +823,34 @@ class RightPanel {
             const progressLine = createDiv(`<strong>Column:</strong> ${viState.currentColumnIndex + 1} / ${viState.totalColumns}`);
             progressLine.parent(paramsDiv);
             progressLine.style('margin-bottom', '4px');
+        }
+
+        // Convergence - the "converged" check is real (viState.lastDelta, computed once at the
+        // end of the real backward-induction backup); the sweep/episode/vector framing per
+        // quadrant is illustrative for LI/BI/PO-L, same precedent as Learning Iteration's
+        // existing "no real algorithm" framing.
+        if (viState && viState.initialized) {
+            this.createSection('Convergence', () => {
+                const convDiv = createDiv();
+                convDiv.parent(this.contentContainer);
+                convDiv.addClass('panel-section-content');
+
+                const perQuadrant = {
+                    'known:full':      `T = ${viState.T} sweeps`,
+                    'unknown:full':    'α = 0.1 · 40 episodes',
+                    'known:partial':   `${viState.T + 1} α-vectors · horizon ${viState.T}`,
+                    'unknown:partial': 'α = 0.1 · belief memory'
+                };
+                const line1 = createDiv(perQuadrant[matrixKey]);
+                line1.parent(convDiv);
+                line1.style('margin-bottom', '4px');
+
+                const convergedLine = viState.lastDelta < 0.01
+                    ? '✓ converged Δ < 0.01'
+                    : `Δ = ${viState.lastDelta.toFixed(4)}`;
+                const line2 = createDiv(convergedLine);
+                line2.parent(convDiv);
+            });
         }
 
         // Q*(s,a;t) table
@@ -665,30 +878,173 @@ class RightPanel {
 
     }
 
-    _renderModelKnownToggle(parentDiv, modelKnown) {
+    // Shared discount-factor (γ) slider, used by Build's Parameters section and Values mode's
+    // per-view Parameters section. Not mode-specific - drives both Simulate/Build's Utility G
+    // and Value Iteration's Bellman backup gamma. Row layout (label - slider - value) matches
+    // the design mockup and the Build panel's read-only t progress bar below it.
+    _renderGammaSlider(parentDiv) {
         const row = createDiv();
         row.parent(parentDiv);
-        row.addClass('model-known-toggle');
-        row.style('margin-bottom', '8px');
+        row.addClass('panel-param-row');
 
-        const knownBtn = createButton('P known');
-        knownBtn.parent(row);
-        knownBtn.addClass('model-known-toggle-btn');
-        if (modelKnown) knownBtn.addClass('model-known-toggle-btn--active');
-        knownBtn.mousePressed(() => {
-            if (this.callbacks.onModelKnownToggle) this.callbacks.onModelKnownToggle(true);
+        const label = createDiv('γ');
+        label.parent(row);
+        label.addClass('panel-param-row-label');
+
+        const slider = createElement('input');
+        slider.parent(row);
+        slider.attribute('type', 'range');
+        slider.attribute('min', '0');
+        slider.attribute('max', '1');
+        slider.attribute('step', '0.01');
+        slider.attribute('value', String(this.discountFactor));
+        slider.addClass('panel-param-row-slider');
+        slider.elt.addEventListener('mousedown', e => e.stopPropagation());
+        slider.elt.addEventListener('click', e => e.stopPropagation());
+        // WebKit/Blink have no native "filled portion" for a fully custom (appearance:none)
+        // range input, unlike Firefox's ::-moz-range-progress - kept in sync via a CSS custom
+        // property the track's background gradient reads (see input[type="range"] in style.css).
+        slider.elt.style.setProperty('--fill', this.discountFactor);
+
+        const value = createDiv(this.discountFactor.toFixed(2));
+        value.parent(row);
+        value.addClass('panel-param-row-value');
+
+        slider.input(() => {
+            const g = parseFloat(slider.value());
+            this.discountFactor = g;
+            value.html(g.toFixed(2));
+            slider.elt.style.setProperty('--fill', g);
         });
-
-        const unknownBtn = createButton('P unknown');
-        unknownBtn.parent(row);
-        unknownBtn.addClass('model-known-toggle-btn');
-        if (!modelKnown) unknownBtn.addClass('model-known-toggle-btn--active');
-        unknownBtn.mousePressed(() => {
-            if (this.callbacks.onModelKnownToggle) this.callbacks.onModelKnownToggle(false);
+        // 'change' (fires once, on release/commit - not every drag tick) triggers a full panel
+        // refresh so anything else derived from discountFactor (Build's Utility G + contribution
+        // bar, in particular) picks up the new value. Rebuilding mid-drag on 'input' instead would
+        // replace the slider's own DOM node while the browser still has it mouse-captured, breaking
+        // the drag.
+        slider.elt.addEventListener('change', () => {
+            this.updateContent();
+            if (typeof redraw === 'function') redraw();
         });
     }
 
-    renderSimulationPanel() {
+    // Build mode's read-only "t" progress bar - fills as the running simulation's step count
+    // increases (v1: no scrub-to-any-step control, matching γ's row layout). A plain div bar,
+    // not a styled <input type=range>: Chrome drops the accent-color fill entirely on disabled
+    // range inputs (renders as a flat, valueless gray capsule regardless of position), so a div
+    // is the only reliable way to show real progress here. A nominal max of 20 (matching the
+    // design mockup's t range) sets the bar's fill scale; the numeric readout still shows the
+    // real step count past that point even though the bar itself clamps at 100%.
+    _renderTProgressBar(parentDiv) {
+        const T_BAR_MAX = 20;
+        const stepCount = this.viewModel.simulationState.getSimulationStats().stepCount;
+        const pct = Math.max(0, Math.min(100, (stepCount / T_BAR_MAX) * 100));
+
+        const row = createDiv();
+        row.parent(parentDiv);
+        row.addClass('panel-param-row');
+
+        const label = createDiv('t');
+        label.parent(row);
+        label.addClass('panel-param-row-label');
+
+        const track = createDiv();
+        track.parent(row);
+        track.addClass('panel-t-progress-track');
+
+        const fill = createDiv();
+        fill.parent(track);
+        fill.addClass('panel-t-progress-fill');
+        fill.style('width', pct + '%');
+
+        const value = createDiv(String(stepCount));
+        value.parent(row);
+        value.addClass('panel-param-row-value');
+        value.addClass('panel-param-row-value--time');
+    }
+
+    // Same row layout/fill-pct pattern as _renderGammaSlider, but bound to
+    // expectationState.gamma - Monte Carlo's own discount factor, intentionally distinct
+    // from the shared this.discountFactor used by Build/Policy/Value Iteration.
+    _renderExpectationGammaSlider(parentDiv) {
+        const state = this.expectationState;
+        const gamma = state ? state.gamma : 0.9;
+
+        const row = createDiv();
+        row.parent(parentDiv);
+        row.addClass('panel-param-row');
+
+        const label = createDiv('γ');
+        label.parent(row);
+        label.addClass('panel-param-row-label');
+
+        const slider = createElement('input');
+        slider.parent(row);
+        slider.attribute('type', 'range');
+        slider.attribute('min', '0');
+        slider.attribute('max', '1');
+        slider.attribute('step', '0.01');
+        slider.attribute('value', String(gamma));
+        slider.addClass('panel-param-row-slider');
+        slider.elt.addEventListener('mousedown', e => e.stopPropagation());
+        slider.elt.addEventListener('click', e => e.stopPropagation());
+        slider.elt.style.setProperty('--fill', gamma);
+
+        const value = createDiv(gamma.toFixed(2));
+        value.parent(row);
+        value.addClass('panel-param-row-value');
+
+        slider.input(() => {
+            const g = parseFloat(slider.value());
+            if (state) state.gamma = g;
+            value.html(g.toFixed(2));
+            slider.elt.style.setProperty('--fill', g);
+            if (this.callbacks.onExpectationGammaChange) this.callbacks.onExpectationGammaChange(g);
+        });
+    }
+
+    // Max Steps as an interactive bar (was a plain number input) - same row layout as the
+    // gamma/t sliders. Range mirrors the old input's bounds (1-1000).
+    _renderExpectationMaxStepsBar(parentDiv) {
+        const state = this.expectationState;
+        const maxSteps = state ? state.maxSteps : 100;
+
+        const row = createDiv();
+        row.parent(parentDiv);
+        row.addClass('panel-param-row');
+
+        const label = createDiv('steps');
+        label.parent(row);
+        label.addClass('panel-param-row-label');
+
+        const slider = createElement('input');
+        slider.parent(row);
+        slider.attribute('type', 'range');
+        slider.attribute('min', '1');
+        slider.attribute('max', '100');
+        slider.attribute('step', '1');
+        slider.attribute('value', String(maxSteps));
+        slider.addClass('panel-param-row-slider');
+        slider.elt.addEventListener('mousedown', e => e.stopPropagation());
+        slider.elt.addEventListener('click', e => e.stopPropagation());
+        slider.elt.style.setProperty('--fill', (maxSteps - 1) / 99);
+
+        const value = createDiv(String(maxSteps));
+        value.parent(row);
+        value.addClass('panel-param-row-value');
+        value.addClass('panel-param-row-value--time');
+
+        slider.input(() => {
+            const steps = parseInt(slider.value(), 10);
+            if (state) state.maxSteps = steps;
+            value.html(String(steps));
+            slider.elt.style.setProperty('--fill', (steps - 1) / 99);
+            if (this.callbacks.onExpectationMaxStepsChange) this.callbacks.onExpectationMaxStepsChange(steps);
+        });
+    }
+
+    // Steps and Utility G render as one section (Utility nests inside Steps, no separate
+    // section title) per the design mockup - Total Reward has been removed entirely.
+    _renderStepsAndUtility() {
         const simulationState = this.viewModel.simulationState;
         const stats = simulationState.getSimulationStats();
         const gamma = this.discountFactor;
@@ -696,136 +1052,34 @@ class RightPanel {
         const returnValue = rewardHistory.reduce((sum, reward, t) => sum + Math.pow(gamma, t) * reward, 0);
         const simStatElements = {};
 
-        // Steps
-        this.createSection('Steps', () => {
-            const stepsDiv = createDiv();
-            stepsDiv.parent(this.contentContainer);
-            const stepsValue = createDiv();
-            stepsValue.parent(stepsDiv);
-            stepsValue.addClass('panel-stat-value--large-primary');
-            stepsValue.html(this._formatCount(this.simStatDisplay.steps));
-            simStatElements.steps = stepsValue;
-        });
-
-        // Discount Factor (γ) Section
-        this.createSection('Discount Factor', () => {
-            const gammaContainer = createDiv();
-            gammaContainer.parent(this.contentContainer);
-            gammaContainer.addClass('panel-section-content');
-
-            const { slider, valueDisplay } = RightPanelBuilder.sliderRow(
-                gammaContainer, 0, 1, this.discountFactor, 0.01
-            );
-            valueDisplay.html(this.discountFactor.toFixed(2));
-
-            slider.input(() => {
-                this.discountFactor = slider.value();
-                valueDisplay.html(parseFloat(slider.value()).toFixed(2));
-            });
-        });
-
-        // Discounted return
         this.createSection('Utility', () => {
             const utilityDiv = createDiv();
             utilityDiv.parent(this.contentContainer);
-            utilityDiv.addClass('utility-hover-panel');
-            utilityDiv.attribute('tabindex', '0');
+            utilityDiv.addClass('panel-utility-inline');
+
+            const row = createDiv();
+            row.parent(utilityDiv);
+            row.addClass('panel-utility-row');
 
             const formula = createDiv();
-            formula.parent(utilityDiv);
-            formula.elt.innerHTML = renderKatex('G = \\sum_{t=0}^{T-1} \\gamma^t r_t', true);
+            formula.parent(row);
+            formula.elt.innerHTML = renderKatex('G = \\sum_t \\gamma^t \\cdot r_t');
             formula.addClass('panel-latex');
+            formula.addClass('panel-latex--inline');
 
             const utilityValue = createDiv();
-            utilityValue.parent(utilityDiv);
-            utilityValue.addClass('panel-stat-value--large');
+            utilityValue.parent(row);
+            utilityValue.addClass('panel-utility-value');
             utilityValue.html(this._formatAmount(this.simStatDisplay.utility));
             this._applyRewardColor(utilityValue, this.simStatDisplay.utility);
             simStatElements.utility = utilityValue;
 
-            const contributionEpsilon = 1e-9;
-            const nonZeroContributions = rewardHistory
-                .map((reward, t) => ({ reward, t, discounted: Math.pow(gamma, t) * reward }))
-                .filter(({ discounted }) => Math.abs(discounted) > contributionEpsilon);
+            this._renderContributionBar(utilityDiv, rewardHistory, gamma);
 
-            const timeline = createDiv();
-            timeline.parent(utilityDiv);
-            timeline.addClass('utility-time-cards');
-
-            if (rewardHistory.length === 0) {
-                const empty = createDiv('No rewards collected');
-                empty.parent(timeline);
-                empty.addClass('panel-empty');
-            } else if (nonZeroContributions.length === 0) {
-                const empty = createDiv('No non-zero contributions');
-                empty.parent(timeline);
-                empty.addClass('panel-empty');
-            } else {
-                nonZeroContributions.forEach(({ reward, t, discounted }) => {
-                    const cell = createDiv();
-                    cell.parent(timeline);
-                    cell.addClass('utility-time-card');
-
-                    const label = createDiv();
-                    label.parent(cell);
-                    label.addClass('utility-time-card-label');
-                    label.elt.innerHTML = renderKatex('t = ' + t, false);
-
-                    const term = createDiv();
-                    term.parent(cell);
-                    term.addClass('utility-time-card-term');
-                    term.elt.innerHTML = renderKatex('\\gamma^{' + t + '} \\times ' + reward.toFixed(2), false);
-
-                    const value = createDiv(discounted.toFixed(2));
-                    value.parent(cell);
-                    value.addClass('utility-time-card-value');
-                    this._applyRewardColor(value, discounted);
-                });
-            }
-        });
-
-        // Total Reward
-        this.createSection('Total Reward', () => {
-            const rewardDiv = createDiv();
-            rewardDiv.parent(this.contentContainer);
-            const rewardValue = createDiv();
-            rewardValue.parent(rewardDiv);
-            rewardValue.addClass('panel-stat-value--large');
-            rewardValue.html(this._formatAmount(this.simStatDisplay.totalReward));
-            this._applyRewardColor(rewardValue, this.simStatDisplay.totalReward);
-            simStatElements.totalReward = rewardValue;
-
-            // Horizontal reward bar
-            const barContainer = createDiv();
-            barContainer.parent(rewardDiv);
-            barContainer.addClass('reward-bar-container');
-
-            const barFill = createDiv();
-            barFill.parent(barContainer);
-            barFill.addClass('reward-bar-fill');
-
-            // Scale: map reward to 0-100% of half-width
-            // Clamp so the bar doesn't overflow
-            const maxReward = RP_REWARD_BAR_MAX;
-            const clampedReward = Math.max(-maxReward, Math.min(maxReward, stats.totalReward));
-            const pct = Math.abs(clampedReward) / maxReward * RP_REWARD_BAR_HALF_PCT;
-
-            if (stats.totalReward > 0) {
-                barFill.style('left', RP_REWARD_BAR_HALF_PCT + '%');
-                barFill.style('width', pct + '%');
-                barFill.style('background', AppPalette.reward.positiveBright);
-            } else if (stats.totalReward < 0) {
-                barFill.style('left', (RP_REWARD_BAR_HALF_PCT - pct) + '%');
-                barFill.style('width', pct + '%');
-                barFill.style('background', 'var(--reward-negative)');
-            } else {
-                barFill.style('width', '0%');
-            }
-
-            // Center line
-            const centerLine = createDiv();
-            centerLine.parent(barContainer);
-            centerLine.addClass('reward-bar-center');
+            const caption = createDiv('each block = one step’s discounted reward γᵗ·rₜ · red = negative');
+            caption.parent(utilityDiv);
+            caption.addClass('panel-hint');
+            caption.style('margin-top', '5px');
 
             this._animateSimulationStats({
                 steps: stats.stepCount,
@@ -833,7 +1087,149 @@ class RightPanel {
                 totalReward: stats.totalReward
             }, simStatElements);
         });
+    }
 
+    // Always-visible contribution bar: one colored block per non-zero reward step, block width
+    // proportional to the discounted magnitude |gamma^t * r_t| (not the raw reward), opacity
+    // fading as gamma^t shrinks, green/red by reward sign. A trailing gray flex block represents
+    // the remaining episode tail with no further reward.
+    _renderContributionBar(parentDiv, rewardHistory, gamma) {
+        // Empty-state text renders as a sibling, not inside the bar - the bar itself is a fixed
+        // height:12px/overflow:hidden strip and would clip a normal text line.
+        if (rewardHistory.length === 0) {
+            const empty = createDiv('No rewards collected');
+            empty.parent(parentDiv);
+            empty.addClass('panel-empty');
+            return;
+        }
+
+        const contributionEpsilon = 1e-9;
+        const nonZeroContributions = rewardHistory
+            .map((reward, t) => ({ reward, t, discounted: Math.pow(gamma, t) * reward }))
+            .filter(({ discounted }) => Math.abs(discounted) > contributionEpsilon);
+
+        if (nonZeroContributions.length === 0) {
+            const empty = createDiv('No non-zero contributions');
+            empty.parent(parentDiv);
+            empty.addClass('panel-empty');
+            return;
+        }
+
+        const bar = createDiv();
+        bar.parent(parentDiv);
+        bar.addClass('utility-contribution-bar');
+
+        const totalDiscountedMagnitude = nonZeroContributions.reduce((sum, c) => sum + Math.abs(c.discounted), 0) || 1;
+
+        nonZeroContributions.forEach(({ reward, t, discounted }) => {
+            const gammaT = Math.pow(gamma, t);
+            const blockWidthPct = (Math.abs(discounted) / totalDiscountedMagnitude) * 100;
+
+            const block = createDiv();
+            block.parent(bar);
+            block.addClass('utility-contribution-block');
+            block.style('width', blockWidthPct + '%');
+            block.style('background', reward >= 0 ? 'var(--reward-positive)' : 'var(--reward-negative)');
+            block.style('opacity', String(Math.max(0.35, gammaT)));
+            block.attribute('title',
+                `t=${t} · γ${this._toSuperscript(t)}·r${this._toSubscript(t)} = ${discounted >= 0 ? '+' : '−'}${Math.abs(discounted).toFixed(2)}`);
+        });
+
+        const remainder = createDiv();
+        remainder.parent(bar);
+        remainder.addClass('utility-contribution-remainder');
+        remainder.attribute('title', `t ≥ ${rewardHistory.length} · no more reward`);
+    }
+
+    _toSuperscript(n) {
+        const map = { '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴', '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹' };
+        return String(n).split('').map(c => map[c] || c).join('');
+    }
+
+    _toSubscript(n) {
+        const map = { '0': '₀', '1': '₁', '2': '₂', '3': '₃', '4': '₄', '5': '₅', '6': '₆', '7': '₇', '8': '₈', '9': '₉' };
+        return String(n).split('').map(c => map[c] || c).join('');
+    }
+
+    // "Estimate vs exact" comparison table: MC's per-state estimate alongside the active
+    // method's value, per state. Rendered once in both Values sub-views, after whichever panel
+    // (MC or Method) already rendered above it - comparison lives here (and in the convergence
+    // chart) rather than in a split canvas view.
+    _renderEstimateVsExact() {
+        const modelKnown = this.viewModel.modelKnown;
+        const observability = this.viewModel.observability;
+        const matrixKey = ValuesMethodMatrix.key(modelKnown, observability);
+        const shortLabels = { 'known:full': 'VI', 'unknown:full': 'LI', 'known:partial': 'BI', 'unknown:partial': 'PO-L' };
+        const shortLabel = shortLabels[matrixKey];
+
+        this.createSection('Estimate vs exact', () => {
+            const headerHint = createDiv(`MC | ${shortLabel}`);
+            headerHint.parent(this.contentContainer);
+            headerHint.addClass('panel-hint');
+            headerHint.style('margin-bottom', '6px');
+
+            const states = this.viewModel.graph.nodes.filter(n => n.type === 'state');
+            const viState = this.viewModel.valueIterationState;
+            const expectationState = this.expectationState;
+
+            const mcMeans = (expectationState && expectationState.computed) ? expectationState.getPerStateMeans() : {};
+            const finalCol = (viState && viState.initialized) ? viState.totalColumns - 1 : -1;
+
+            const table = document.createElement('table');
+            table.className = 'estimate-vs-exact-table';
+
+            const thead = document.createElement('thead');
+            const headerRow = document.createElement('tr');
+            ['state', 'MC', shortLabel].forEach(label => {
+                const th = document.createElement('th');
+                th.textContent = label;
+                headerRow.appendChild(th);
+            });
+            thead.appendChild(headerRow);
+            table.appendChild(thead);
+
+            const tbody = document.createElement('tbody');
+            states.forEach(stateNode => {
+                const tr = document.createElement('tr');
+
+                const tdName = document.createElement('td');
+                tdName.textContent = stateNode.name;
+                tr.appendChild(tdName);
+
+                const tdMC = document.createElement('td');
+                const mcVal = mcMeans[stateNode.id];
+                tdMC.textContent = (mcVal !== undefined) ? mcVal.toFixed(2) : '—';
+                tr.appendChild(tdMC);
+
+                const tdMethod = document.createElement('td');
+                if (finalCol >= 0) {
+                    const methodVal = observability === 'partial'
+                        ? ValuesMethodMatrix.beliefFor(viState, stateNode.id, finalCol).vOfB
+                        : (viState.getValues(finalCol)[stateNode.id] ?? 0);
+                    tdMethod.textContent = methodVal.toFixed(2);
+                } else {
+                    tdMethod.textContent = '—';
+                }
+                tr.appendChild(tdMethod);
+
+                tbody.appendChild(tr);
+            });
+            table.appendChild(tbody);
+
+            const tableContainer = createDiv();
+            tableContainer.parent(this.contentContainer);
+            tableContainer.addClass('estimate-vs-exact-scroll');
+            tableContainer.elt.appendChild(table);
+
+            // Belief/PO quadrants reuse VI's real numbers under an illustrative label - there is
+            // no separate "exact" value for those two quadrants beyond what VI already computes.
+            if (observability === 'partial') {
+                const hint = createDiv('Belief/PO values are illustrative — reuses the exact Value Iteration numbers under a simplified belief label.');
+                hint.parent(this.contentContainer);
+                hint.addClass('panel-hint');
+                hint.style('margin-top', '6px');
+            }
+        });
     }
 
     _renderQTable(container, viState, viViewModel, modelKnown = true) {
@@ -996,7 +1392,7 @@ class RightPanel {
     }
 
     _animateSimulationStats(targets, elements) {
-        if (!elements.steps || !elements.utility || !elements.totalReward) return;
+        if (!elements.utility) return;
 
         const starts = {
             steps: this.simStatDisplay.steps,
@@ -1007,11 +1403,13 @@ class RightPanel {
         const startTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
 
         const renderFrame = () => {
-            elements.steps.html(this._formatCount(this.simStatDisplay.steps));
+            if (elements.steps) elements.steps.html(this._formatCount(this.simStatDisplay.steps));
             elements.utility.html(this._formatAmount(this.simStatDisplay.utility));
-            elements.totalReward.html(this._formatAmount(this.simStatDisplay.totalReward));
             this._applyRewardColor(elements.utility, this.simStatDisplay.utility);
-            this._applyRewardColor(elements.totalReward, this.simStatDisplay.totalReward);
+            if (elements.totalReward) {
+                elements.totalReward.html(this._formatAmount(this.simStatDisplay.totalReward));
+                this._applyRewardColor(elements.totalReward, this.simStatDisplay.totalReward);
+            }
         };
 
         const tick = now => {
@@ -1333,73 +1731,22 @@ class RightPanel {
         const state = this.expectationState;
         const startNode = this.viewModel.startNode;
 
-        this.createSection('Discount Factor (γ)', () => {
+        // Matches Build/Policy's "Parameters" section exactly (same row layout, same slider
+        // styling) - but γ here is expectationState.gamma, MC's own distinct discount factor,
+        // not the shared this.discountFactor used by Build/Simulate/Value Iteration.
+        this.createSection('Parameters', () => {
             const container = createDiv();
             container.parent(this.contentContainer);
             container.addClass('panel-section-content');
 
-            const gammaLabel = createDiv();
-            gammaLabel.parent(container);
-            gammaLabel.addClass('panel-label');
-            gammaLabel.elt.innerHTML = `γ = <strong>${state ? state.gamma.toFixed(2) : '0.90'}</strong>`;
-
-            const gammaSlider = createElement('input');
-            gammaSlider.parent(container);
-            gammaSlider.attribute('type', 'range');
-            gammaSlider.attribute('min', '0');
-            gammaSlider.attribute('max', '1');
-            gammaSlider.attribute('step', '0.01');
-            gammaSlider.attribute('value', state ? String(state.gamma) : '0.9');
-            gammaSlider.style('width', '100%');
-            gammaSlider.input(() => {
-                const g = parseFloat(gammaSlider.value());
-                gammaLabel.elt.innerHTML = `γ = <strong>${g.toFixed(2)}</strong>`;
-                if (state) state.gamma = g;
-                if (this.callbacks.onExpectationGammaChange) this.callbacks.onExpectationGammaChange(g);
-            });
+            this._renderExpectationGammaSlider(container);
+            this._renderExpectationMaxStepsBar(container);
         });
 
-        this.createSection('Display Runs', () => {
-            const container = createDiv();
-            container.parent(this.contentContainer);
-            container.addClass('panel-section-content');
-
-            const runsSelect = createSelect();
-            runsSelect.parent(container);
-            runsSelect.addClass('panel-input');
-            ['4', '8', '16', '32', '64'].forEach(v => runsSelect.option(v, v));
-            if (state) runsSelect.selected(String(state.displayRuns));
-            runsSelect.changed(() => {
-                const runs = parseInt(runsSelect.value(), 10);
-                if (state) state.displayRuns = runs;
-                if (this.callbacks.onExpectationDisplayRunsChange) this.callbacks.onExpectationDisplayRunsChange(runs);
-            });
-        });
-
-        this.createSection('Max Steps', () => {
-            const container = createDiv();
-            container.parent(this.contentContainer);
-            container.addClass('panel-section-content');
-
-            const stepsInput = createElement('input');
-            stepsInput.parent(container);
-            stepsInput.attribute('type', 'number');
-            stepsInput.attribute('min', '1');
-            stepsInput.attribute('max', '1000');
-            stepsInput.attribute('value', state ? String(state.maxSteps) : '100');
-            stepsInput.addClass('panel-input');
-            stepsInput.style('width', '80px');
-            stepsInput.changed(() => {
-                const steps = parseInt(stepsInput.value(), 10);
-                if (!isNaN(steps) && steps >= 1 && steps <= 1000) {
-                    if (state) state.maxSteps = steps;
-                    if (this.callbacks.onExpectationMaxStepsChange) this.callbacks.onExpectationMaxStepsChange(steps);
-                }
-            });
-        });
+        this.renderInitialStateSection();
 
         if (!state || !state.computed || !startNode) {
-            const msg = createDiv('Set a start state in Simulate mode to compute rollouts.');
+            const msg = createDiv('Set an Initial State above to compute rollouts.');
             msg.parent(this.contentContainer);
             msg.addClass('panel-hint');
             msg.style('margin-top', '8px');
@@ -1430,7 +1777,7 @@ class RightPanel {
             summaryDiv.style('font-size', '11px');
             summaryDiv.style('color', AppPalette.text.secondary);
 
-            const hintDiv = createDiv('To change π, switch to Edit mode.');
+            const hintDiv = createDiv('To change π, switch to Build mode.');
             hintDiv.parent(container);
             hintDiv.style('font-size', '10px');
             hintDiv.style('color', AppPalette.text.muted);

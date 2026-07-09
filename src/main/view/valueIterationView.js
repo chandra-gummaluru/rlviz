@@ -88,20 +88,23 @@ class ValueIterationView {
         this.tween = new VITweenEngine();
         this._lastPhaseKey = null;
         this._lastVisibleColumnCount = 0;
-        // Accessors for the real right-panel width / top-bars height / toolbar height, so
-        // placeholder/status-strip layout stays correct even if those dimensions change (panel
-        // resize, spec dimension updates) instead of duplicating magic numbers here.
-        this.layout = layout || { getPanelWidth: () => 272, getTopOffset: () => 96, getBottomOffset: () => 54 };
+        // Accessors for the real right-panel width / top-bar height, so placeholder/status-strip
+        // layout stays correct even if those dimensions change (panel resize, spec dimension
+        // updates) instead of duplicating magic numbers here.
+        this.layout = layout || { getPanelWidth: () => 272, getTopOffset: () => 40, getBottomOffset: () => 40 };
     }
 
     get viState() {
         return this.viewModel.valueIterationState;
     }
 
-    // "Value Iteration" (teal, P known) vs "Learning Iteration" (purpleT, P unknown) accent set.
-    // Same shape as AppPalette.valueIteration; see AppPalette.js's learningIteration namespace.
+    // Resolves through the 2x2 method matrix (transition-model known/unknown x observability
+    // full/partial) instead of a 2-way modelKnown ternary - see valuesMethodMatrix.js.
+    // observability defaults to 'full' if unset (e.g. before the toggle exists), so this
+    // degrades safely to today's Value Iteration/Learning Iteration behavior.
     get viColors() {
-        return this.viewModel.modelKnown ? AppPalette.valueIteration : AppPalette.learningIteration;
+        const entry = ValuesMethodMatrix.resolve(this.viewModel.modelKnown, this.viewModel.observability);
+        return AppPalette[entry.paletteNamespace];
     }
 
     // "p = 0.80" (P known) vs "p = ?" (P unknown) for simple transition-probability labels.
@@ -234,10 +237,13 @@ class ValueIterationView {
 
         const isRevealed = this.viViewModel.isValueRevealed(colIdx, stateNode.id);
         const fillColor = isRevealed ? color(76, 175, 80, alpha) : color(200, 200, 200, alpha);
+        const isPartialObs = this.viewModel.observability === 'partial';
         fill(fillColor);
         stroke(60, 60, 60, alpha);
         strokeWeight(2);
+        if (isPartialObs) drawingContext.setLineDash([6, 5]);
         ellipse(stateNode.x, stateNode.y, r * 2, r * 2);
+        if (isPartialObs) drawingContext.setLineDash([]);
 
         if (s > 0.2) {
             // State name — plain text, not math
@@ -249,16 +255,32 @@ class ValueIterationView {
             text(stateNode.name, stateNode.x, stateNode.y - 6);
 
             if (isRevealed) {
-                const label = this.viewModel.modelKnown
-                    ? `V = ${stateNode.value.toFixed(2)}`
-                    : `Q̂ = ${stateNode.value.toFixed(2)}`;
-                mathRenderer.draw(drawingContext, label,
-                    stateNode.x, stateNode.y + 10,
-                    { color: this.viColors.result, em: 11, alpha, alignX: 'center', alignY: 'middle' });
+                if (isPartialObs) {
+                    const { b, vOfB } = this._beliefFor(stateNode.id, colIdx);
+                    mathRenderer.draw(drawingContext, `b = ${b.toFixed(2)}`,
+                        stateNode.x, stateNode.y + 8,
+                        { color: AppPalette.text.muted, em: 9, alpha, alignX: 'center', alignY: 'middle' });
+                    mathRenderer.draw(drawingContext, `V(b) = ${vOfB.toFixed(2)}`,
+                        stateNode.x, stateNode.y + 21,
+                        { color: this.viColors.result, em: 11, alpha, alignX: 'center', alignY: 'middle' });
+                } else {
+                    const label = this.viewModel.modelKnown
+                        ? `V = ${stateNode.value.toFixed(2)}`
+                        : `Q̂ = ${stateNode.value.toFixed(2)}`;
+                    mathRenderer.draw(drawingContext, label,
+                        stateNode.x, stateNode.y + 10,
+                        { color: this.viColors.result, em: 11, alpha, alignX: 'center', alignY: 'middle' });
+                }
             }
         }
 
         pop();
+    }
+
+    // See ValuesMethodMatrix.beliefFor - shared with rightPanel.js's Estimate-vs-exact table so
+    // both surfaces agree on the same illustrative number.
+    _beliefFor(stateId, colIdx) {
+        return ValuesMethodMatrix.beliefFor(this.viState, stateId, colIdx);
     }
 
     // --- Edge drawing for completed columns ---

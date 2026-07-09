@@ -9,8 +9,9 @@ class EdgeViewModel {
     }
 
     get color() {
-        // Simulation active: highlight current edge
-        if (this.interactionViewModel.mode === 'simulate' &&
+        // Simulation active: highlight current edge (Build/Policy - Policy's canvas is
+        // identical to Build's, only the right panel differs)
+        if ((this.interactionViewModel.mode === 'build' || this.interactionViewModel.mode === 'policy') &&
             this.simulationState &&
             this.simulationState.highlightedEdge) {
             const from = this.edge.getFromNode();
@@ -31,7 +32,34 @@ class EdgeViewModel {
             return this._getRewardColor();
         }
 
+        if (this.policyEdgeProbability !== null) {
+            return AppPalette.edge.policy;
+        }
+
         return AppPalette.edge.default;
+    }
+
+    // Probability (0-1) this state->action edge represents in the current policy, or null when
+    // not applicable (Values mode, non state->action edge, or the state's policy is untouched
+    // "uniform"). Build and Policy modes only. Deterministic policies return 1.0 for the chosen
+    // action and null for its siblings; weighted policies return each action's normalized share.
+    get policyEdgeProbability() {
+        if (this.interactionViewModel.mode !== 'build' && this.interactionViewModel.mode !== 'policy') return null;
+        if (!this.simulationState) return null;
+        const from = this.edge.getFromNode();
+        const to = this.edge.getToNode();
+        if (from.type !== 'state' || to.type !== 'action') return null;
+
+        const policyMode = this.simulationState.getPolicyMode(from.id);
+        if (policyMode === 'deterministic') {
+            return this.simulationState.getPolicyAction(from.id) === to.id ? 1.0 : null;
+        }
+        if (policyMode === 'weighted') {
+            const probs = this.simulationState._normalizedProbsForState(from.id, from.actions || []);
+            if (!probs) return null;
+            return probs.get(Number(to.id)) ?? null;
+        }
+        return null;
     }
 
     get isBidirectional() {

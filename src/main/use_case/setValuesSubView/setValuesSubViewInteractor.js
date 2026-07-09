@@ -1,7 +1,7 @@
 /**
  * Interactor for SetValuesSubView use case
  * Contains the business logic for switching between Values mode's sub-views
- * (Monte Carlo / Value Iteration / split compare)
+ * (Monte Carlo / Method)
  */
 class SetValuesSubViewInteractor extends SetValuesSubViewInputBoundary {
     /**
@@ -13,7 +13,7 @@ class SetValuesSubViewInteractor extends SetValuesSubViewInputBoundary {
             throw new Error("OutputBoundary is required");
         }
         this.outputBoundary = outputBoundary;
-        this.validSubViews = ['mc', 'vi', 'split'];
+        this.validSubViews = ['mc', 'vi'];
     }
 
     /**
@@ -35,7 +35,7 @@ class SetValuesSubViewInteractor extends SetValuesSubViewInputBoundary {
         if (!this.validSubViews.includes(subView)) {
             this.outputBoundary.present({
                 success: false,
-                error: `Invalid sub-view: ${inputData.subView}. Must be 'mc', 'vi', or 'split'`,
+                error: `Invalid sub-view: ${inputData.subView}. Must be 'mc' or 'vi'`,
                 subView: null
             });
             return;

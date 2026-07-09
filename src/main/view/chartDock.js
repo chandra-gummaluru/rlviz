@@ -198,10 +198,11 @@ class ChartDock {
         // category axis) so the hover marker below can place a vertical line at an arbitrary x.
         const datasets = [];
         if (viValues.length > 0) {
+            const methodEntry = ValuesMethodMatrix.resolve(this.viewModel.modelKnown, this.viewModel.observability);
             datasets.push({
-                label: 'V (VI)',
+                label: `V (${methodEntry.pillLabel})`,
                 data: viValues.map((y, x) => ({ x, y })),
-                borderColor: AppPalette.accent.teal,
+                borderColor: AppPalette.accent[methodEntry.accent],
                 borderWidth: 2, pointRadius: 0, tension: 0
             });
         }

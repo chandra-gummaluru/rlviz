@@ -15,6 +15,12 @@ class CanvasController {
         this.modeLifecycle = hooks;
     }
 
+    // Policy's canvas is identical to Build's (fully editable - only the right panel differs),
+    // so every structural-edit guard that used to allowlist 'build' alone now allowlists both.
+    _isEditableMode() {
+        return this.viewModel.mode === 'build' || this.viewModel.mode === 'policy';
+    }
+
     // ===== Mouse Input Handling =====
 
     handleMousePress(screenX, screenY) {
@@ -114,6 +120,16 @@ class CanvasController {
             return;
         }
 
+        // Handle text label resizing (font size) - label.y is the box's vertical center (see
+        // TextLabel.contains()), so the corner's vertical offset from center is fontSize/2;
+        // dragging the corner away from center grows the text, mirroring node resize's
+        // "distance from center" behavior.
+        if (this.viewModel.interaction.resizingTextLabel) {
+            const newFontSize = Math.max(8, Math.min(72, 2 * Math.abs(y - this.viewModel.interaction.resizingTextLabel.y)));
+            this.viewModel.interaction.resizingTextLabel.setFontSize(newFontSize);
+            return;
+        }
+
         // Handle edge label drag
         if (this.viewModel.interaction.draggingEdgeLabel) {
             const edge = this.viewModel.interaction.draggingEdgeLabel;
@@ -179,6 +195,26 @@ class CanvasController {
             }
 
             this.viewModel.interaction.resizingNode = null;
+            return;
+        }
+
+        // Handle text label resize end
+        if (this.viewModel.interaction.resizingTextLabel) {
+            const label = this.viewModel.interaction.resizingTextLabel;
+            const newFontSize = label.fontSize;
+
+            if (newFontSize !== this.viewModel.interaction.resizeStartFontSize) {
+                if (this.interactors.resizeNode) {
+                    const inputData = ResizeNodeInputData.forTextLabel(
+                        label.id,
+                        this.viewModel.interaction.resizeStartFontSize,
+                        newFontSize
+                    );
+                    this.interactors.resizeNode.resizeNode(inputData);
+                }
+            }
+
+            this.viewModel.interaction.resizingTextLabel = null;
             return;
         }
 
@@ -311,7 +347,7 @@ class CanvasController {
                 // Calculate center of canvas in world coordinates
                 // Canvas is full window width and height minus top bars
                 const canvasWidth = window.innerWidth;
-                const canvasHeight = window.innerHeight - 96; // menu bar (42px) + toolbar (54px)
+                const canvasHeight = window.innerHeight - 40; // top bar height
                 const screenCenterX = canvasWidth / 2;
                 const screenCenterY = canvasHeight / 2;
 
@@ -328,6 +364,13 @@ class CanvasController {
                 this.viewModel.interaction.clearEditorFocus();
             }
         }
+    }
+
+    // Drops whatever node/text label is currently being placed at its current position and
+    // returns to the select tool, without creating anything new. Used by the floating tool
+    // palette's Select button; equivalent to clicking the canvas mid-placement.
+    cancelPlacement() {
+        this._finishPlacement();
     }
 
     createEdge(fromId, toId, probability, reward) {
@@ -406,7 +449,7 @@ class CanvasController {
 
     pasteCopiedNode() {
         if (!this.copiedNodeData ||
-            this.viewModel.mode !== 'editor' ||
+            !this._isEditableMode() ||
             this.viewModel.interaction.isInteracting()) {
             return false;
         }
@@ -460,8 +503,8 @@ class CanvasController {
         }
     }
 
-    // Switches the sub-view shown within Values mode ('mc' | 'vi' | 'split'). Does not itself
-    // change the top-level mode — callers should call setMode('values') first if needed.
+    // Switches the sub-view shown within Values mode ('mc' | 'vi'). Does not itself change the
+    // top-level mode — callers should call setMode('values') first if needed.
     setValuesSubView(subView) {
         const prevSubView = this.viewModel.valuesSubView;
         const isRealTransition = prevSubView !== subView;
@@ -487,6 +530,13 @@ class CanvasController {
         this.viewModel.modelKnown = !!known;
     }
 
+    // Toggles the second method-matrix axis: 'full' or 'partial' observability. Same
+    // presentation-tier pattern as setModelKnown - no domain change here. Consumption (dashed
+    // partially-observable nodes, selecting Belief Iteration / PO Q-Learning) is a later phase.
+    setObservability(value) {
+        this.viewModel.observability = value === 'partial' ? 'partial' : 'full';
+    }
+
     // Presentation-layer manual override for a displayed Q-value, used only while
     // modelKnown === false (editable Q-table). Bypasses the Command/undo pattern, matching the
     // existing setTransitionProbability/setTransitionReward precedent for lightweight edits.
@@ -495,6 +545,25 @@ class CanvasController {
         if (!viState) return;
         if (!isFinite(value)) return;
         viState.manualOverrides[`${stateId}:${actionId}`] = value;
+    }
+
+    // Sets (or, when actionId is null/undefined, clears back to "random") the policy action
+    // for a state. Shared by Build's Policy π section, Simulate's trace generation, and Monte
+    // Carlo's policy snapshot - simulationState.policy remains the single source of truth.
+    setPolicyAction(stateId, actionId) {
+        this.viewModel.simulationState.setPolicyAction(stateId, actionId);
+    }
+
+    // Seeds a state's weighted-random policy with equal starting weights across actionIds -
+    // called once when a state is first switched to Random mode in Policy mode's inspector.
+    initPolicyWeightsUniform(stateId, actionIds) {
+        this.viewModel.simulationState.initPolicyWeightsUniform(stateId, actionIds);
+    }
+
+    // Sets one action's raw weight within a state's weighted-random policy (Policy mode's
+    // per-action sliders) - see SimulationState.setPolicyWeight for normalization semantics.
+    setPolicyWeight(stateId, actionId, value) {
+        this.viewModel.simulationState.setPolicyWeight(stateId, actionId, value);
     }
 
     /**
@@ -585,25 +654,29 @@ class CanvasController {
     }
 
     _handleDoubleClick(node) {
-        if (this.viewModel.mode === 'editor') {
+        if (this._isEditableMode()) {
             this.viewModel.interaction.setEditorFocus(node, this.viewModel.graph);
-            return;
-        } else if (this.viewModel.mode === 'simulate') {
-            // Set as start node and center camera
-            this.viewModel.interaction.startNode = node;
-            // Signal MainView to center on node
-            this.viewModel.interaction.shouldCenterOnNode = true;
-            this.viewModel.interaction.nodeToCenterOn = node;
         }
     }
 
     _handleTextLabelClick(label, x, y) {
         this.preferLastClickedNodeForCopy = false;
 
-        // Select and start dragging
+        // Select (works in any mode reaching here) and start dragging/resizing (Build/Policy
+        // only - structural edit; Values' canvas never dispatches here at all).
         if (this.interactors.selectNode) {
             const inputData = SelectNodeInputData.forTextLabel(label.id);
             this.interactors.selectNode.select(inputData);
+        }
+
+        if (!this._isEditableMode()) return;
+
+        // Clicking the bottom-right corner resizes (font size) instead of dragging - mirrors
+        // _handleNodeClick's isClickOnNodeEdge check.
+        if (GeometricHelper.isClickOnTextLabelCorner(label, x, y)) {
+            this.viewModel.interaction.resizingTextLabel = label;
+            this.viewModel.interaction.resizeStartFontSize = label.fontSize;
+            return;
         }
 
         this.viewModel.interaction.draggingTextLabel = label;
@@ -619,7 +692,7 @@ class CanvasController {
         this.viewModel.selection.selectedTextLabel = null;
         this.viewModel.selection.selectedNodeNameLabel = node;
 
-        if (this.viewModel.mode === 'editor') {
+        if (this._isEditableMode()) {
             this.viewModel.interaction.draggingNodeNameLabel = node;
             this.viewModel.interaction.dragStartX = x;
             this.viewModel.interaction.dragStartY = y;
@@ -633,7 +706,9 @@ class CanvasController {
     _handleEdgeLabelClick(edge, x, y) {
         this.preferLastClickedNodeForCopy = false;
 
-        // Start dragging edge label (doesn't select the edge)
+        // Start dragging edge label (doesn't select the edge) - Build/Policy only, structural edit.
+        if (!this._isEditableMode()) return;
+
         this.viewModel.interaction.draggingEdgeLabel = edge;
         this.viewModel.interaction.dragStartX = x;
         this.viewModel.interaction.dragStartY = y;
@@ -659,8 +734,8 @@ class CanvasController {
         this.lastClickedNodeForCopy = node;
         this.preferLastClickedNodeForCopy = true;
 
-        // Check if clicking on edge of node (for resizing) in editor mode
-        if (this.viewModel.mode === 'editor' &&
+        // Check if clicking on edge of node (for resizing) in build/policy mode
+        if (this._isEditableMode() &&
             GeometricHelper.isClickOnNodeEdge(node, x, y)) {
             this.viewModel.interaction.resizingNode = node;
             this.viewModel.interaction.resizeStartSize = node.getSize();
@@ -670,7 +745,7 @@ class CanvasController {
 
         // Check for edge creation before dragging
         const selectedNode = this.viewModel.selection.selectedNode;
-        if (selectedNode && selectedNode !== node && this.viewModel.mode === 'editor') {
+        if (selectedNode && selectedNode !== node && this._isEditableMode()) {
             // Different node already selected - check if we can create an edge
             if (selectedNode.type !== node.type) {
                 // Compatible types for edge creation
@@ -686,8 +761,8 @@ class CanvasController {
         }
         this.preferLastClickedNodeForCopy = false;
 
-        // Start dragging (in editor mode)
-        if (this.viewModel.mode === 'editor') {
+        // Start dragging (in build/policy mode)
+        if (this._isEditableMode()) {
             this.viewModel.interaction.startDrag(node, x, y);
 
             if (this.interactors.moveNode) {
@@ -703,6 +778,7 @@ class CanvasController {
         // Clear all interaction states when clicking empty canvas
         this.viewModel.interaction.clearEditorFocus();
         this.viewModel.interaction.resizingNode = null;
+        this.viewModel.interaction.resizingTextLabel = null;
         this.viewModel.interaction.draggingNode = null;
         this.viewModel.interaction.draggingTextLabel = null;
         this.viewModel.interaction.draggingNodeNameLabel = null;
@@ -716,11 +792,6 @@ class CanvasController {
     }
 
     _handleNodeClickForEdge(clickedNode) {
-        // In simulate mode, don't create edges
-        if (this.viewModel.mode === 'simulate') {
-            return;
-        }
-
         const selectedNode = this.viewModel.selection.selectedNode;
 
         if (!selectedNode) {

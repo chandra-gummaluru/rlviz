@@ -39,7 +39,7 @@ class SimulationAnimator {
             return false;
         }
 
-        const visited = this.traceGenerator.generate(startNode, 50, this.simulationState.policy);
+        const visited = this.traceGenerator.generate(startNode, 50, this.simulationState.policy, this.simulationState.policyWeights);
         this.simulationState.setTrace(visited);
         return true;
     }
@@ -235,7 +235,7 @@ class SimulationAnimator {
             return;
         }
 
-        this.simulationState.initStateSpinningArrow(actionIds, targetActionId);
+        this.simulationState.initStateSpinningArrow(actionIds, targetActionId, stateNodeInGraph.id);
         this.simulationState.setPhase('state_spinning_arrow', this.simulationState.spinningArrowDuration);
         this.outputBoundary.presentPhaseChange('state_spinning_arrow', this.simulationState.spinningArrowDuration);
         await this.waitForPhase();

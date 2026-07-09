@@ -41,6 +41,12 @@ class CanvasViewModel {
         // presentation-tier: the graph's real transition probabilities don't change, only what
         // the UI claims to know/show.
         this.modelKnown = true;
+
+        // Whether the current method-matrix quadrant presents as fully observable ('full') or
+        // partially observable ('partial') - the second axis alongside modelKnown, together
+        // selecting Value Iteration / Learning Iteration / Belief Iteration / PO Q-Learning.
+        // Presentation-tier only, same as modelKnown; consumption lives in a later phase.
+        this.observability = 'full';
     }
 
     // Factory methods for creating presentation view models
@@ -121,6 +127,7 @@ class CanvasViewModel {
     updateUndoRedoState(canUndo, canRedo) {
         this.canUndoFlag = canUndo;
         this.canRedoFlag = canRedo;
+        if (this._onUndoRedoChange) this._onUndoRedoChange(canUndo, canRedo);
     }
 
     canUndo() {

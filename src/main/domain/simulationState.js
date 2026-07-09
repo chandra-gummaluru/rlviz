@@ -33,6 +33,12 @@ class SimulationState {
         // Policy settings: stateId -> selected actionId. Missing entries use random action selection.
         this.policy = {};
 
+        // Weighted-random policy settings: stateId -> {actionId: rawWeight}. Raw slider values,
+        // not forced to sum to 1 - consumers (sampling, decision-prob display, spinning arrow)
+        // normalize by dividing by the sum wherever the numbers are actually used. Mutually
+        // exclusive with `policy` per state - see getPolicyMode().
+        this.policyWeights = {};
+
         // Spinning arrow animation settings
         this.spinningArrowEnabled = true;  // Toggle for spinning arrow animation (on by default)
         this.spinningArrowDuration = 1500;  // Duration in milliseconds (computed dynamically)
@@ -268,14 +274,16 @@ class SimulationState {
         if (!stateNode || stateNode.type !== 'state') return;
 
         const availableActions = stateNode.actions || [];
+        const weightedProbs = this._normalizedProbsForState(stateNode.id, availableActions);
         const uniformProb = availableActions.length > 0 ? 1.0 / availableActions.length : 0;
 
         availableActions.forEach(actionId => {
             const actionNode = graph.getNodeById(actionId);
             if (actionNode) {
+                const probability = weightedProbs ? (weightedProbs.get(Number(actionId)) ?? 0) : uniformProb;
                 this.currentDecisionProbs.push({
                     actionName: actionNode.name,
-                    probability: uniformProb
+                    probability
                 });
             }
         });
@@ -348,10 +356,71 @@ class SimulationState {
             return;
         }
         this.policy[stateId] = actionId;
+        delete this.policyWeights[stateId];
     }
 
     getPolicyAction(stateId) {
         return this.policy[stateId] ?? null;
+    }
+
+    // Tri-state read of a state's policy configuration - 'deterministic' (policy[stateId] set),
+    // 'weighted' (policyWeights[stateId] set, explicit Random distribution), or 'uniform'
+    // (neither set - today's default random-among-available-actions behavior).
+    getPolicyMode(stateId) {
+        if (this.policy[stateId] !== undefined && this.policy[stateId] !== null) return 'deterministic';
+        if (this.policyWeights[stateId] !== undefined) return 'weighted';
+        return 'uniform';
+    }
+
+    // Seeds an equal starting weight for every action the first time a state switches to
+    // Random-with-weights mode (e.g. clicking "Random" in Policy mode) - individual weights are
+    // then adjusted one at a time via setPolicyWeight().
+    initPolicyWeightsUniform(stateId, actionIds) {
+        const n = actionIds.length;
+        if (n === 0) return;
+        const weights = {};
+        actionIds.forEach(actionId => { weights[actionId] = 1 / n; });
+        this.policyWeights[stateId] = weights;
+        delete this.policy[stateId];
+    }
+
+    // Sets one action's raw weight (0-1) within a state's Random distribution, leaving the
+    // other actions' weights untouched - sampling/display normalize by dividing by the sum
+    // wherever the numbers are used, so this doesn't need to rebalance anything itself.
+    setPolicyWeight(stateId, actionId, value) {
+        const clamped = Math.max(0, Math.min(1, value));
+        if (!this.policyWeights[stateId]) this.policyWeights[stateId] = {};
+        this.policyWeights[stateId][actionId] = clamped;
+        delete this.policy[stateId];
+    }
+
+    getPolicyWeights(stateId) {
+        return this.policyWeights[stateId] ?? null;
+    }
+
+    // Normalized (sum-to-1), Number()-keyed probabilities for a state's weighted policy,
+    // filtered to actionIds still present on the state (stale/deleted actions are silently
+    // dropped rather than crashing or under-sampling). Returns null when the state isn't in
+    // 'weighted' mode. Shared by setDecisionProbs() and initStateSpinningArrow().
+    _normalizedProbsForState(stateId, validActionIds) {
+        if (this.getPolicyMode(stateId) !== 'weighted') return null;
+        const weights = this.policyWeights[stateId];
+        const validIds = new Set(validActionIds.map(Number));
+
+        let sum = 0;
+        const entries = [];
+        Object.entries(weights).forEach(([actionId, weight]) => {
+            const numericId = Number(actionId);
+            if (!validIds.has(numericId)) return;
+            sum += weight;
+            entries.push([numericId, weight]);
+        });
+
+        if (entries.length === 0 || sum <= 0) return null;
+
+        const probs = new Map();
+        entries.forEach(([actionId, weight]) => probs.set(actionId, weight / sum));
+        return probs;
     }
 
     // Spinning arrow animation methods
@@ -406,11 +475,15 @@ class SimulationState {
 
     }
 
-    initStateSpinningArrow(actionIds, targetActionId) {
+    // stateId is optional - when provided and that state has an explicit weighted Random
+    // policy, the arrow's per-action probabilities reflect the configured weights instead of
+    // uniform 1/n.
+    initStateSpinningArrow(actionIds, targetActionId, stateId) {
         const n = actionIds.length;
         if (n === 0) return;
+        const weightedProbs = stateId !== undefined ? this._normalizedProbsForState(stateId, actionIds) : null;
         const edges = actionIds.map(actionId => ({
-            probability: 1 / n,
+            probability: weightedProbs ? (weightedProbs.get(Number(actionId)) ?? 0) : 1 / n,
             targetId: actionId
         }));
         const targetIndex = actionIds.findIndex(actionId => Number(actionId) === Number(targetActionId));

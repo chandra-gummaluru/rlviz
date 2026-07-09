@@ -1,7 +1,7 @@
 
 /**
  * Interactor for SetMode use case
- * Contains the business logic for switching between editor and simulate modes
+ * Contains the business logic for switching between build, policy, and values modes
  */
 class SetModeInteractor extends SetModeInputBoundary {
     /**
@@ -13,7 +13,7 @@ class SetModeInteractor extends SetModeInputBoundary {
             throw new Error("OutputBoundary is required");
         }
         this.outputBoundary = outputBoundary;
-        this.validModes = ['editor', 'simulate', 'values'];
+        this.validModes = ['build', 'policy', 'values'];
     }
 
     /**
@@ -38,7 +38,7 @@ class SetModeInteractor extends SetModeInputBoundary {
         if (!this.validModes.includes(mode)) {
             const responseModel = {
                 success: false,
-                error: `Invalid mode: ${inputData.mode}. Must be 'editor', 'simulate', or 'values'`,
+                error: `Invalid mode: ${inputData.mode}. Must be 'build', 'policy', or 'values'`,
                 mode: null
             };
             this.outputBoundary.present(responseModel);

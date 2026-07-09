@@ -9,9 +9,11 @@ class TraceGenerator {
      * @param {Object} startNode - The starting state node
      * @param {number} maxSteps - Maximum number of nodes in the trace
      * @param {Object} policy - Optional stateId -> actionId map. Missing entries use random actions.
+     * @param {Object} policyWeights - Optional stateId -> {actionId: rawWeight} map for explicit
+     *   weighted-random policies. Consulted only for states with no deterministic policy entry.
      * @returns {Array} visited - Array of {id, type, name} objects representing the path
      */
-    generate(startNode, maxSteps = 50, policy = {}) {
+    generate(startNode, maxSteps = 50, policy = {}, policyWeights = {}) {
         if (!startNode) {
             throw new Error('Start node is required');
         }
@@ -31,8 +33,9 @@ class TraceGenerator {
             stepCount++;
 
             if (current.type === 'state') {
-                // From state: follow selected policy action when present; otherwise pick random action
-                const nextAction = this.selectActionForPolicy(current, policy);
+                // From state: follow selected policy action when present; otherwise sample by
+                // the state's weighted policy if configured, else uniform random.
+                const nextAction = this.selectActionForPolicy(current, policy, policyWeights);
                 if (!nextAction) {
                     break;  // Terminal state
                 }
@@ -54,9 +57,10 @@ class TraceGenerator {
     }
 
     /**
-     * Select an action from a state using a deterministic policy when available.
+     * Select an action from a state using a deterministic policy when available, else a
+     * weighted-random policy when configured, else uniform random.
      */
-    selectActionForPolicy(stateNode, policy = {}) {
+    selectActionForPolicy(stateNode, policy = {}, policyWeights = {}) {
         if (!stateNode.actions || stateNode.actions.length === 0) {
             return null;
         }
@@ -71,22 +75,43 @@ class TraceGenerator {
             }
         }
 
-        return this.selectRandomAction(stateNode);
+        return this.selectRandomAction(stateNode, policyWeights[stateNode.id]);
     }
 
     /**
-     * Select a random action from a state node's available actions
+     * Select a random action from a state node's available actions. When `weights` (a
+     * {actionId: rawWeight} map, not necessarily normalized) is provided, samples using the
+     * same weighted cumulative-threshold technique as selectRandomNextState below - actions no
+     * longer present on the state are silently dropped rather than sampled or crashing. Falls
+     * back to uniform-by-index when weights is absent/empty/all-invalid.
      */
-    selectRandomAction(stateNode) {
+    selectRandomAction(stateNode, weights) {
         if (!stateNode.actions || stateNode.actions.length === 0) {
             return null;  // No actions available
         }
 
-        // Get random action ID
+        if (weights) {
+            const validIds = new Set(stateNode.actions.map(Number));
+            const cumulative = [];
+            let sum = 0;
+            Object.entries(weights).forEach(([actionId, weight]) => {
+                const numericId = Number(actionId);
+                if (!validIds.has(numericId) || weight <= 0) return;
+                sum += weight;
+                cumulative.push({ actionId: numericId, threshold: sum });
+            });
+
+            if (cumulative.length > 0 && sum > 0) {
+                const rand = Math.random() * sum;
+                const picked = cumulative.find(entry => rand <= entry.threshold) || cumulative[cumulative.length - 1];
+                const actionNode = this.graph.nodes.find(n => n.type === 'action' && n.id === picked.actionId);
+                if (actionNode) return actionNode;
+            }
+        }
+
+        // Uniform fallback
         const randomIndex = Math.floor(Math.random() * stateNode.actions.length);
         const actionId = stateNode.actions[randomIndex];
-
-        // Find the action node
         const actionNode = this.graph.nodes.find(n => n.type === 'action' && n.id === actionId);
         return actionNode;
     }

@@ -55,7 +55,6 @@ const AppPaletteLight = (function () {
         light:     '#F5F5F5',
         card:      '#F9F9F9',
         frame:     '#FFFFFF',
-        bar:       '#000000', // preserved: current menubar is literal black
         toolbar:   '#F5F5F5',
         panel:     '#FFFFFF',
         dock:      '#F9F9F9',
@@ -109,7 +108,8 @@ const AppPaletteLight = (function () {
             default:      '#666666',
             highlighted:  '#FF5722',
             selectedText: '#FFC107',
-            label:        '#505050'
+            label:        '#505050',
+            policy:       '#1b1b1b'
         },
         reward: {
             positive:       '#2E7D32',
@@ -135,6 +135,16 @@ const AppPaletteLight = (function () {
             result:          '#74489E',
             badge:           '#74489E',
             actionBlue:      '#9A72AC',
+            highlightYellow: '#FFF03C'
+        },
+        // Belief Iteration / PO Q-Learning (partial observability) - same shape as
+        // valueIteration/learningIteration; shares one accent (yellow) across both quadrants of
+        // this axis, unlike the known/unknown axis's teal/purpleT split.
+        partialObservability: {
+            best:            accent.yellow,
+            result:          accent.yellow,
+            badge:           accent.yellow,
+            actionBlue:      accent.yellow,
             highlightYellow: '#FFF03C'
         },
         simulation: {
@@ -210,7 +220,6 @@ const AppPaletteDark = (function () {
         light:     '#202025',
         card:      '#1e1e23',
         frame:     '#161616',
-        bar:       '#1b1b1f',
         toolbar:   '#19191d',
         panel:     '#1b1b1f',
         dock:      '#17171b',
@@ -254,20 +263,21 @@ const AppPaletteDark = (function () {
         surface,
         border,
         node: {
-            state:         text.primary,
-            action:        text.subtle,
+            state:         text.subtle,
+            action:        text.muted,
             selected:      accent.yellow,
             held:          accent.green,
             activeInitial: accent.orange,
-            badgeState:    text.primary,
-            badgeAction:   text.subtle,
+            badgeState:    text.subtle,
+            badgeAction:   text.muted,
             startRing:     accent.yellow
         },
         edge: {
             default:      accent.edgeGray,
             highlighted:  accent.orange,
             selectedText: accent.yellow,
-            label:        text.muted
+            label:        text.muted,
+            policy:       '#f2f2f4'
         },
         reward: {
             positive:       accent.green,
@@ -291,6 +301,16 @@ const AppPaletteDark = (function () {
             result:          text.secondary,
             badge:           text.secondary,
             actionBlue:      text.secondary,
+            highlightYellow: accent.yellow
+        },
+        // Belief Iteration / PO Q-Learning (partial observability) - same shape as
+        // valueIteration/learningIteration; shares one accent (yellow) across both quadrants of
+        // this axis, unlike the known/unknown axis's teal/purpleT split.
+        partialObservability: {
+            best:            accent.yellow,
+            result:          accent.yellow,
+            badge:           accent.yellow,
+            actionBlue:      accent.yellow,
             highlightYellow: accent.yellow
         },
         simulation: {
@@ -354,10 +374,7 @@ function applyPaletteCssVars(rootElement) {
         '--reward-zero':     p.reward.zero,
 
         // Chrome / layout surfaces, previously CSS-only, hardcoded, or missing entirely.
-        '--bg-black':      p.surface.bar,
-        '--bg-dark':       p.surface.bar,
         '--bg-dark-hover': p.surface.hover,
-        '--surface-bar':      p.surface.bar,
         '--surface-toolbar':  p.surface.toolbar,
         '--surface-panel':    p.surface.panel,
         '--surface-dock':     p.surface.dock,
@@ -390,9 +407,11 @@ function applyPaletteCssVars(rootElement) {
         '--font-family-mono': p.typography.mono,
         '--font-family-math': p.typography.math,
 
-        '--radius-frame': p.shape.frameRadius + 'px',
-        '--radius-btn':   p.shape.buttonRadius + 'px',
-        '--radius-card':  p.shape.cardRadius + 'px'
+        '--radius-frame':     p.shape.frameRadius + 'px',
+        '--radius-btn':       p.shape.buttonRadius + 'px',
+        '--radius-card':      p.shape.cardRadius + 'px',
+        '--radius-seg-track': p.shape.segTrack + 'px',
+        '--radius-seg-thumb': p.shape.segThumb + 'px'
     };
     Object.entries(vars).forEach(function (entry) {
         rootElement.style.setProperty(entry[0], entry[1]);
@@ -402,7 +421,7 @@ function applyPaletteCssVars(rootElement) {
 const AppPalette = {
     light: AppPaletteLight,
     dark: AppPaletteDark,
-    current: 'dark',
+    current: 'light',
     _onThemeChange: null, // late-bound by main.js once mainView/rightPanel exist
 
     getTheme() {
@@ -432,4 +451,4 @@ const AppPalette = {
 
 let savedTheme = null;
 try { savedTheme = localStorage.getItem('rlviz-theme'); } catch (e) { /* storage unavailable */ }
-AppPalette.setTheme(savedTheme === 'light' ? 'light' : 'dark');
+AppPalette.setTheme(savedTheme === 'dark' ? 'dark' : 'light');

@@ -8,8 +8,9 @@ class NodeViewModel {
     }
 
     get color() {
-        // Simulation active: highlight current node only
-        if (this.interactionViewModel.mode === 'simulate' &&
+        // Simulation active: highlight current node only (Build/Policy - Policy's canvas is
+        // identical to Build's, only the right panel differs)
+        if ((this.interactionViewModel.mode === 'build' || this.interactionViewModel.mode === 'policy') &&
             this.simulationState &&
             this.simulationState.replayInitialized) {
             const currentNode = this.simulationState.currentNode;
@@ -30,7 +31,7 @@ class NodeViewModel {
     }
 
     get isVisible() {
-        if (this.interactionViewModel.mode === 'simulate' &&
+        if ((this.interactionViewModel.mode === 'build' || this.interactionViewModel.mode === 'policy') &&
             this.simulationState &&
             this.simulationState.replayInitialized) {
             return this.simulationState.isNodeVisible(this.node.id);

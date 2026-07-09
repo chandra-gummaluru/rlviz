@@ -15,7 +15,7 @@ class VIPresenter extends VIOutputBoundary {
     constructor(canvasViewModel) {
         super();
         this.viewModel = canvasViewModel;
-        this.toolBar = null;
+        this.topBar = null;
     }
 
     get viViewModel() {
@@ -26,8 +26,8 @@ class VIPresenter extends VIOutputBoundary {
         return this.viewModel.valueIterationState;
     }
 
-    setToolBar(toolBar) {
-        this.toolBar = toolBar;
+    setTopBar(topBar) {
+        this.topBar = topBar;
     }
 
     setRightPanel(rightPanel) {
@@ -425,10 +425,10 @@ class VIPresenter extends VIOutputBoundary {
 
     _updateButtonStates() {
         if (this.viewModel.interaction.mode === 'values' && this.viewModel.valuesSubView === 'mc') return;
-        if (this.toolBar) {
+        if (this.topBar) {
             const viState = this.viewModel.valueIterationState;
             if (viState) {
-                this.toolBar.updateVIButtonStates(viState.isPlaying, viState.canAdvance());
+                this.topBar.updateVIButtonStates(viState.isPlaying, viState.canAdvance());
             }
         }
     }

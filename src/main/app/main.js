@@ -90,9 +90,12 @@ const canvasController = new CanvasController(canvasViewModel, {
 
 // View instances (will be set in setup)
 let mainView;
-let menuBar;
-let toolBar;
+let topBar;
 let rightPanel;
+let toolPalette;
+let zoomPill;
+let estimatorPill;
+let mcRunsPill;
 
 // Simulation Presenter (needs ViewModel and MainView references, created in setup)
 let simulationPresenter;
@@ -114,30 +117,49 @@ let viSkipInteractor;
 // Callbacks
 const onStateClick = () => {
     canvasController.startNodePlacement('state');
+    if (toolPalette) toolPalette.updateActiveTool(canvasViewModel.interaction.placingMode);
     redraw();
 };
 
 const onActionClick = () => {
     canvasController.startNodePlacement('action');
+    if (toolPalette) toolPalette.updateActiveTool(canvasViewModel.interaction.placingMode);
     redraw();
 };
 
 const onTextBoxClick = () => {
     canvasController.startNodePlacement('textbox');
+    if (toolPalette) toolPalette.updateActiveTool(canvasViewModel.interaction.placingMode);
     redraw();
 };
 
-const onImportGraph = () => {
+const onSelectTool = () => {
+    canvasController.cancelPlacement();
+    if (toolPalette) toolPalette.updateActiveTool(canvasViewModel.interaction.placingMode);
+    redraw();
+};
+
+// ===== Filename menu: New/Open/Save/Export PNG/recent files =====
+
+const onNewGraph = () => {
+    if (confirm('Start a new graph? Unsaved changes will be lost.')) {
+        location.reload();
+    }
+};
+
+const onOpenGraph = () => {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = '.json';
     input.onchange = (e) => {
         const file = e.target.files[0];
+        if (!file) return;
         const reader = new FileReader();
         reader.onload = (event) => {
-            // Pass the JSON string directly to importGraph
-            // The interactor will handle parsing and validation
-            canvasController.importGraph(event.target.result);
+            const json = event.target.result;
+            canvasController.importGraph(json);
+            if (topBar) topBar.setFilename(file.name);
+            RecentFiles.add({ name: file.name, json });
             if (rightPanel) rightPanel.updateContent();
             redraw();
         };
@@ -146,38 +168,68 @@ const onImportGraph = () => {
     input.click();
 };
 
-const onExportGraph = () => {
-    // Get the serialized graph
+const onSaveGraph = () => {
     const json = canvasController.exportGraph(true);
-
     if (!json) {
-        console.error('Export failed: no data returned from exportGraph');
-        alert('Export failed: could not serialize graph');
+        console.error('Save failed: no data returned from exportGraph');
+        alert('Save failed: could not serialize graph');
         return;
     }
 
-    // Create a blob from the JSON string
+    const filename = (topBar && topBar.currentFilename) || 'gridworld.mdp';
     const blob = new Blob([json], { type: 'application/json' });
-
-    // Create a download link
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-
-    // Generate filename with timestamp
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-    link.download = `mdp-graph-${timestamp}.json`;
-
-    // Trigger download
+    link.download = filename;
     link.click();
-
-    // Clean up
     URL.revokeObjectURL(url);
+
+    RecentFiles.add({ name: filename, json });
+};
+
+const onExportPNG = () => {
+    if (!mainView || !mainView.canvas) return;
+    const dataUrl = mainView.canvas.elt.toDataURL('image/png');
+    const filename = (topBar && topBar.currentFilename) || 'gridworld';
+    const link = document.createElement('a');
+    link.href = dataUrl;
+    link.download = `${filename.replace(/\.[a-zA-Z0-9]+$/, '')}.png`;
+    link.click();
+};
+
+const getRecentFiles = () => RecentFiles.list();
+
+const onOpenRecent = (entry) => {
+    canvasController.importGraph(entry.json);
+    if (topBar) topBar.setFilename(entry.name);
+    if (rightPanel) rightPanel.updateContent();
+    redraw();
+};
+
+// ===== Parameters popover: P known/unknown, observability =====
+
+const onModelKnownToggle = (known) => {
+    canvasController.setModelKnown(known);
+    if (topBar) topBar.refreshParameters();
+    if (rightPanel) rightPanel.updateContent();
+    if (mainView && mainView.chartDock) mainView.chartDock.refresh();
+    if (estimatorPill) estimatorPill.refresh();
+    redraw();
+};
+
+const onObservabilityToggle = (value) => {
+    canvasController.setObservability(value);
+    if (topBar) topBar.refreshParameters();
+    if (estimatorPill) estimatorPill.refresh();
+    if (rightPanel) rightPanel.updateContent();
+    if (mainView && mainView.chartDock) mainView.chartDock.refresh();
+    redraw();
 };
 
 // ===== Values-mode sub-view lifecycle (registered on canvasController below) =====
-// mc/split entry: pause other playback, run MC rollouts, set up the scrubber. Mirrors what
-// entering the old standalone 'expectation' mode used to do.
+// mc entry: pause other playback, run MC rollouts, set up the scrubber. Mirrors what entering
+// the old standalone 'expectation' mode used to do.
 function enterMCSubView() {
     if (simulationState.isPlaying && pauseInteractor) {
         pauseInteractor.execute(new PauseInputData());
@@ -198,7 +250,8 @@ function enterMCSubView() {
             Object.assign({}, simulationState.policy),
             expectationState.displayRuns,
             expectationState.maxSteps,
-            expectationState.gamma
+            expectationState.gamma,
+            Object.assign({}, simulationState.policyWeights)
         ));
     }
 
@@ -213,31 +266,68 @@ function enterMCSubView() {
     if (mainView && mainView.chartDock) mainView.chartDock.refresh();
 }
 
+// View/animation-layer teardown only, run on every within-Values-mode sub-view switch (mc<->vi).
+// Deliberately does NOT touch expectationState/valueIterationState's computed data, so that data
+// persists across a sub-view switch and can be cross-referenced by the right panel's "Estimate
+// vs exact" table regardless of which pane is currently active. Full data invalidation happens
+// separately, only when leaving Values mode entirely - see resetMCData/resetVIData below.
 function leaveMCSubView() {
     if (mainView && mainView.expectationView) mainView.expectationView.teardown();
-    expectationState.resetData();
     expectationViewModel.invalidateLayout();
 }
 
 function leaveVISubView() {
     mathRenderer.clear();
     valueIterationViewModel?.clearExplanationDetail();
+    if (rightPanel) rightPanel.updateContent();
+}
+
+// Full domain-data reset, used only when leaving Values mode entirely (back to Build), where the
+// graph itself may be edited before Values mode is re-entered - stale computed results (from a
+// since-changed graph) must not persist across that boundary. Not called on a same-mode sub-view
+// switch (mc<->vi), where the graph can't have changed and the data is worth keeping around.
+function resetMCData() {
+    expectationState.resetData();
+}
+
+function resetVIData() {
     valueIterationState.reset();
     valueIterationViewModel.reset();
-    if (rightPanel) rightPanel.updateContent();
 }
 
 canvasController.registerModeLifecycle({
     onLeave: {
-        // Leaving Values mode entirely tears down both sub-views' state unconditionally,
-        // regardless of which sub-view was active (matches the old exclusive-mode behavior).
+        // Leaving Values mode entirely tears down both sub-views' view state AND their computed
+        // data unconditionally, regardless of which sub-view was active (matches the old
+        // exclusive-mode behavior) - the graph may be edited in Build mode before Values mode is
+        // next entered, so nothing computed against the old graph should survive this boundary.
         values: () => {
             leaveMCSubView();
             leaveVISubView();
+            resetMCData();
+            resetVIData();
             if (mainView && mainView.chartDock) mainView.chartDock.hide();
+            if (mainView && mainView.estimatorPill) mainView.estimatorPill.hide();
+            if (mainView && mainView.mcRunsPill) mainView.mcRunsPill.hide();
+        },
+        // Policy's canvas is now identical to Build's (fully editable - only the right panel
+        // differs), so it shares the same tool-palette show/hide lifecycle.
+        build: () => {
+            if (mainView && mainView.toolPalette) mainView.toolPalette.hide();
+        },
+        policy: () => {
+            if (mainView && mainView.toolPalette) mainView.toolPalette.hide();
         }
     },
     onEnter: {
+        build: () => {
+            if (mainView && mainView.toolPalette) mainView.toolPalette.show();
+            if (mainView && mainView.zoomPill) mainView.zoomPill.show();
+        },
+        policy: () => {
+            if (mainView && mainView.toolPalette) mainView.toolPalette.show();
+            if (mainView && mainView.zoomPill) mainView.zoomPill.show();
+        },
         // Cold-entry into Values mode (e.g. clicking the collapsed slot) runs whatever the
         // current sub-view's enter logic is, same as explicitly selecting that sub-view.
         values: () => {
@@ -245,22 +335,46 @@ canvasController.registerModeLifecycle({
                 mainView.chartDock.updateBounds(0, windowWidth - mainView.RIGHT_PANEL_WIDTH);
                 mainView.chartDock.show();
             }
+            if (mainView && mainView.estimatorPill) {
+                mainView.estimatorPill.updateBounds(0, windowWidth - mainView.RIGHT_PANEL_WIDTH);
+                mainView.estimatorPill.show();
+                mainView.estimatorPill.refresh();
+            }
             const sv = canvasViewModel.valuesSubView;
-            if (sv === 'mc' || sv === 'split') enterMCSubView();
+            if (sv === 'mc') {
+                enterMCSubView();
+                if (mainView && mainView.zoomPill) mainView.zoomPill.hide();
+                if (mainView && mainView.mcRunsPill) {
+                    mainView.mcRunsPill.updateBounds(0, windowWidth - mainView.RIGHT_PANEL_WIDTH);
+                    mainView.mcRunsPill.show();
+                    mainView.mcRunsPill.refresh();
+                }
+            } else if (sv === 'vi') {
+                if (mainView && mainView.zoomPill) mainView.zoomPill.show();
+            }
         }
     },
     onEnterSubView: {
-        mc: enterMCSubView,
-        vi: () => {}, // VI has no "run on enter" behavior - starts via explicit Play click
-        split: enterMCSubView
+        mc: () => {
+            enterMCSubView();
+            if (mainView && mainView.zoomPill) mainView.zoomPill.hide();
+            if (mainView && mainView.estimatorPill) mainView.estimatorPill.refresh();
+            if (mainView && mainView.mcRunsPill) {
+                mainView.mcRunsPill.updateBounds(0, windowWidth - mainView.RIGHT_PANEL_WIDTH);
+                mainView.mcRunsPill.show();
+                mainView.mcRunsPill.refresh();
+            }
+        },
+        vi: () => {
+            // VI has no other "run on enter" behavior - starts via explicit Play click
+            if (mainView && mainView.zoomPill) mainView.zoomPill.show();
+            if (mainView && mainView.estimatorPill) mainView.estimatorPill.refresh();
+            if (mainView && mainView.mcRunsPill) mainView.mcRunsPill.hide();
+        }
     },
     onLeaveSubView: {
         mc: leaveMCSubView,
-        vi: leaveVISubView,
-        split: () => {
-            leaveMCSubView();
-            leaveVISubView();
-        }
+        vi: leaveVISubView
     }
 });
 
@@ -271,6 +385,8 @@ const onModeChange = (mode) => {
 
 const onValuesSubViewChange = (subView) => {
     canvasController.setValuesSubView(subView);
+    if (topBar) topBar.refreshValuesSubView(subView);
+    if (estimatorPill) estimatorPill.refresh();
     redraw();
 };
 
@@ -309,52 +425,47 @@ const onResetZoom = () => {
     redraw();
 };
 
-// Animation speed presets
-const SPEED_PRESETS = {
-    fast: {
-        PRE_SETUP_PAUSE: 200,
-        POST_ERASE_PAUSE: 100,
-        CAMERA_CENTER: 300,
-        DECISION_PAUSE: 150,
-        EDGE_HIGHLIGHT: 250,
-        TRANSITION_PAUSE: 100,
-        CAMERA_TRANSITION: 250
-    },
-    medium: {
-        PRE_SETUP_PAUSE: 500,
-        POST_ERASE_PAUSE: 300,
-        CAMERA_CENTER: 600,
-        DECISION_PAUSE: 400,
-        EDGE_HIGHLIGHT: 600,
-        TRANSITION_PAUSE: 300,
-        CAMERA_TRANSITION: 600
-    },
-    slow: {
-        PRE_SETUP_PAUSE: 800,
-        POST_ERASE_PAUSE: 500,
-        CAMERA_CENTER: 1000,
-        DECISION_PAUSE: 700,
-        EDGE_HIGHLIGHT: 1000,
-        TRANSITION_PAUSE: 500,
-        CAMERA_TRANSITION: 1000
-    }
+// Animation speed: continuous slider (t: 0 = fastest, 1 = slowest), linearly interpolating
+// every duration between these two hand-tuned endpoints. Default (t = 0.5) lands within
+// 50ms of the old hand-tuned "medium" preset - simulationAnimator's own default TIMING
+// already matches that midpoint, so no explicit initial onSetAnimationSpeed call is needed.
+const SPEED_FAST = {
+    PRE_SETUP_PAUSE: 200,
+    POST_ERASE_PAUSE: 100,
+    CAMERA_CENTER: 300,
+    DECISION_PAUSE: 150,
+    EDGE_HIGHLIGHT: 250,
+    TRANSITION_PAUSE: 100,
+    CAMERA_TRANSITION: 250
+};
+const SPEED_SLOW = {
+    PRE_SETUP_PAUSE: 800,
+    POST_ERASE_PAUSE: 500,
+    CAMERA_CENTER: 1000,
+    DECISION_PAUSE: 700,
+    EDGE_HIGHLIGHT: 1000,
+    TRANSITION_PAUSE: 500,
+    CAMERA_TRANSITION: 1000
 };
 
-let currentSpeed = 'medium';
+let currentSpeed = 0.5;
 
-const onSetAnimationSpeed = (speed) => {
-    const timing = SPEED_PRESETS[speed];
-    if (!timing) return;
-    currentSpeed = speed;
+const onSetAnimationSpeed = (t) => {
+    const clamped = Math.max(0, Math.min(1, t));
+    const timing = {};
+    for (const key of Object.keys(SPEED_FAST)) {
+        timing[key] = Math.round(SPEED_FAST[key] + (SPEED_SLOW[key] - SPEED_FAST[key]) * clamped);
+    }
+    currentSpeed = clamped;
     if (playInteractor) playInteractor.setTiming(timing);
     if (stepInteractor) stepInteractor.setTiming(timing);
-    if (menuBar) menuBar.updateSettingsChecks(currentSpeed, simulationState.spinningArrowEnabled);
+    if (topBar) topBar.updateSettingsChecks(currentSpeed, simulationState.spinningArrowEnabled);
 };
 
 const onToggleSpinningArrow = () => {
     const newEnabled = !simulationState.spinningArrowEnabled;
     canvasController.toggleSpinningArrow(newEnabled);
-    if (menuBar) menuBar.updateSettingsChecks(currentSpeed, newEnabled);
+    if (topBar) topBar.updateSettingsChecks(currentSpeed, newEnabled);
 };
 
 /**
@@ -388,7 +499,7 @@ const getVICanvasDimensions = () => {
 const onVIPlay = () => {
     if (!runVIInteractor || !viPlayInteractor) return;
 
-    const T = toolBar ? toolBar.getVIT() : 5;
+    const T = topBar ? topBar.getVIT() : 5;
     const gamma = rightPanel ? rightPanel.discountFactor : 0.9;
 
     if (!valueIterationState.initialized) {
@@ -398,23 +509,23 @@ const onVIPlay = () => {
 
     viPlayInteractor.execute(new VIPlayInputData());
 
-    if (toolBar) {
-        toolBar.updateVIButtonStates(valueIterationState.isPlaying, valueIterationState.canAdvance());
+    if (topBar) {
+        topBar.updateVIButtonStates(valueIterationState.isPlaying, valueIterationState.canAdvance());
     }
 };
 
 const onVIPause = () => {
     if (!viPauseInteractor) return;
     viPauseInteractor.execute(new VIPauseInputData());
-    if (toolBar) {
-        toolBar.updateVIButtonStates(valueIterationState.isPlaying, valueIterationState.canAdvance());
+    if (topBar) {
+        topBar.updateVIButtonStates(valueIterationState.isPlaying, valueIterationState.canAdvance());
     }
 };
 
 const onVIStep = () => {
     if (!viStepInteractor) return;
 
-    const T = toolBar ? toolBar.getVIT() : 5;
+    const T = topBar ? topBar.getVIT() : 5;
     const gamma = rightPanel ? rightPanel.discountFactor : 0.9;
 
     if (!valueIterationState.initialized) {
@@ -424,15 +535,15 @@ const onVIStep = () => {
 
     viStepInteractor.execute(new VIStepInputData());
 
-    if (toolBar) {
-        toolBar.updateVIButtonStates(valueIterationState.isPlaying, valueIterationState.canAdvance());
+    if (topBar) {
+        topBar.updateVIButtonStates(valueIterationState.isPlaying, valueIterationState.canAdvance());
     }
 };
 
 const onVISkip = () => {
     if (!viSkipInteractor) return;
 
-    const T = toolBar ? toolBar.getVIT() : 5;
+    const T = topBar ? topBar.getVIT() : 5;
     const gamma = rightPanel ? rightPanel.discountFactor : 0.9;
 
     if (!valueIterationState.initialized) {
@@ -442,16 +553,16 @@ const onVISkip = () => {
 
     viSkipInteractor.execute(new VISkipInputData());
 
-    if (toolBar) {
-        toolBar.updateVIButtonStates(valueIterationState.isPlaying, valueIterationState.canAdvance());
+    if (topBar) {
+        topBar.updateVIButtonStates(valueIterationState.isPlaying, valueIterationState.canAdvance());
     }
 };
 
 const onVIReset = () => {
     if (!viResetInteractor) return;
     viResetInteractor.execute(new VIResetInputData());
-    if (toolBar) {
-        toolBar.updateVIButtonStates(false, true);
+    if (topBar) {
+        topBar.updateVIButtonStates(false, true);
     }
 };
 
@@ -471,8 +582,8 @@ const onPlay = () => {
     playInteractor.execute(inputData);
 
     // Update button states
-    if (toolBar) {
-        toolBar.updateButtonStates(simulationState.isPlaying, simulationState.canAdvance());
+    if (topBar) {
+        topBar.updateButtonStates(simulationState.isPlaying, simulationState.canAdvance());
     }
 };
 
@@ -483,8 +594,8 @@ const onPause = () => {
     pauseInteractor.execute(inputData);
 
     // Update button states
-    if (toolBar) {
-        toolBar.updateButtonStates(simulationState.isPlaying, simulationState.canAdvance());
+    if (topBar) {
+        topBar.updateButtonStates(simulationState.isPlaying, simulationState.canAdvance());
     }
 };
 
@@ -503,8 +614,8 @@ const onStep = () => {
     // Pause if playing
     if (simulationState.isPlaying) {
         simulationState.pause();
-        if (toolBar) {
-            toolBar.updateButtonStates(false, simulationState.canAdvance());
+        if (topBar) {
+            topBar.updateButtonStates(false, simulationState.canAdvance());
         }
     }
 
@@ -524,8 +635,8 @@ const onSkip = () => {
     // Pause if playing
     if (simulationState.isPlaying) {
         simulationState.pause();
-        if (toolBar) {
-            toolBar.updateButtonStates(false, simulationState.canAdvance());
+        if (topBar) {
+            topBar.updateButtonStates(false, simulationState.canAdvance());
         }
     }
 
@@ -543,8 +654,8 @@ const onReset = () => {
     resetInteractor.execute(inputData);
 
     // Reset button states - keep buttons enabled so user can start a new simulation
-    if (toolBar) {
-        toolBar.updateButtonStates(false, true);
+    if (topBar) {
+        topBar.updateButtonStates(false, true);
     }
 };
 
@@ -554,32 +665,26 @@ function preload() {
 }
 
 function setup() {
-    // Create menu bar (Row 1)
-    menuBar = new MenuBar({
-        onImport: onImportGraph,
-        onExport: onExportGraph,
+    // Create the single top chrome bar
+    topBar = new TopBar({
+        onExportPNG: onExportPNG,
+        onNewGraph: onNewGraph,
+        onOpenGraph: onOpenGraph,
+        onSaveGraph: onSaveGraph,
+        getRecentFiles: getRecentFiles,
+        onOpenRecent: onOpenRecent,
         onUndo: onUndo,
         onRedo: onRedo,
-        onZoomIn: onZoomIn,
-        onZoomOut: onZoomOut,
-        onResetZoom: onResetZoom,
         onSetAnimationSpeed: onSetAnimationSpeed,
-        onToggleSpinningArrow: onToggleSpinningArrow
-    });
-    menuBar.setup();
-
-    // Create toolbar (Row 2)
-    toolBar = new ToolBar({
-        onStateClick: onStateClick,
-        onActionClick: onActionClick,
-        onTextBoxClick: onTextBoxClick,
+        onToggleSpinningArrow: onToggleSpinningArrow,
+        onModelKnownToggle: onModelKnownToggle,
+        onObservabilityToggle: onObservabilityToggle,
         onRenormalize: onRenormalize,
         onPlay: onPlay,
         onPause: onPause,
         onStep: onStep,
         onRerun: onReset,
         onModeChange: onModeChange,
-        onValuesSubViewChange: onValuesSubViewChange,
         onVIPlay: onVIPlay,
         onVIPause: onVIPause,
         onVIStep: onVIStep,
@@ -603,33 +708,73 @@ function setup() {
             if (mainView && mainView.expectationView) mainView.expectationView.stopPlay();
         }
     }, canvasViewModel);
-    toolBar.setup(menuBar.getHeight());
+    topBar.setup();
+
+    zoomPill = new ZoomPill({
+        onZoomIn: onZoomIn,
+        onZoomOut: onZoomOut,
+        onResetZoom: onResetZoom
+    }, canvasViewModel);
+    zoomPill.setup();
+
+    toolPalette = new ToolPalette({
+        onSelectTool: onSelectTool,
+        onStateClick: onStateClick,
+        onActionClick: onActionClick,
+        onTextBoxClick: onTextBoxClick
+    }, canvasViewModel);
+    toolPalette.setup(topBar.getHeight());
 
     // Create right panel
     rightPanel = new RightPanel(canvasViewModel, canvasController);
-    rightPanel.setup(menuBar.getHeight() + toolBar.getHeight());
+    rightPanel.setup(topBar.getHeight());
 
     // Set right panel reference in setModePresenter so it can update when mode changes
     setModePresenter.setRightPanel(rightPanel);
     setValuesSubViewPresenter.setRightPanel(rightPanel);
 
-    mainView = new MainView(canvasViewModel, canvasController, menuBar, toolBar, rightPanel);
+    mainView = new MainView(canvasViewModel, canvasController, topBar, rightPanel);
     rightPanel.onPanelResize = (w) => mainView.onPanelResize(w);
 
     const chartDock = new ChartDock(canvasViewModel, expectationState, expectationViewModel, valueIterationState);
     chartDock.setup();
     chartDock.onResize = () => mainView.onDockResize();
     mainView.chartDock = chartDock;
+    mainView.toolPalette = toolPalette;
+    toolPalette.show();
+    mainView.zoomPill = zoomPill;
+    zoomPill.updateBounds(mainView.RIGHT_PANEL_WIDTH);
+    zoomPill.show();
+
+    estimatorPill = new EstimatorPill({
+        onSelectSubView: onValuesSubViewChange
+    }, canvasViewModel);
+    estimatorPill.setup(mainView.TOP_BARS_HEIGHT);
+    estimatorPill.updateBounds(0, windowWidth - mainView.RIGHT_PANEL_WIDTH);
+    mainView.estimatorPill = estimatorPill;
+    estimatorPill.hide();
+
+    // onSelectRuns is wired below once onDisplayRunsChange exists (needs expectationState/
+    // expectationViewModel, constructed later in this function).
+    mcRunsPill = new McRunsPill({}, canvasViewModel);
+    mcRunsPill.setup(mainView.TOP_BARS_HEIGHT);
+    mcRunsPill.updateBounds(0, windowWidth - mainView.RIGHT_PANEL_WIDTH);
+    mainView.mcRunsPill = mcRunsPill;
+    mcRunsPill.hide();
 
     AppPalette._onThemeChange = () => {
         mainView.invalidateDotGrid();
         rightPanel.updateContent();
-        if (menuBar) menuBar._updateThemeIcon();
+        if (topBar) topBar._updateThemeIcon();
+    };
+
+    canvasViewModel._onUndoRedoChange = (canUndo, canRedo) => {
+        if (topBar) topBar.updateUndoRedoState(canUndo, canRedo);
     };
 
     // Create simulation presenter and interactors
     simulationPresenter = new SimulationPresenter(canvasViewModel);
-    simulationPresenter.setToolBar(toolBar);
+    simulationPresenter.setTopBar(topBar);
     simulationPresenter.setParticleCallbacks(
         (reward, nodeId) => mainView.launchRewardParticles(reward, nodeId),
         () => { if (mainView.rewardParticleSystem) mainView.rewardParticleSystem.destroy(); }
@@ -646,7 +791,7 @@ function setup() {
 
     // Create Value Iteration presenter and interactors
     viPresenter = new VIPresenter(canvasViewModel);
-    viPresenter.setToolBar(toolBar);
+    viPresenter.setTopBar(topBar);
     viPresenter.setRightPanel(rightPanel);
     viPresenter.setChartDock(mainView.chartDock);
 
@@ -661,7 +806,7 @@ function setup() {
     const valueIterationView = new ValueIterationView(canvasViewModel, {
         getPanelWidth: () => rightPanel.getWidth(),
         getTopOffset: () => mainView.TOP_BARS_HEIGHT,
-        getBottomOffset: () => toolBar.getHeight()
+        getBottomOffset: () => topBar.getHeight()
     });
     mainView.valueIterationView = valueIterationView;
 
@@ -714,14 +859,6 @@ function setup() {
     };
 
     rightPanel.callbacks.onVICellClick = onVICellClick;
-
-    rightPanel.callbacks.onModelKnownToggle = (known) => {
-        canvasController.setModelKnown(known);
-        if (toolBar) toolBar.setModelKnown(known);
-        rightPanel.updateContent();
-        if (mainView && mainView.chartDock) mainView.chartDock.refresh();
-        redraw();
-    };
 
     rightPanel.callbacks.onManualQOverride = (stateId, actionId, value) => {
         canvasController.setManualQOverride(stateId, actionId, value);
@@ -800,20 +937,26 @@ function setup() {
             Object.assign({}, simulationState.policy),
             expectationState.displayRuns,
             expectationState.maxSteps,
-            expectationState.gamma
+            expectationState.gamma,
+            Object.assign({}, simulationState.policyWeights)
         ));
         if (expectationView) expectationView.updateScrubberMax();
     };
 
-    rightPanel.callbacks.onExpectationDisplayRunsChange = (displayRuns) => {
+    // Shared by the floating mcRunsPill (top-right of the MC canvas) - the right panel's old
+    // "Display Runs" dropdown was replaced by that pill, but this handler is still the single
+    // source of truth for what "changing the run count" does.
+    const onDisplayRunsChange = (displayRuns) => {
         expectationState.displayRuns = displayRuns;
         if (expectationViewModel.focusedRunIndex !== null && expectationViewModel.focusedRunIndex >= displayRuns) {
             if (expectationView) expectationView.exitFocusMode();
         }
         expectationViewModel.invalidateLayout();
         rightPanel.updateContent();
+        if (mainView && mainView.mcRunsPill) mainView.mcRunsPill.refresh();
         redraw();
     };
+    if (mainView && mainView.mcRunsPill) mainView.mcRunsPill.callbacks.onSelectRuns = onDisplayRunsChange;
 
     rightPanel.callbacks.onExpectationMaxStepsChange = () => {
         _runExpectationBatch();
@@ -823,10 +966,31 @@ function setup() {
         updateExpectationGammaInteractor.execute(new UpdateExpectationGammaInputData(gamma));
     };
 
-    // Expectation Play/Pause
-    expectationView.onPlaybackStateChange = (isPlaying) => {
-        if (toolBar) toolBar.setExpectationPlayMode(isPlaying ? 'pause' : 'play');
+    rightPanel.callbacks.onInitialStateChange = () => {
+        _runExpectationBatch();
+        if (mainView && mainView.chartDock) mainView.chartDock.refresh();
+        rightPanel.updateContent();
+        redraw();
     };
+
+    // Expectation Play/Pause/Step/Reset
+    expectationView.onPlaybackStateChange = (isPlaying) => {
+        if (topBar) topBar.setExpectationPlayMode(isPlaying ? 'pause' : 'play');
+    };
+    if (topBar) {
+        topBar.callbacks.onExpectationStep = () => {
+            if (mainView && mainView.expectationView) mainView.expectationView.step();
+        };
+        // Matches Build/VI's Reset: regenerate from scratch (fresh rollouts) and snap playback
+        // back to t=0 - _runExpectationBatch already does both (runExpectationInteractor seeds
+        // currentT: 0 on every fresh run, and updateScrubberMax() re-syncs the scrubber to it).
+        topBar.callbacks.onExpectationReset = () => {
+            _runExpectationBatch();
+            if (mainView && mainView.chartDock) mainView.chartDock.refresh();
+            rightPanel.updateContent();
+            redraw();
+        };
+    }
 
     // Initialize
     mainView.setup();
@@ -838,8 +1002,8 @@ function draw() {
 
 function mousePressed() {
     if (!mainView) return;
-    // 'split' sub-view click routing (dispatch to the correct pane) lands in the split-pane
-    // rendering work; for now only the full-width 'mc' sub-view forwards clicks directly.
+    // The 'mc' sub-view owns the whole canvas and forwards clicks directly to its own
+    // hit-testing rather than going through mainView's normal node/edge click routing.
     if (canvasViewModel.interaction.mode === 'values' && canvasViewModel.valuesSubView === 'mc' && mainView.expectationView) {
         mainView.expectationView.handleClick(mouseX, mouseY);
         return;

@@ -25,21 +25,27 @@ const MV_ARROW_ANGLE         = Math.PI / 6;  // 30 degrees
 const MV_EDITOR_FOCUS_ALPHA_FULL  = 255;
 const MV_EDITOR_FOCUS_ALPHA_FADED = 45;
 
+// Reserved space at the top of Values mode's canvas so the VI graph doesn't render behind the
+// floating estimator pill overlapping the top of the canvas (matches expectationView.js's
+// EXPECTATION_TOP_CLEARANCE, used for the same reason on the Monte Carlo pane).
+const MV_VALUES_PILL_CLEARANCE = 90;
+
 // --- End constants ---
 
 class MainView {
-    constructor(canvasViewModel, canvasController, menuBar, toolBar, rightPanel) {
+    constructor(canvasViewModel, canvasController, topBar, rightPanel) {
         this.viewModel = canvasViewModel;
         this.controller = canvasController;
-        this.menuBar = menuBar;
-        this.toolBar = toolBar;
+        this.topBar = topBar;
         this.rightPanel = rightPanel;
 
         this.simRenderer = new SimulationRenderer(canvasViewModel);
 
-        this.MENU_BAR_HEIGHT = menuBar ? menuBar.getHeight() : 0;
-        this.TOOL_BAR_HEIGHT = toolBar ? toolBar.getHeight() : 0;
-        this.TOP_BARS_HEIGHT = this.MENU_BAR_HEIGHT + this.TOOL_BAR_HEIGHT;
+        // Kept as TOP_BARS_HEIGHT (not renamed to a singular TOP_BAR_HEIGHT) - many downstream
+        // call sites (canvas sizing, right-panel/chart-dock/floating-pill offsets) consume this
+        // purely as "how much vertical space the top chrome occupies," independent of how many
+        // bars compose it.
+        this.TOP_BARS_HEIGHT = topBar ? topBar.getHeight() : 0;
         this.RIGHT_PANEL_WIDTH = rightPanel ? rightPanel.getWidth() : 0;
 
         this.canvas = null;
@@ -63,9 +69,24 @@ class MainView {
         // Bottom chart dock (Values mode; instantiated in a later phase)
         this.chartDock = null;
 
+        // Floating Build-mode tool palette (set after construction)
+        this.toolPalette = null;
+
+        // Floating zoom pill (set after construction)
+        this.zoomPill = null;
+
+        // Floating Values-mode estimator pill (set after construction)
+        this.estimatorPill = null;
+
         // Cached dot-grid background layer; rebuilt on resize/theme change, not every redraw()
         this._dotGridLayer = null;
         this._dotGridTheme = null;
+    }
+
+    // Policy's canvas is identical to Build's (fully editable - only the right panel differs),
+    // so every Build-only rendering/interaction branch here treats both modes the same.
+    _isEditableMode() {
+        return this.viewModel.mode === 'build' || this.viewModel.mode === 'policy';
     }
 
     setup() {
@@ -107,7 +128,7 @@ class MainView {
         const paneWidths = this._valuesPaneWidths(canvasWidth);
         const valuesHeight = canvasHeight - this.getDockHeight();
         this._relayoutValueIterationIfActive(paneWidths.vi, valuesHeight);
-        if (this.expectationView && (this.viewModel.valuesSubView === 'mc' || this.viewModel.valuesSubView === 'split')) {
+        if (this.expectationView && this.viewModel.valuesSubView === 'mc') {
             this.expectationView.resize(paneWidths.mc, valuesHeight, this.TOP_BARS_HEIGHT);
         }
         redraw();
@@ -143,7 +164,7 @@ class MainView {
         background(AppPalette.surface.canvas);
         image(this._ensureDotGridLayer(), 0, 0);
 
-        // Values mode: delegate to the MC / VI / split sub-view
+        // Values mode: delegate to the MC / Method sub-view
         if (this.viewModel.interaction.mode === 'values') {
             const usableW = windowWidth - this.RIGHT_PANEL_WIDTH;
             const usableH = windowHeight - this.TOP_BARS_HEIGHT - this.getDockHeight();
@@ -153,13 +174,13 @@ class MainView {
                 this.expectationView.draw(usableW, usableH);
             } else if (subView === 'vi' && this.valueIterationView) {
                 push();
+                // Fixed screen-space shift (applied before pan/zoom, so it isn't affected by
+                // zoom scale) to clear the floating estimator pill.
+                translate(0, MV_VALUES_PILL_CLEARANCE);
                 translate(this.viewModel.viewport.panX, this.viewModel.viewport.panY);
                 scale(this.viewModel.viewport.zoom);
                 this.valueIterationView.draw();
                 pop();
-                this.drawZoomIndicator();
-            } else if (subView === 'split') {
-                this._drawSplitPanes(usableW, usableH);
             }
             return;
         }
@@ -195,9 +216,6 @@ class MainView {
             requestAnimationFrame(() => { if (typeof redraw === 'function') redraw(); });
         }
 
-        // Draw zoom level indicator
-        this.drawZoomIndicator();
-
         // Draw info/error messages
         this.drawMessages();
 
@@ -229,46 +247,10 @@ class MainView {
         }
     }
 
-    // Effective pane widths for the current Values sub-view: full width for 'mc'/'vi' (single
-    // pane owns the whole canvas), half each for 'split'.
+    // Effective pane widths for the current Values sub-view: 'mc'/'vi' are exclusive panes, each
+    // owning the whole canvas (canvas comparison lives in the charts, not a split canvas view).
     _valuesPaneWidths(canvasWidth) {
-        if (this.viewModel.valuesSubView === 'split') {
-            const half = canvasWidth / 2;
-            return { mc: half, vi: half };
-        }
         return { mc: canvasWidth, vi: canvasWidth };
-    }
-
-    // Renders the MC pane (left half) and VI pane (right half) side by side, each clipped and
-    // translated into its half of the canvas so both views' existing draw code — which assumes
-    // it owns the full canvas — can be reused unmodified, just called with half-width.
-    _drawSplitPanes(usableW, usableH) {
-        const paneW = usableW / 2;
-
-        if (this.expectationView) {
-            drawingContext.save();
-            drawingContext.beginPath();
-            drawingContext.rect(0, 0, paneW, usableH);
-            drawingContext.clip();
-            this.expectationView.draw(paneW, usableH);
-            drawingContext.restore();
-        }
-
-        if (this.valueIterationView) {
-            drawingContext.save();
-            drawingContext.beginPath();
-            drawingContext.rect(paneW, 0, paneW, usableH);
-            drawingContext.clip();
-            push();
-            translate(paneW, 0);
-            translate(this.viewModel.viewport.panX, this.viewModel.viewport.panY);
-            scale(this.viewModel.viewport.zoom);
-            this.valueIterationView.draw();
-            pop();
-            drawingContext.restore();
-        }
-
-        this.drawZoomIndicator();
     }
 
     drawMessages() {
@@ -334,7 +316,7 @@ class MainView {
         const screenPos = this.viewModel.viewport.worldToScreen(node.x, node.y);
         const pageX = screenPos.x;
         const pageY = screenPos.y + this.TOP_BARS_HEIGHT;
-        const targetEl = document.querySelector('.reward-bar-container');
+        const targetEl = document.querySelector('.panel-utility-value');
         if (!targetEl) {
             this.viewModel.simulationState.commitReward();
             if (this.rightPanel) this.rightPanel.updateContent();
@@ -346,22 +328,12 @@ class MainView {
         });
     }
 
-    drawZoomIndicator() {
-        push();
-        fill(0, 0, 0, 150);
-        noStroke();
-        textAlign(RIGHT, BOTTOM);
-        textSize(12);
-        text(`Zoom: ${(this.viewModel.viewport.zoom * 100).toFixed(0)}%`, width - 10, height - 10);
-        pop();
-    }
-
     drawNodes() {
         const nodes = this.viewModel.graph.nodes;
 
         nodes.forEach(node => {
-            // In simulate mode with active simulation, check visibility
-            if (this.viewModel.interaction.mode === 'simulate' &&
+            // In build/policy mode with active simulation, check visibility
+            if (this._isEditableMode() &&
                 this.viewModel.simulationState &&
                 this.viewModel.simulationState.replayInitialized) {
                 if (!this.viewModel.simulationState.isNodeVisible(node.id)) {
@@ -410,16 +382,10 @@ class MainView {
 
             const isStartNode = this.viewModel.startNode &&
                 this.viewModel.startNode.id === node.id;
-            const isEditorStartNode = this.viewModel.mode === 'editor' && isStartNode;
-            const isSimStartNode = this.viewModel.mode === 'simulate' &&
-                isStartNode &&
-                (!this.viewModel.simulationState || !this.viewModel.simulationState.replayInitialized);
+            const isStartNodeInBuild = this._isEditableMode() && isStartNode;
 
-            if (isEditorStartNode) {
+            if (isStartNodeInBuild) {
                 stroke(AppPalette.node.startRing);
-                strokeWeight(3);
-            } else if (isSimStartNode) {
-                stroke(AppPalette.node.selected);
                 strokeWeight(3);
             } else {
                 stroke(this.applyAlphaToColor(AppPalette.text.black, nodeAlpha));
@@ -494,8 +460,8 @@ class MainView {
             const from = edge.getFromNode();
             const to = edge.getToNode();
 
-            // In simulate mode with active simulation, check visibility
-            if (this.viewModel.interaction.mode === 'simulate' &&
+            // In build/policy mode with active simulation, check visibility
+            if (this._isEditableMode() &&
                 this.viewModel.simulationState &&
                 this.viewModel.simulationState.replayInitialized) {
                 if (!this.viewModel.simulationState.isEdgeVisible(from.id, to.id)) {
@@ -508,11 +474,19 @@ class MainView {
             const isBidirectional = edgeVM.isBidirectional;
 
             // Calculate arrow size
-            // State → Action edges: uniform weight (probability not meaningful)
-            // Action → State edges: weight based on probability
+            // State → Action edges: deterministic policies keep the original flat bold/thin
+            // weights (3 / 2); weighted-random policies scale width by the action's share of
+            // the distribution (1 + 3p, matching the mockup). Action → State edges: weight
+            // based on transition probability.
             let weight;
             if (from.type === 'state' && to.type === 'action') {
-                weight = 2; // Consistent weight for State → Action edges
+                const policyMode = this.viewModel.simulationState ? this.viewModel.simulationState.getPolicyMode(from.id) : 'uniform';
+                const policyProb = edgeVM.policyEdgeProbability;
+                if (policyMode === 'weighted' && policyProb !== null) {
+                    weight = 1 + 3 * policyProb;
+                } else {
+                    weight = policyProb !== null ? 3 : 2;
+                }
             } else {
                 weight = 1 + 4 * edge.getProbability(); // Probability-based for Action → State
             }
@@ -709,7 +683,7 @@ class MainView {
     }
 
     getEditorFocusNodeAlpha(node) {
-        if (this.viewModel.mode !== 'editor') return 255;
+        if (!this._isEditableMode()) return 255;
         const interaction = this.viewModel.interaction;
         if (!interaction.hasEditorFocus()) return 255;
         return interaction.isNodeInEditorFocus(node)
@@ -718,7 +692,7 @@ class MainView {
     }
 
     getEditorFocusEdgeAlpha(edge) {
-        if (this.viewModel.mode !== 'editor') return 255;
+        if (!this._isEditableMode()) return 255;
         const interaction = this.viewModel.interaction;
         if (!interaction.hasEditorFocus()) return 255;
         return interaction.isEdgeInEditorFocus(edge)
@@ -915,16 +889,43 @@ class MainView {
 
     drawTextLabels() {
         const labels = this.viewModel.graph.textLabels;
+        const selectedLabel = this.viewModel.selection.selectedTextLabel;
 
         labels.forEach(label => {
             // Simple color logic: yellow if selected
-            const color = this.viewModel.selection.selectedTextLabel === label ? AppPalette.node.selected : AppPalette.text.black;
+            const isSelected = selectedLabel === label;
+            const color = isSelected ? AppPalette.node.selected : AppPalette.text.black;
             fill(color);
             noStroke();
             textAlign(CENTER, CENTER);
             textSize(label.fontSize);
             text(label.text, label.x, label.y);
+
+            if (isSelected && this._isEditableMode()) {
+                this._drawTextLabelHitBox(label);
+            }
         });
+    }
+
+    // Visible bounding box + resize handle for the selected text label - drawn with the exact
+    // same geometry GeometricHelper.isClickOnTextLabelCorner hit-tests against, so the handle
+    // shown is always exactly where dragging resizes instead of moves.
+    _drawTextLabelHitBox(label) {
+        const textWidth = label.text.length * label.fontSize * 0.6;
+        const halfW = textWidth / 2;
+        const halfH = label.fontSize / 2;
+
+        push();
+        noFill();
+        stroke(AppPalette.node.selected);
+        strokeWeight(1);
+        rectMode(CENTER);
+        rect(label.x, label.y, textWidth, label.fontSize);
+
+        noStroke();
+        fill(AppPalette.node.selected);
+        rect(label.x + halfW, label.y + halfH, 8, 8);
+        pop();
     }
 
     updateHeldNodePosition() {
@@ -940,9 +941,9 @@ class MainView {
             return;
         }
 
-        // Right-click in editor/simulate mode: set start node (s₀)
+        // Right-click in build/policy mode: set start node (s₀)
         if (mouseButton === RIGHT) {
-            if (this.viewModel.mode === 'editor' || this.viewModel.mode === 'simulate') {
+            if (this._isEditableMode()) {
                 const world = this.viewModel.viewport.screenToWorld(mouseX, mouseY);
                 const target = GeometricHelper.findEntityAtPosition(this.viewModel.graph, world.x, world.y);
                 if (target.type === 'node' && target.entity.type === 'state') {
@@ -955,8 +956,8 @@ class MainView {
         }
 
         // Close menu dropdowns when clicking on canvas
-        if (this.menuBar) {
-            this.menuBar.closeAllDropdowns();
+        if (this.topBar) {
+            this.topBar.closeAllDropdowns();
         }
 
         // Note: Sidebar buttons are positioned absolutely to the left of the canvas
@@ -1015,9 +1016,13 @@ class MainView {
         }
 
         // Set cursor for resize
-        if (this.viewModel.interaction.resizingNode) {
+        if (this.viewModel.interaction.resizingNode || this.viewModel.interaction.resizingTextLabel) {
             cursor('nwse-resize');
         }
+
+        // A canvas click may have just finished a placement (dropping a held node/text label),
+        // reverting to the select tool - keep the palette's active-tool highlight in sync.
+        if (this.toolPalette) this.toolPalette.updateActiveTool(this.viewModel.interaction.placingMode);
 
         redraw();
     }
@@ -1076,7 +1081,7 @@ class MainView {
         }
 
         // Reset cursor after resize
-        if (this.viewModel.interaction.resizingNode) {
+        if (this.viewModel.interaction.resizingNode || this.viewModel.interaction.resizingTextLabel) {
             cursor(ARROW);
         }
 
@@ -1164,8 +1169,14 @@ class MainView {
     }
 
     mouseWheel(event) {
-        // Only handle scroll on canvas
+        // Only handle scroll on canvas. mouseX/mouseY are canvas-relative and don't account for
+        // DOM chrome layered on top (right panel, chart dock, toolbar, pills) - check the actual
+        // event target too, so wheeling over e.g. the right panel scrolls it natively instead of
+        // zooming the canvas underneath.
         if (mouseX < 0 || mouseX > width || mouseY < 0 || mouseY > height) {
+            return;
+        }
+        if (event.target !== this.canvas.elt) {
             return;
         }
 
@@ -1177,6 +1188,7 @@ class MainView {
         const newZoom = this.viewModel.viewport.zoom * (1 + zoomFactor);
 
         this.viewModel.viewport.setZoom(newZoom, mouseX, mouseY);
+        if (this.zoomPill) this.zoomPill.refresh();
         redraw();
 
         // Prevent page scroll
@@ -1209,6 +1221,7 @@ class MainView {
                 const centerY = (this.touches[0].y + this.touches[1].y) / 2;
 
                 this.viewModel.viewport.setZoom(this.viewModel.viewport.zoom * zoomChange, centerX, centerY);
+                if (this.zoomPill) this.zoomPill.refresh();
                 redraw();
             }
 
@@ -1221,6 +1234,11 @@ class MainView {
     keyPressed() {
         // Delegate to controller
         const shouldPreventDefault = this.controller.handleKeyPress(key);
+
+        // Several shortcuts (e.g. 'r' resets zoom) mutate viewport.zoom directly via the
+        // controller; refresh is cheap and idempotent, so just always sync rather than trying
+        // to detect which key was pressed.
+        if (this.zoomPill) this.zoomPill.refresh();
 
         redraw();
 
@@ -1241,22 +1259,20 @@ class MainView {
         resizeCanvas(canvasWidth, canvasHeight);
         this.canvas.position(0, this.TOP_BARS_HEIGHT);
         if (this.chartDock) this.chartDock.updateBounds(0, canvasWidth);
+        if (this.zoomPill) this.zoomPill.updateBounds(this.RIGHT_PANEL_WIDTH);
+        if (this.estimatorPill) this.estimatorPill.updateBounds(0, windowWidth - this.RIGHT_PANEL_WIDTH);
+        if (this.mcRunsPill) this.mcRunsPill.updateBounds(0, windowWidth - this.RIGHT_PANEL_WIDTH);
         const valuesHeight = canvasHeight - this.getDockHeight();
         const paneWidths = this._valuesPaneWidths(canvasWidth);
         this._relayoutValueIterationIfActive(paneWidths.vi, valuesHeight);
         if (this.expectationView && this.viewModel.interaction.mode === 'values'
-            && (this.viewModel.valuesSubView === 'mc' || this.viewModel.valuesSubView === 'split')) {
+            && this.viewModel.valuesSubView === 'mc') {
             this.expectationView.resize(paneWidths.mc, valuesHeight, this.TOP_BARS_HEIGHT);
         }
 
-        // Update menu bar width
-        if (this.menuBar) {
-            this.menuBar.updateWidth(windowWidth);
-        }
-
-        // Update toolbar width
-        if (this.toolBar) {
-            this.toolBar.updateWidth(windowWidth);
+        // Update top bar width
+        if (this.topBar) {
+            this.topBar.updateWidth(windowWidth);
         }
 
         // Update right panel position and height
@@ -1275,11 +1291,14 @@ class MainView {
         resizeCanvas(canvasWidth, canvasHeight);
         this.canvas.position(0, this.TOP_BARS_HEIGHT);
         if (this.chartDock) this.chartDock.updateBounds(0, canvasWidth);
+        if (this.zoomPill) this.zoomPill.updateBounds(this.RIGHT_PANEL_WIDTH);
+        if (this.estimatorPill) this.estimatorPill.updateBounds(0, windowWidth - this.RIGHT_PANEL_WIDTH);
+        if (this.mcRunsPill) this.mcRunsPill.updateBounds(0, windowWidth - this.RIGHT_PANEL_WIDTH);
         const valuesHeight = canvasHeight - this.getDockHeight();
         const paneWidths = this._valuesPaneWidths(canvasWidth);
         this._relayoutValueIterationIfActive(paneWidths.vi, valuesHeight);
         if (this.expectationView && this.viewModel.interaction.mode === 'values'
-            && (this.viewModel.valuesSubView === 'mc' || this.viewModel.valuesSubView === 'split')) {
+            && this.viewModel.valuesSubView === 'mc') {
             this.expectationView.resize(paneWidths.mc, valuesHeight, this.TOP_BARS_HEIGHT);
         }
         redraw();
@@ -1287,7 +1306,7 @@ class MainView {
 
     _relayoutValueIterationIfActive(canvasWidth, canvasHeight) {
         if (this.viewModel.interaction.mode !== 'values') return;
-        if (this.viewModel.valuesSubView !== 'vi' && this.viewModel.valuesSubView !== 'split') return;
+        if (this.viewModel.valuesSubView !== 'vi') return;
         const viState = this.viewModel.valueIterationState;
         const viViewModel = this.viewModel.valueIterationViewModel;
         if (!viState || !viViewModel || !viState.initialized) return;

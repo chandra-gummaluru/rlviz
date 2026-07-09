@@ -5,7 +5,7 @@
 class SetValuesSubViewInputData {
     /**
      * Create set values sub-view input data
-     * @param {string} subView - The sub-view to set ('mc', 'vi', or 'split')
+     * @param {string} subView - The sub-view to set ('mc' or 'vi')
      */
     constructor(subView) {
         this.subView = subView;

@@ -34,6 +34,21 @@ class RightPanelBuilder {
         slider.elt.addEventListener('mousedown', e => e.stopPropagation());
         slider.elt.addEventListener('click', e => e.stopPropagation());
 
+        // Every input[type="range"] in the app is fully custom-styled (appearance:none) and
+        // reads its filled-portion width from this CSS custom property (see style.css) - WebKit/
+        // Blink have no native "filled" pseudo-element the way Firefox does, so it has to be
+        // kept in sync from JS. Self-contained here (not left to each caller) so every slider
+        // built via this factory gets it automatically, on both initial render and every drag.
+        // --fill is a unitless 0-1 fraction, not a percentage - style.css's gradient formula
+        // needs it as a plain number to combine with --thumb-d in a calc() expression.
+        const syncFillPct = () => {
+            const el = slider.elt;
+            const frac = (parseFloat(el.value) - parseFloat(el.min)) / (parseFloat(el.max) - parseFloat(el.min));
+            el.style.setProperty('--fill', frac);
+        };
+        syncFillPct();
+        slider.elt.addEventListener('input', syncFillPct);
+
         return { slider, valueDisplay };
     }
 }

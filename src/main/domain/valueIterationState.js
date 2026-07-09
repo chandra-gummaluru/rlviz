@@ -39,6 +39,10 @@ class ValueIterationState {
         // presentation only). Keyed `${stateId}:${actionId}`. Presentation-layer annotations,
         // not domain-significant - excluded from graph import/export.
         this.manualOverrides = {};
+
+        // Max |V_last - V_secondToLast| across states, from the final backup step - a real,
+        // already-computed convergence signal shown in the right panel's Convergence section.
+        this.lastDelta = 0;
     }
 
     /**
@@ -142,6 +146,12 @@ class ValueIterationState {
             this.bestActions.push(best_curr);
             this.backupDetails.push(detail_curr);
         }
+
+        const lastV = this.history[this.history.length - 1];
+        const secondLastV = this.history[this.history.length - 2];
+        this.lastDelta = secondLastV
+            ? Math.max(0, ...this.stateIds.map(id => Math.abs((lastV[id] ?? 0) - (secondLastV[id] ?? 0))))
+            : 0;
 
         this.initialized = true;
         this.currentColumnIndex = 0;

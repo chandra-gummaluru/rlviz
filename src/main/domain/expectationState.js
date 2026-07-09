@@ -82,6 +82,40 @@ class ExpectationState {
         return Array.from({ length: this.maxT + 1 }, (_, t) => this.getMeanAtT(t));
     }
 
+    // Per-state Monte Carlo value estimate: for every visit to a state across all rollouts, the
+    // discounted return-to-go from that visit onward, averaged. Aggregates already-collected
+    // per-step rewards (no new sampling). For the start state, this is equivalent to (and
+    // consistent with) getMeanAtT(maxT)'s existing estimate.
+    getPerStateMeans() {
+        if (!this.computed || this.rollouts.length === 0) return {};
+
+        const sums = {};
+        const counts = {};
+
+        this.rollouts.forEach(rollout => {
+            const { trace, rewards, numSteps } = rollout;
+
+            const returnToGo = new Array(numSteps + 1).fill(0);
+            for (let i = numSteps - 1; i >= 0; i--) {
+                returnToGo[i] = rewards[i] + this.gamma * returnToGo[i + 1];
+            }
+
+            for (let j = 0; j <= numSteps; j++) {
+                const stateEntry = trace[2 * j];
+                if (!stateEntry) continue;
+                const stateId = stateEntry.id;
+                sums[stateId] = (sums[stateId] || 0) + returnToGo[j];
+                counts[stateId] = (counts[stateId] || 0) + 1;
+            }
+        });
+
+        const means = {};
+        Object.keys(sums).forEach(stateId => {
+            means[stateId] = sums[stateId] / counts[stateId];
+        });
+        return means;
+    }
+
     getSigmasOverTime() {
         if (!this.computed) return [];
         return Array.from({ length: this.maxT + 1 }, (_, t) => this.getSigmaAtT(t));

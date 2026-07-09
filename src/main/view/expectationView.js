@@ -4,6 +4,11 @@ const EXPECTATION_PADDING = 12;
 const EXPECTATION_ARROW_SIZE = 8;
 const EXPECTATION_DIM_ALPHA = 45;
 const EXPECTATION_Y_STEP = 0.12;
+// Reserved space at the top of the canvas-local drawing area so the mini-panel grid / focused
+// panel never renders behind the floating estimator pill (which overlaps the top of the
+// canvas). The scrubber's own DOM position (bottom-anchored, computed in resize()/
+// setupScrubber()) is untouched by this - only the top of the content area shrinks.
+const EXPECTATION_TOP_CLEARANCE = 90;
 
 class ExpectationView {
     constructor(canvasViewModel, expectationViewModel, expectationState, graph) {
@@ -16,7 +21,7 @@ class ExpectationView {
         this._rightPanel = null;
         this._chartDock = null;
         this.onPlaybackStateChange = null;
-        this._topOffset = 96; // corrected immediately by resize(), matches menubar(42) + toolbar(54)
+        this._topOffset = 40; // corrected immediately by resize(), matches the top bar's height
         this._imageCache = new Map();
         this._backBtn = null;
     }
@@ -53,7 +58,7 @@ class ExpectationView {
         }
 
         if (vm.layoutStale) {
-            vm.computeLayout(canvasW, canvasH - EXPECTATION_SCRUBBER_H, state.displayRuns, this.graph);
+            vm.computeLayout(canvasW, canvasH - EXPECTATION_SCRUBBER_H - EXPECTATION_TOP_CLEARANCE, state.displayRuns, this.graph, EXPECTATION_TOP_CLEARANCE);
         }
         if (!vm.panelLayout) {
             this._drawEmptyPrompt(canvasW, canvasH);
@@ -207,7 +212,9 @@ class ExpectationView {
             const img = this._imageCache.get(key);
             return img && img !== 'failed' && img.complete && img.naturalWidth > 0;
         })();
-        if (!hasVisibleImage) {
+        // Action node names (e.g. "Hunt", "Eat") are omitted in the MC mini-panels - state names
+        // are what matter for reading a rollout's trajectory at this scale.
+        if (!hasVisibleImage && node.type === 'state') {
             const label = node.name && node.name.length > 4 ? node.name.slice(0, 3) + '…' : (node.name || '');
             const screenFontSize = Math.max(6, node.size * 0.55);
             const worldFontSize = screenFontSize / (fitScale || 1);
@@ -313,6 +320,20 @@ class ExpectationView {
         if (!vm.isPlaying) return;
         vm.isPlaying = false;
         if (this.onPlaybackStateChange) this.onPlaybackStateChange(false);
+    }
+
+    // Advance currentT by one tick without starting continuous playback - pauses first so a
+    // step during an active play doesn't race the scheduled tick. Mirrors the single-tick body
+    // of _scheduleNextTick, matching Build/VI's Step button semantics.
+    step() {
+        const state = this.expectationState;
+        if (!state.computed) return;
+        this.stopPlay();
+        if (state.currentT >= state.maxT) return;
+        state.currentT++;
+        this._syncScrubber();
+        if (typeof redraw === 'function') redraw();
+        this._notifyDataChanged();
     }
 
     _syncScrubber() {
@@ -445,7 +466,7 @@ class ExpectationView {
         const rollout = state.getDisplaySlice()[vm.focusedRunIndex];
         if (!rollout) return;
 
-        const availH = canvasH - EXPECTATION_SCRUBBER_H;
+        const availH = canvasH - EXPECTATION_SCRUBBER_H - EXPECTATION_TOP_CLEARANCE;
         const fitTransform = this.expectationViewModel._computeFitTransform(this.graph, canvasW, availH);
         if (!fitTransform) return;
 
@@ -455,15 +476,15 @@ class ExpectationView {
 
         drawingContext.save();
         drawingContext.beginPath();
-        drawingContext.rect(0, 0, canvasW, availH);
+        drawingContext.rect(0, EXPECTATION_TOP_CLEARANCE, canvasW, availH);
         drawingContext.clip();
 
         fill(AppPalette.surface.card);
         noStroke();
-        rect(0, 0, canvasW, availH);
+        rect(0, EXPECTATION_TOP_CLEARANCE, canvasW, availH);
 
         push();
-        translate(offsetX, offsetY);
+        translate(offsetX, offsetY + EXPECTATION_TOP_CLEARANCE);
         scale(fitScale);
 
         for (const edge of this.graph.edges) {

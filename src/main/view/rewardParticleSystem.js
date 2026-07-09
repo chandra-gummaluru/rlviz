@@ -119,7 +119,7 @@ class RewardParticleSystem {
             const ease = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 
             // Always re-query from DOM each frame (panel rebuilds detach old elements)
-            const target = document.querySelector('.reward-bar-container');
+            const target = document.querySelector('.panel-utility-value');
             let targetX, targetY;
             if (target) {
                 const rect = target.getBoundingClientRect();

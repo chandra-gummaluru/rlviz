@@ -292,6 +292,28 @@ class ResizeNodeCommand extends Command {
     }
 }
 
+// Command to resize a text label (font size)
+class ResizeTextLabelCommand extends Command {
+    constructor(textLabel, oldFontSize, newFontSize) {
+        super();
+        this.textLabel = textLabel;
+        this.oldFontSize = oldFontSize;
+        this.newFontSize = newFontSize;
+    }
+
+    execute() {
+        this.textLabel.setFontSize(this.newFontSize);
+    }
+
+    undo() {
+        this.textLabel.setFontSize(this.oldFontSize);
+    }
+
+    getDescription() {
+        return `Resize text label: ${this.textLabel.text}`;
+    }
+}
+
 // Command to renormalize action node probabilities
 class RenormalizeCommand extends Command {
     constructor(graph) {

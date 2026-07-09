@@ -12,15 +12,12 @@
   --bg-warning-light: #FFF3E0;
 
   /* Z-index layers */
-  --z-menubar: 1000;
-  --z-menubar-dropdown: 1001;
-  --z-toolbar: 999;
+  --z-topbar: 1000;
+  --z-topbar-dropdown: 1001;
   --z-panel: 998;
   --z-slider: 999;
 
   /* Sizing */
-  --menubar-height: 42px;
-  --toolbar-height: 54px;
   --panel-width: 272px;
 
   /* Font fallbacks, used only until AppPalette.js's early inline-style pass overrides them. */
@@ -97,50 +94,77 @@ canvas {
 }
 
 /* ============================================================
-   MenuBar
+   TopBar (single merged chrome bar - logo/filename/undo-redo/mode toggle on the left,
+   theme/parameters/run-step-reset-renormalize on the right)
    ============================================================ */
-.menubar {
-  background-color: var(--bg-black);
+.topbar {
+  background-color: var(--surface-toolbar);
   display: flex;
   align-items: center;
-  padding: 0 10px;
+  justify-content: space-between;
+  padding: 0 14px;
   /* Without this, the JS-set width (windowWidth) is the content box and padding is added on
      top, so the bar (and its right-aligned content) render 20px wider than the viewport. */
   box-sizing: border-box;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-  z-index: var(--z-menubar);
+  border-bottom: 1px solid var(--border-hairline);
+  z-index: var(--z-topbar);
+}
+
+.topbar-left,
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.topbar-logo {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-seg-thumb, 7px);
+  background: color-mix(in srgb, var(--accent-teal) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-teal) 45%, transparent);
+  color: var(--accent-teal, var(--text-white));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-family-mono);
+  font-weight: 600;
+  font-size: 12px;
+  flex-shrink: 0;
 }
 
 .menubar-btn {
-  color: var(--text-white);
-  padding: 8px 16px;
+  color: var(--text-dark);
+  padding: 7px 12px;
+  border-radius: var(--radius-btn, 7px);
   cursor: pointer;
   font-family: var(--font-family);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
   position: relative;
   user-select: none;
 }
 
 .menubar-btn:hover {
-  background-color: rgba(255, 255, 255, 0.1);
+  background-color: var(--surface-hover);
 }
 
 .menubar-dropdown {
   position: absolute;
   top: 100%;
   left: 0;
-  background-color: var(--bg-dark);
+  background-color: var(--surface-card2);
   min-width: 180px;
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
   border-radius: 0 0 4px 4px;
   display: none;
-  z-index: var(--z-menubar-dropdown);
+  z-index: var(--z-topbar-dropdown);
 }
 
 .menubar-item {
   padding: 10px 16px;
-  color: var(--text-white);
+  color: var(--text-dark);
   cursor: pointer;
   font-family: var(--font-family);
   font-size: 13px;
@@ -150,7 +174,7 @@ canvas {
 }
 
 .menubar-item:hover {
-  background-color: var(--bg-dark-hover);
+  background-color: var(--surface-hover);
 }
 
 .menubar-shortcut {
@@ -163,21 +187,14 @@ canvas {
   display: inline-block;
   width: 18px;
   font-size: 13px;
-  color: var(--text-white);
+  color: var(--text-dark);
   flex-shrink: 0;
 }
 
 .menubar-separator {
   height: 1px;
-  background-color: rgba(255, 255, 255, 0.15);
+  background-color: var(--border-hairline);
   margin: 4px 8px;
-}
-
-.menubar-right {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: 10px;
 }
 
 .menubar-theme-toggle {
@@ -186,9 +203,6 @@ canvas {
   border-radius: var(--radius-btn, 7px);
   border: 1px solid var(--border-input, rgba(255, 255, 255, 0.25));
   background: var(--surface-btn, transparent);
-  /* Must contrast against this button's own --surface-btn background (white in light theme,
-     dark in dark theme) - NOT --text-white, which is tuned for text sitting directly on the
-     always-dark menubar bar and is invisible here in light mode (white-on-white). */
   color: var(--text-dark);
   font-size: 13px;
   line-height: 1;
@@ -203,56 +217,243 @@ canvas {
   background: var(--surface-hover, rgba(255, 255, 255, 0.1));
 }
 
-.menubar-wordmark {
-  font-family: var(--font-family-mono);
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--accent-teal, var(--text-white));
+/* Filename menu chip ("gridworld.mdp ▾") */
+.menubar-filename-btn {
+  font-family: var(--font-family-mono, var(--font-family));
 }
 
-.menubar-tagline {
-  font-size: 11px;
+/* Undo/redo icon buttons */
+.menubar-undo-redo {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 4px;
+}
+
+.menubar-icon-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-btn, 6px);
+  border: none;
+  background: transparent;
+  color: var(--text-dark);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.menubar-icon-btn:hover:not(:disabled) {
+  background-color: var(--surface-hover);
+}
+
+.menubar-icon-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* Parameters popover trigger + right-aligned dropdown content */
+.menubar-params-trigger {
+  font-family: var(--font-family-mono, var(--font-family));
+  font-size: 12px;
+}
+
+.menubar-params-trigger .menubar-dropdown {
+  left: auto;
+  right: 0;
+}
+
+.menubar-popover {
+  min-width: 200px;
+  padding: 10px 0;
+}
+
+.menubar-popover-section {
+  padding: 6px 16px;
+}
+
+.menubar-popover-section + .menubar-popover-section {
+  border-top: 1px solid var(--border-hairline);
+}
+
+.menubar-popover-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
   color: var(--text-lighter);
+  margin-bottom: 6px;
+}
+
+.menubar-popover-checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.menubar-checkbox {
+  color: var(--text-dark);
+  font-size: 12px;
+}
+
+.menubar-segmented {
+  display: flex;
+  width: 100%;
+  border: 1px solid var(--border-input, rgba(255, 255, 255, 0.25));
+  border-radius: var(--radius-btn, 4px);
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.menubar-segmented-btn {
+  flex: 1;
+  font-family: var(--font-family);
+  font-size: 11px;
+  font-weight: 500;
+  padding: 4px 10px;
+  border: none;
+  background: transparent;
+  color: var(--text-lighter);
+  cursor: pointer;
+  text-align: center;
+}
+
+.menubar-segmented-btn:not(:first-child) {
+  border-left: 1px solid var(--border-input, rgba(255, 255, 255, 0.25));
+}
+
+.menubar-segmented-btn--active {
+  background: var(--color-primary);
+  color: var(--color-primary-contrast, var(--text-white));
+}
+
+/* Same fix as .toolbar-btn: the browser's default focus ring (Safari's blue/purple halo in
+   particular) draws outside the segmented group's rounded overflow:hidden clip, showing up as
+   a stray oval outline past the last button - replace it with a ring that respects the group's
+   own shape instead. */
+.menubar-segmented-btn:focus,
+.menubar-segmented-btn:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--color-primary) 45%, transparent);
+}
+
+.menubar-speed-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Same flush thumb/track treatment as .panel-param-row-slider (γ/t/steps) - thumb height
+   matches track height so it doesn't overhang the bar. Selectors are prefixed with
+   input[type="range"] so they actually out-specificity the base input[type="range"] rules
+   (a bare class selector alone loses that cascade fight - see .panel-param-row-slider). */
+input[type="range"].menubar-speed-slider {
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+  height: 10px;
+  --thumb-d: 10px;
+}
+
+input[type="range"].menubar-speed-slider::-webkit-slider-runnable-track {
+  height: 10px;
+  border-radius: 5px;
+}
+
+input[type="range"].menubar-speed-slider::-moz-range-track {
+  height: 10px;
+  border-radius: 5px;
+}
+
+input[type="range"].menubar-speed-slider::-moz-range-progress {
+  height: 10px;
+  border-radius: 5px;
+}
+
+input[type="range"].menubar-speed-slider::-webkit-slider-thumb {
+  width: 10px;
+  height: 10px;
+  margin-top: 0;
+}
+
+input[type="range"].menubar-speed-slider::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+}
+
+.menubar-speed-value {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-primary);
+  flex-shrink: 0;
+  min-width: 44px;
+  text-align: right;
+}
+
+.menubar-speed-endlabels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 9px;
+  color: var(--text-lighter);
+  margin-top: 2px;
+}
+
+/* ── Floating zoom pill ───────────────────────────────────────────────── */
+
+.zoom-pill {
+  position: fixed;
+  bottom: 16px;
+  z-index: 10;
+  display: flex;
+  align-items: stretch;
+  background: var(--surface-card2, var(--bg-card));
+  border: 1px solid var(--border-hairline, var(--border-light));
+  border-radius: var(--radius-btn, 6px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+}
+
+.zoom-pill-btn,
+.zoom-pill-percent {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-family-mono, var(--font-family));
+  cursor: pointer;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+.zoom-pill-btn:hover,
+.zoom-pill-percent:hover {
+  background: var(--surface-hover, var(--bg-dark-hover));
+}
+
+.zoom-pill-percent {
+  min-width: 44px;
+  text-align: center;
+  border-left: 1px solid var(--border-hairline, var(--border-light));
+  border-right: 1px solid var(--border-hairline, var(--border-light));
 }
 
 /* ============================================================
-   ToolBar
+   TopBar's mode-dependent action buttons (Run/Step/Reset/Renormalize/VI extras) and the
+   Build|Policy|Values mode-toggle segmented control - children of .topbar-left/.topbar-right.
    ============================================================ */
-.toolbar {
-  background-color: var(--surface-toolbar);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 15px;
-  /* Same fix as .menubar - without this the JS-set width (windowWidth) is the content box and
-     padding is added on top, overhanging the viewport's right edge. */
-  box-sizing: border-box;
-  border-bottom: 1px solid var(--border-hairline);
-  z-index: var(--z-toolbar);
-}
-
-.toolbar-left {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-}
-
-.toolbar-right {
-  display: flex;
-  gap: 0;
-  align-items: center;
-}
-
 .toolbar-btn {
-  padding: 8px 16px;
-  border: none;
-  border-radius: 4px;
+  padding: 7px 14px;
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-btn, 8px);
   font-family: var(--font-family);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  transition: opacity 0.2s;
-  color: var(--text-white);
+  transition: opacity 0.2s, background 0.2s;
+  background: var(--surface-btn);
+  color: var(--text-medium);
 }
 
 .toolbar-btn:hover {
@@ -264,124 +465,90 @@ canvas {
   cursor: not-allowed;
 }
 
-.toolbar-btn--state { background-color: var(--color-success); }
-.toolbar-btn--action { background-color: var(--color-primary); }
-.toolbar-btn--text { background-color: var(--color-gray); }
-.toolbar-btn--renormalize { background-color: var(--color-warning); }
-.toolbar-btn--play { background-color: var(--color-success); }
-.toolbar-btn--pause { background-color: var(--color-warning); }
-.toolbar-btn--step { background-color: var(--color-primary); }
-.toolbar-btn--rerun { background-color: var(--color-purple); }
+/* Replace the browser's default focus ring (Safari in particular draws a blue/purple halo that
+   clashes with the neutral Step/Reset/Renormalize styling and can look like the button itself
+   changed color) with a subtle, theme-consistent ring - text/border color are untouched. */
+.toolbar-btn:focus,
+.toolbar-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 45%, transparent);
+}
 
-/* Mode toggle (segmented control) */
-.toolbar-toggle {
-  padding: 8px 20px;
+.toolbar-btn--state { background-color: var(--color-success); border-color: var(--color-success); color: var(--color-primary-contrast); }
+.toolbar-btn--action { background: var(--surface-btn); }
+.toolbar-btn--text { background-color: var(--color-gray); border-color: var(--color-gray); color: var(--color-primary-contrast); }
+.toolbar-btn--renormalize { background: var(--surface-btn); }
+
+/* Run/Play and Pause: tinted outline chips (not solid fills), matching the mockup - Step/
+   Reset/Renormalize/Skip stay the neutral .toolbar-btn default above, undifferentiated by
+   action like the mockup's uniform button styling. */
+.toolbar-btn--play {
+  background: color-mix(in srgb, var(--color-success) 16%, transparent);
+  border-color: color-mix(in srgb, var(--color-success) 45%, transparent);
+  color: var(--color-success);
+  font-weight: 600;
+}
+
+.toolbar-btn--pause {
+  background: color-mix(in srgb, var(--color-warning) 16%, transparent);
+  border-color: color-mix(in srgb, var(--color-warning) 45%, transparent);
+  color: var(--color-warning);
+  font-weight: 600;
+}
+
+.toolbar-btn--step,
+.toolbar-btn--rerun {
+  background: var(--surface-btn);
+}
+
+/* Mode toggle (segmented control): a padded, rounded outer track with independently-rounded
+   inner segments (not edge-to-edge touching rectangles) - matches the mockup's pill styling. */
+.topbar-mode-toggle {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--surface-btn);
   border: 1px solid var(--border-input);
+  border-radius: var(--radius-seg-track, 10px);
+  padding: 2px;
+}
+
+.toolbar-toggle {
+  padding: 5px 14px;
+  border: none;
+  border-radius: var(--radius-seg-thumb, 7px);
   font-family: var(--font-family);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s;
-  background-color: var(--bg-white);
+  background: transparent;
   color: var(--text-light);
-  border-radius: 0;
 }
 
 .toolbar-toggle--active {
   background-color: var(--color-primary);
   color: var(--color-primary-contrast);
-  border-color: var(--color-primary);
 }
 
-.toolbar-toggle--first {
-  border-radius: 4px 0 0 4px;
+/* Build|Policy|Values active-state accents: Build = cyan, Policy = teal, Values = orange
+   (overrides the generic .toolbar-toggle--active color above via equal-specificity
+   source-order cascade). */
+.toolbar-toggle--build.toolbar-toggle--active {
+  background-color: var(--accent-cyan);
+  color: var(--color-primary-contrast);
 }
 
-.toolbar-toggle--middle {
-  border-radius: 0;
-  border-left: none;
+.toolbar-toggle--policy.toolbar-toggle--active {
+  background-color: var(--accent-teal);
+  color: var(--color-primary-contrast);
 }
 
-.toolbar-toggle--last {
-  border-radius: 0 4px 4px 0;
-  border-left: none;
-}
-
-/* Values slot: hover-reveal segment showing Monte Carlo | split | Value Iter. Width expands on
-   hover to reveal the three sub-buttons; height always matches Edit/Simulate regardless of
-   expand state. */
-.toolbar-toggle--values-slot {
-  position: relative;
-  width: 130px;
-  /* Matches .toolbar-toggle's height (8px 20px padding + 14px line-height computes to this same
-     value); .toolbar-right centers children by natural height rather than stretching them, so
-     this can't just inherit the sizing - it needs to be stated explicitly. */
-  height: 36px;
-  box-sizing: border-box;
-  overflow: hidden;
-  padding: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: width 0.3s cubic-bezier(.3, 1.4, .4, 1), background-color 0.2s;
-}
-
-.toolbar-toggle--values-slot:hover {
-  width: 260px;
-}
-
-.toolbar-toggle--values-slot:hover:not(.toolbar-toggle--active) {
-  background-color: var(--surface-hover, var(--bg-light));
-}
-
-.toolbar-toggle--values-slot.toolbar-toggle--active {
-  background-color: var(--color-primary);
-  border-color: var(--color-primary);
-}
-
-.values-slot-label {
-  position: absolute;
-  white-space: nowrap;
-  transition: opacity 0.15s;
-  pointer-events: none;
-}
-
-.toolbar-toggle--values-slot:hover .values-slot-label {
-  opacity: 0;
-}
-
-.values-slot-expanded {
-  display: flex;
-  align-items: stretch;
-  justify-content: center;
-  width: 100%;
-  height: 100%;
-  opacity: 0;
-  transition: opacity 0.15s;
-  pointer-events: none;
-}
-
-.toolbar-toggle--values-slot:hover .values-slot-expanded {
-  opacity: 1;
-  pointer-events: all;
-}
-
-.values-sub-btn {
-  flex: 1;
-  border: none;
-  background: transparent;
-  color: inherit;
-  font-family: var(--font-family);
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  padding: 0 4px;
-  white-space: nowrap;
-  transition: background-color 0.15s;
-}
-
-.values-sub-btn:hover {
-  background: rgba(255, 255, 255, 0.15);
+/* Values toggle: plain segment, symmetric with Build/Policy. Sub-view selection (MC | Method)
+   lives in the floating estimator pill, not here. */
+.toolbar-toggle--values.toolbar-toggle--active {
+  background-color: var(--accent-orange);
+  color: var(--color-primary-contrast);
 }
 
 /* Value Iteration T input */
@@ -465,13 +632,15 @@ canvas {
 }
 
 .panel-section-title {
-  font-size: 14px;
+  font-size: 10px;
   font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
   margin-top: 15px;
   margin-bottom: 10px;
-  color: var(--text-medium);
-  border-bottom: 2px solid var(--color-primary);
-  padding-bottom: 5px;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-hairline);
+  padding-bottom: 6px;
 }
 
 .panel-section-content {
@@ -573,6 +742,219 @@ canvas {
   color: var(--text-dark);
 }
 
+.estimate-vs-exact-scroll {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.estimate-vs-exact-table {
+  border-collapse: collapse;
+  font-size: 12px;
+  min-width: 100%;
+}
+
+.estimate-vs-exact-table th,
+.estimate-vs-exact-table td {
+  border: 1px solid var(--border-medium);
+  padding: 4px 8px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.estimate-vs-exact-table thead th {
+  background-color: var(--bg-light);
+  font-weight: 600;
+  color: var(--text-medium);
+}
+
+.estimate-vs-exact-table td:first-child {
+  font-weight: 600;
+  color: var(--text-dark);
+  background-color: var(--bg-card);
+  text-align: left;
+}
+
+.panel-top-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+/* Shared param-row layout: [label] [slider, flex:1] [value] on one line - used by the γ slider
+   (Build + Method panels) and the Build panel's t progress bar below. */
+.panel-param-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.panel-param-row + .panel-param-row {
+  margin-top: 10px;
+}
+
+.panel-param-row-label {
+  font-family: var(--font-family-math, serif);
+  font-style: italic;
+  font-size: 15px;
+  color: var(--text-light);
+  flex-shrink: 0;
+}
+
+/* Smaller than the base input[type=range] size (which the animation-speed slider and the
+   transition-probability/policy-weight sliders still use at full size) - just the γ/steps
+   row sliders get this trimmed-down treatment, to match the slimmer t progress bar beside them.
+   Selectors are prefixed with input[type="range"] (not just the bare class) so they actually
+   out-specificity the base input[type="range"] rules below instead of silently losing to them -
+   input[type="range"] carries one more element-level specificity point than a class alone, so
+   ".panel-param-row-slider { height: 14px }" by itself never wins the cascade against
+   "input[type='range'] { height: 20px }" no matter what order the rules appear in.
+   Thumb and track share the same height (no thumb overflow past the bar) - a taller thumb
+   sitting proud of a thin track is what caused the "circle over square" clipped-edge artifact
+   (see --thumb-d below for why the diameter also has to match here). */
+input[type="range"].panel-param-row-slider {
+  flex: 1;
+  cursor: pointer;
+  min-width: 0;
+  height: 10px;
+  --thumb-d: 10px;
+}
+
+input[type="range"].panel-param-row-slider::-webkit-slider-runnable-track {
+  height: 10px;
+  border-radius: 5px;
+}
+
+input[type="range"].panel-param-row-slider::-moz-range-track {
+  height: 10px;
+  border-radius: 5px;
+}
+
+input[type="range"].panel-param-row-slider::-moz-range-progress {
+  height: 10px;
+  border-radius: 5px;
+}
+
+input[type="range"].panel-param-row-slider::-webkit-slider-thumb {
+  width: 10px;
+  height: 10px;
+  margin-top: 0;
+}
+
+input[type="range"].panel-param-row-slider::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+}
+
+.panel-param-row-value {
+  font-family: var(--font-family-mono, monospace);
+  font-size: 12px;
+  color: var(--color-primary);
+  flex-shrink: 0;
+  min-width: 32px;
+  text-align: right;
+}
+
+/* Time-denominated params (t, MC max steps) get the orange accent instead of γ's primary blue -
+   purely a value-text color distinction, same track/thumb styling as every other slider. */
+.panel-param-row-value--time {
+  color: var(--accent-orange);
+}
+
+/* Every <input type="range"> in the app shares this track/thumb treatment. -webkit-appearance/
+   appearance: none hands track rendering over to the pseudo-elements below entirely - without
+   it, Chrome/Safari still paint a sliver of their own native track alongside the custom one,
+   showing up as a stray dark line. Without an explicit track background, browsers also fall
+   back to a near-white default that's nearly invisible against the (also light) panel
+   background in light theme. No accent-color here - the thumb/track below are already fully
+   custom-styled, and accent-color is unused/redundant with them. */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  /* Filled-portion gradient (WebKit/Blink only support a plain track, not a separate "filled"
+     pseudo-element like Firefox does) - kept in sync with the current value via JS on render
+     and on every input tick; --track-color/--fill default to "fully unfilled" so a slider that
+     never gets its inline style touched still renders with proper contrast.
+     --fill is a unitless 0-1 fraction, NOT a percentage: the boundary position has to be
+     "--thumb-d / 2 + fill * (100% - --thumb-d)", matching the browser's own thumb-center
+     formula (thumbRadius + fraction * (trackWidth - thumbDiameter)) - a naive "fill * 100%"
+     boundary ignores the thumb's radius inset, so near either end of the range the boundary
+     lands inside the thumb itself instead of at its center, visibly clipping one side of it. */
+  --track-color: var(--border-input);
+  --fill: 0;
+  --thumb-d: 20px;
+  background: linear-gradient(to right,
+    var(--color-primary) 0,
+    var(--color-primary) calc(var(--thumb-d) / 2 + var(--fill) * (100% - var(--thumb-d))),
+    var(--track-color) calc(var(--thumb-d) / 2 + var(--fill) * (100% - var(--thumb-d))),
+    var(--track-color) 100%);
+  height: 20px;
+}
+
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 3px;
+  background: transparent;
+}
+
+/* Firefox renders the filled portion via a real pseudo-element instead, so the JS gradient
+   trick above isn't needed there - the plain flat track + colored progress overlay Just Works. */
+input[type="range"]::-moz-range-track {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--track-color);
+}
+
+input[type="range"]::-moz-range-progress {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--color-primary);
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  margin-top: -7px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  cursor: pointer;
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 50%;
+  background: var(--color-primary);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  cursor: pointer;
+}
+
+/* Build panel's read-only "t" progress bar (v1: no scrub-to-any-step control, see
+   renderBuildPanel) - a plain div-based bar, not a styled <input type=range>, since Chrome
+   drops the accent-color fill entirely on disabled range inputs (renders as a flat, valueless
+   gray capsule regardless of position) - a div gives full, reliable control over the filled
+   portion instead of fighting each browser's disabled-control rendering. */
+.panel-t-progress-track {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border-input);
+  overflow: hidden;
+  min-width: 0;
+}
+
+.panel-t-progress-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--color-primary);
+  transition: width 0.2s ease;
+}
+
 .model-known-toggle {
   display: inline-flex;
   border: 1px solid var(--border-input, var(--border-medium));
@@ -598,6 +980,107 @@ canvas {
 .model-known-toggle-btn--active {
   background: var(--color-primary);
   color: var(--color-primary-contrast, var(--text-white));
+}
+
+.policy-state-row {
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-hairline, var(--border-light));
+}
+
+.policy-state-row:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.policy-state-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-medium);
+  margin-bottom: 4px;
+}
+
+.policy-terminal-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.policy-det-random-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border-input, var(--border-medium));
+  border-radius: var(--radius-btn, 4px);
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+
+.policy-det-random-btn {
+  font-family: var(--font-family);
+  font-size: 10px;
+  font-weight: 500;
+  padding: 3px 8px;
+  border: none;
+  background: var(--surface-btn, var(--bg-white));
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.policy-det-random-btn:not(:first-child) {
+  border-left: 1px solid var(--border-input, var(--border-medium));
+}
+
+.policy-det-random-btn--active {
+  background: var(--color-primary);
+  color: var(--color-primary-contrast, var(--text-white));
+}
+
+.policy-segmented-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.policy-segmented-btn {
+  font-family: var(--font-family-mono, var(--font-family));
+  font-size: 11px;
+  font-weight: 500;
+  padding: 4px 10px;
+  border: 1px solid var(--border-input, var(--border-medium));
+  border-radius: var(--radius-btn, 4px);
+  background: var(--surface-btn, var(--bg-white));
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.policy-segmented-btn--active {
+  background: var(--accent-cyan, var(--color-primary));
+  color: var(--color-primary-contrast, var(--text-white));
+  border-color: var(--accent-cyan, var(--color-primary));
+}
+
+/* Random-mode weight sliders (Policy mode only) - one independent slider per action */
+.policy-weight-sliders {
+  margin-top: 4px;
+}
+
+.policy-weight-row {
+  margin-bottom: 6px;
+}
+
+.policy-weight-row:last-child {
+  margin-bottom: 0;
+}
+
+.policy-weight-name {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+
+.panel-hint-suffix {
+  color: var(--text-muted);
+  font-size: 11px;
 }
 
 .panel-explain-step {
@@ -840,91 +1323,48 @@ canvas {
 .panel-stat-value--primary { color: var(--color-primary); }
 .panel-stat-value--success { color: var(--color-success); }
 
-.panel-stat-value--large {
-  font-size: 24px;
-  font-weight: 700;
+/* Utility G: formula + value on one inline row, right-aligned value */
+.panel-utility-inline {
+  margin-top: 12px;
 }
 
-.panel-stat-value--large-primary {
-  font-size: 24px;
-  font-weight: 700;
-  color: var(--color-primary);
+.panel-utility-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 6px;
 }
 
-/* Reward bar */
-.reward-bar-container {
-  position: relative;
-  width: 100%;
+.panel-latex--inline {
+  font-size: 13px;
+  font-style: italic;
+}
+
+.panel-utility-value {
+  font-family: var(--font-family-mono, var(--font-family));
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* Utility G contribution bar: always-visible, one block per non-zero reward step, width
+   proportional to the discounted magnitude |gamma^t * r_t|, plus a trailing gray block for the
+   remaining episode tail with no more reward. */
+.utility-contribution-bar {
+  display: flex;
+  gap: 1px;
   height: 12px;
-  background: #f0f0f0;
-  border-radius: 6px;
-  margin-top: 8px;
+  border-radius: 4px;
   overflow: hidden;
 }
 
-.reward-bar-fill {
-  position: absolute;
-  top: 0;
+.utility-contribution-block {
   height: 100%;
-  border-radius: 6px;
-  transition: width 0.3s ease, left 0.3s ease;
 }
 
-.reward-bar-center {
-  position: absolute;
-  left: 50%;
-  top: -1px;
-  width: 2px;
-  height: 14px;
-  background: #333;
-  transform: translateX(-50%);
-}
-
-/* Utility hover panel */
-.utility-hover-panel {
-  position: relative;
-  outline: none;
-}
-
-.utility-hover-panel:focus-visible {
-  box-shadow: 0 0 0 2px var(--color-primary);
-  border-radius: 4px;
-}
-
-.utility-time-cards {
-  display: none;
-  grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
-  gap: 6px;
-  margin-top: 10px;
-}
-
-.utility-hover-panel:hover .utility-time-cards,
-.utility-hover-panel:focus-within .utility-time-cards {
-  display: grid;
-}
-
-.utility-time-card {
-  border: 1px solid var(--border-card);
-  border-radius: 4px;
-  padding: 6px;
-  background: var(--bg-card);
-}
-
-.utility-time-card-label {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-muted);
-}
-
-.utility-time-card-term {
-  font-size: 11px;
-  margin-top: 4px;
-}
-
-.utility-time-card-value {
-  font-size: 13px;
-  font-weight: 600;
-  margin-top: 3px;
+.utility-contribution-remainder {
+  flex: 1;
+  height: 100%;
+  background: var(--border-medium);
 }
 
 /* Decision probability rows */
@@ -1169,6 +1609,158 @@ canvas {
   color: var(--text-dark);
   padding: 0 12px;
   white-space: nowrap;
+}
+
+/* ── Floating Build-mode tool palette ────────────────────────────────── */
+
+.tool-palette {
+  position: absolute;
+  left: 12px;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  background: var(--surface-card2, var(--bg-card));
+  border: 1px solid var(--border-hairline, var(--border-light));
+  border-radius: var(--radius-panel, 12px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.tool-palette-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  border: none;
+  border-radius: var(--radius-btn, 8px);
+  background: transparent;
+  font-family: var(--font-family);
+  cursor: pointer;
+}
+
+.tool-palette-btn:hover {
+  background: var(--surface-hover, var(--bg-dark-hover));
+}
+
+.tool-palette-btn-icon {
+  font-size: 18px;
+  line-height: 1;
+  width: 20px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.tool-palette-btn-label {
+  font-size: 15px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* Each tool's icon/label take on that tool's own on-canvas color (state=cyan, action=purple),
+   matching the node colors they create - Text stays a neutral gray since it has no dedicated
+   accent elsewhere in the app. Set on the button itself (icon/label inherit) so --active's
+   currentColor-based tint below picks up the right color per tool. */
+.tool-palette-btn--select,
+.tool-palette-btn--state {
+  color: var(--accent-cyan);
+}
+
+.tool-palette-btn--action {
+  color: var(--accent-purple);
+}
+
+.tool-palette-btn--textbox {
+  color: var(--text-muted);
+}
+
+.tool-palette-btn--active {
+  background: color-mix(in srgb, currentColor 16%, transparent);
+}
+
+/* ── Floating Values-mode estimator pill + method badge ──────────────── */
+
+.estimator-pill {
+  position: absolute;
+  z-index: 10;
+  transform: translateX(-50%);
+  display: flex;
+  background: var(--surface-card2, var(--bg-card));
+  border: 1px solid var(--border-hairline, var(--border-light));
+  border-radius: 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+}
+
+.estimator-pill-btn {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-family);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 16px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.values-method-badge {
+  position: absolute;
+  left: 12px;
+  z-index: 10;
+  font-family: var(--font-family-mono, var(--font-family));
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border: 1px solid;
+  border-radius: var(--radius-btn, 6px);
+  background: var(--surface-card2, var(--bg-card));
+}
+
+/* ── Floating Monte Carlo "runs" pill (top-right) ─────────────────────── */
+
+.mc-runs-pill {
+  position: absolute;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mc-runs-pill-label {
+  font-size: 10px;
+  color: var(--text-lighter);
+}
+
+.mc-runs-pill-track {
+  display: flex;
+  gap: 2px;
+  background: var(--surface-card2, var(--bg-card));
+  border: 1px solid var(--border-hairline, var(--border-light));
+  border-radius: 8px;
+  padding: 2px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.mc-runs-pill-btn {
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-family-mono, var(--font-family));
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+
+.mc-runs-pill-btn:hover {
+  background: var(--surface-hover, var(--bg-dark-hover));
+}
+
+.mc-runs-pill-btn--active {
+  background: var(--accent-orange);
+  color: var(--color-primary-contrast, var(--text-white));
 }
 
 /* ── Bottom chart dock ────────────────────────────────────────────────── */

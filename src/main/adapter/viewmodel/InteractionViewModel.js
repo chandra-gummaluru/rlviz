@@ -1,8 +1,8 @@
 // User interaction state management
 class InteractionViewModel {
     constructor() {
-        this.mode = 'editor'; // 'editor' | 'simulate' | 'values'
-        this.valuesSubView = 'mc'; // 'mc' | 'vi' | 'split' (only meaningful while mode === 'values')
+        this.mode = 'build'; // 'build' | 'values'
+        this.valuesSubView = 'mc'; // 'mc' | 'vi' (only meaningful while mode === 'values')
 
         // Placement state
         this.placingMode = null; // 'state', 'action', 'textbox'
@@ -28,6 +28,8 @@ class InteractionViewModel {
         this.resizingNode = null;
         this.resizeStartSize = 0;
         this.resizeStartDistance = 0;
+        this.resizingTextLabel = null;
+        this.resizeStartFontSize = 0;
 
         // Pan state
         this.isPanning = false;
@@ -79,6 +81,7 @@ class InteractionViewModel {
         this.draggingNodeNameLabel = null;
         this.draggingEdgeLabel = null;
         this.resizingNode = null;
+        this.resizingTextLabel = null;
         this.isPanning = false;
         this.renameRequested = false;
         this.textLabelRequested = false;
@@ -131,6 +134,7 @@ class InteractionViewModel {
                this.draggingNodeNameLabel !== null ||
                this.draggingEdgeLabel !== null ||
                this.resizingNode !== null ||
+               this.resizingTextLabel !== null ||
                this.isPanning;
     }
 
