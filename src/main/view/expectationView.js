@@ -154,6 +154,21 @@ class ExpectationView {
             fill(utility >= 0 ? AppPalette.reward.positive : AppPalette.reward.negative);
             text(`G = ${utility.toFixed(2)}`, panel.x + panel.w - 4, panel.y + 3);
 
+            // Third line: trajectory-so-far readout (e.g. "S0 →Hun→ S1 (+5.00)"), a supplementary
+            // readout below the #NN/G= row - skipped on short panels so it doesn't crowd the
+            // mini-graph render underneath.
+            if (panel.h > 90) {
+                const trajectory = RolloutFormatter.formatTrajectory(this.graph, rollout, currentT);
+                if (trajectory) {
+                    textSize(9);
+                    textFont(Typography.mono());
+                    textAlign(LEFT, TOP);
+                    fill(AppPalette.text.secondary);
+                    const maxWidthPx = panel.w - 8;
+                    text(this._truncateToWidth(trajectory, maxWidthPx), panel.x + 4, panel.y + 15);
+                }
+            }
+
             // Panel border - only the color changes on hover, not the stroke weight, so the
             // border doesn't visually "jump" in thickness as the mouse moves across the grid.
             noFill();
@@ -161,6 +176,19 @@ class ExpectationView {
             strokeWeight(1);
             rect(panel.x, panel.y, panel.w, panel.h, 9);
         }
+    }
+
+    // Truncates str character-by-character (appending '…') until it fits within maxWidthPx,
+    // measured with p5's textWidth() under whatever font/size is currently active on the
+    // drawing context (caller must set textSize/textFont beforehand).
+    _truncateToWidth(str, maxWidthPx) {
+        if (maxWidthPx <= 0) return '';
+        if (textWidth(str) <= maxWidthPx) return str;
+        let truncated = str;
+        while (truncated.length > 0 && textWidth(truncated + '…') > maxWidthPx) {
+            truncated = truncated.slice(0, -1);
+        }
+        return truncated.length > 0 ? truncated + '…' : '';
     }
 
     _ensureImagesLoaded() {
