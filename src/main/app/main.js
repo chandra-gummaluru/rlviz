@@ -226,6 +226,12 @@ const onModelKnownToggle = (known) => {
     // Entering/leaving the Learning Iteration quadrant toggles the Graph|Tree pill (and seeds
     // the tree root on first entry) without waiting for a Run/Step click.
     refreshLearningTreePill();
+    // The shared VI Play/Step/Skip buttons' label and enabled-state are quadrant-dependent
+    // (Learning Iteration vs. the other three) - re-resolve immediately rather than waiting for
+    // the next mode/subview entry, or they go stale (see refreshVIButtons()).
+    if (canvasViewModel.mode === 'values' && canvasViewModel.valuesSubView === 'vi') {
+        refreshVIButtons();
+    }
     redraw();
 };
 
@@ -236,6 +242,9 @@ const onObservabilityToggle = (value) => {
     if (rightPanel) rightPanel.updateContent();
     if (mainView && mainView.chartDock) mainView.chartDock.refresh();
     refreshLearningTreePill();
+    if (canvasViewModel.mode === 'values' && canvasViewModel.valuesSubView === 'vi') {
+        refreshVIButtons();
+    }
     redraw();
 };
 
@@ -560,6 +569,14 @@ function checkAndRenormalizeIfNeeded(forceCheck = false) {
 // Value Iteration callbacks
 const refreshVIButtons = () => {
     if (!topBar) return;
+    // Learning Iteration (unknown:full) is driven by the real Q-learning subsystem, not VI's
+    // Bellman sweep - there's no "converged"/"T-capped" concept there, so Play/Step/Reset stay
+    // always enabled. Reuse the same quadrant check onVIPlay/onVIStep/onVIReset already use,
+    // rather than re-deriving it here.
+    if (_isLearningIterationActive()) {
+        topBar.updateVIButtonStates(false, true, true);
+        return;
+    }
     const canStep = valueIterationState.canAdvance();
     const canPlay = canStep && !valueIterationState.converged;
     topBar.updateVIButtonStates(valueIterationState.isPlaying, canStep, canPlay);

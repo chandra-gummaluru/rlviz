@@ -85,10 +85,10 @@ class LearningIterationView {
             }
         }
 
-        // Action diamonds.
+        // Action nodes - rounded squares, matching Build mode / the Value Iteration view.
         for (const node of graph.nodes) {
             if (node.type !== 'action') continue;
-            this._drawActionDiamond(node.x, node.y, node.name, LI_ACTION_RADIUS,
+            this._drawActionSquare(node.x, node.y, node.name, LI_ACTION_RADIUS,
                 ColorUtils.applyAlpha(AppPalette.node.action, 220), 255);
         }
 
@@ -355,10 +355,14 @@ class LearningIterationView {
         pop();
     }
 
+    // Tree mode only - the diamond is a deliberate decision-tree convention (state/action/outcome
+    // shape distinction), kept intentionally different from the flat Graph view's node shapes.
     _drawActionDiamond(x, y, name, r, fillColor, strokeAlpha) {
         push();
         fill(fillColor);
-        stroke(60, 60, 60, strokeAlpha);
+        // Theme-aware stroke (was a hardcoded rgb(60,60,60)) - text.medium is the same token
+        // _drawStateCircle already uses for its node outline in this file.
+        stroke(ColorUtils.applyAlpha(AppPalette.text.medium, strokeAlpha));
         strokeWeight(1.5);
         beginShape();
         vertex(x, y - r);
@@ -367,7 +371,29 @@ class LearningIterationView {
         vertex(x - r, y);
         endShape(CLOSE);
 
-        fill(255, 255, 255, strokeAlpha);
+        // Label color picked for contrast against the diamond's actual fill (was a hardcoded
+        // white, unreadable against light fills/themes) rather than assumed white.
+        fill(ColorUtils.applyAlpha(ColorUtils.contrastText(fillColor), strokeAlpha));
+        noStroke();
+        textAlign(CENTER, CENTER);
+        textSize(9);
+        textFont(Typography.sans());
+        text(name, x, y);
+        pop();
+    }
+
+    // Graph mode's action-node shape - a rounded square, matching Build mode
+    // (mainView.js's `rect(node.x - node.size, ..., 8)`) and the Value Iteration view's action
+    // node convention, so the flat MDP graph looks the same across Build/Policy/VI/Graph mode.
+    // Tree mode intentionally keeps the diamond above - do not reuse this for Tree mode.
+    _drawActionSquare(x, y, name, r, fillColor, strokeAlpha) {
+        push();
+        fill(fillColor);
+        stroke(ColorUtils.applyAlpha(AppPalette.text.medium, strokeAlpha));
+        strokeWeight(1.5);
+        rect(x - r, y - r, r * 2, r * 2, 4);
+
+        fill(ColorUtils.applyAlpha(ColorUtils.contrastText(fillColor), strokeAlpha));
         noStroke();
         textAlign(CENTER, CENTER);
         textSize(9);

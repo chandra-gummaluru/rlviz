@@ -416,7 +416,9 @@ class RightPanel {
                     `<span style="color: var(--accent-cyan)">π(a${this._toSubscript(0)}) = ${p.toFixed(2)}</span>` +
                     ` / ` +
                     `<span style="color: var(--accent-purple)">π(a${this._toSubscript(1)}) = ${(1 - p).toFixed(2)}</span>`;
-                readouts.forEach(({ valueDisplay }) => valueDisplay.html(pairedHtml));
+                // Show the combined pair string once (first row only) - previously this set the
+                // same paired html on every row's readout, duplicating it across both actions.
+                readouts.forEach(({ valueDisplay }, i) => valueDisplay.html(i === 0 ? pairedHtml : ''));
             } else {
                 readouts.forEach(({ index, valueDisplay }) => {
                     valueDisplay.html(`π(a${this._toSubscript(index)}) = ${pcts[index].toFixed(2)}`);
@@ -837,8 +839,6 @@ class RightPanel {
         eqDiv.addClass('panel-section-content');
         if (matrixKey === 'known:full') {
             eqDiv.elt.innerHTML = renderKatex('V^{k}(s) = \\max_a \\sum_{s\'} P(s\'|s,a)[R + \\gamma V^{k-1}(s\')]', true);
-        } else if (matrixKey === 'unknown:full') {
-            eqDiv.html('P is unknown, so the true action values can\'t be computed. Manually estimate them below.');
         } else if (matrixKey === 'known:partial') {
             eqDiv.elt.innerHTML = renderKatex('V^{k}(b) = \\max_a \\sum_{s\'} P(s\'|s,a)[R + \\gamma V^{k-1}(b\')]', true);
         } else {
@@ -872,7 +872,6 @@ class RightPanel {
 
                 const perQuadrant = {
                     'known:full':      `max ${viState.T} sweeps`,
-                    'unknown:full':    'α = 0.1 · 40 episodes',
                     'known:partial':   `belief update · max ${viState.T} sweeps`,
                     'unknown:partial': 'α = 0.1 · belief memory'
                 };
