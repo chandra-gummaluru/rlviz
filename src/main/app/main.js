@@ -577,9 +577,7 @@ const refreshVIButtons = () => {
         topBar.updateVIButtonStates(false, true, true);
         return;
     }
-    const canAdvance = valueIterationState.canAdvance();
-    const canStep = !valueIterationState.initialized || canAdvance;
-    const canPlay = !valueIterationState.initialized || (canAdvance && !valueIterationState.converged);
+    const { canStep, canPlay } = valueIterationState.getButtonEnablement();
     topBar.updateVIButtonStates(valueIterationState.isPlaying, canStep, canPlay);
 };
 

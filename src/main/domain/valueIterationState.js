@@ -180,6 +180,21 @@ class ValueIterationState {
         return this.initialized && this.currentSweepIndex < this.T;
     }
 
+    /**
+     * Single source of truth for whether Play/Step/Skip should be clickable, shared by every
+     * consumer (main.js's refreshVIButtons(), viPresenter.js's _updateButtonStates()) so the
+     * pre-init/post-init distinction can't silently drift apart between call sites again.
+     * Before the first Run/Reset-triggered initialize(), Play/Step/Skip must stay enabled so the
+     * user can kick off the first run (see onVIPlay/onVIStep/onVISkip's ensureVIInitialized()) -
+     * only once initialized does canAdvance()/converged actually gate them.
+     */
+    getButtonEnablement() {
+        const canAdvance = this.canAdvance();
+        const canStep = !this.initialized || canAdvance;
+        const canPlay = !this.initialized || (canAdvance && !this.converged);
+        return { canStep, canPlay };
+    }
+
     /** Total number of sweep snapshots (sweep 0 .. currentSweepIndex). */
     get totalSweeps() {
         return this.history.length;

@@ -261,8 +261,7 @@ class VIPresenter extends VIOutputBoundary {
     _updateButtonStates() {
         if (this.viewModel.interaction.mode === 'values' && this.viewModel.valuesSubView === 'mc') return;
         if (!this.topBar || !this.viState) return;
-        const canStep = this.viState.canAdvance();
-        const canPlay = canStep && !this.viState.converged;
+        const { canStep, canPlay } = this.viState.getButtonEnablement();
         this.topBar.updateVIButtonStates(this.viState.isPlaying, canStep, canPlay);
     }
 }
