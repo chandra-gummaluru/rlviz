@@ -447,7 +447,6 @@ class ExpectationView {
         const vm = this.expectationViewModel;
         if (index < 0 || index >= state.getDisplaySlice().length) return;
         vm.focusedRunIndex = index;
-        vm.hoveredRun = null;
         this._createBackButton();
         if (this._scrubber) this._scrubber.setRolloutForRewardDots(state.getDisplaySlice()[index]);
         this._notifyDataChanged();

@@ -225,15 +225,15 @@ class ChartDock {
 
         // Live-linking: hovering a run card marks the current scrubber t on this chart's own
         // time axis (a dashed vertical yellow line), connecting "which run" to "where we are".
-        const hoveredRun = this.expectationViewModel ? this.expectationViewModel.hoveredRun : null;
-        if (hoveredRun !== null) {
+        const highlightedRun = this.expectationViewModel ? this.expectationViewModel.highlightedRun : null;
+        if (highlightedRun !== null) {
             const allY = [...viValues, ...mcMeans, vStar].filter(v => typeof v === 'number' && isFinite(v));
             if (allY.length > 0) {
                 const yMin = Math.min(...allY);
                 const yMax = Math.max(...allY);
                 const t = this.expectationState.currentT;
                 datasets.push({
-                    label: `ep ${hoveredRun + 1}`,
+                    label: `ep ${highlightedRun + 1}`,
                     data: [{ x: t, y: yMin }, { x: t, y: yMax }],
                     borderColor: AppPalette.accent.yellow,
                     borderDash: [3, 3], borderWidth: 1.5, pointRadius: 0
@@ -262,14 +262,14 @@ class ChartDock {
         const { bins, counts } = ChartDataBuilders.buildHistogramData(this.expectationState, t);
         if (bins.length === 0) return;
 
-        const hoveredRun = this.expectationViewModel ? this.expectationViewModel.hoveredRun : null;
-        const hoveredBinIdx = hoveredRun !== null
-            ? this._binIndexForRun(hoveredRun, t)
+        const highlightedRun = this.expectationViewModel ? this.expectationViewModel.highlightedRun : null;
+        const highlightedBinIdx = highlightedRun !== null
+            ? this._binIndexForRun(highlightedRun, t)
             : null;
 
         const bgColors = bins.map((_, i) => {
-            if (hoveredBinIdx !== null) {
-                return i === hoveredBinIdx ? AppPalette.accent.yellow : ColorUtils.applyAlpha(AppPalette.text.muted, 40);
+            if (highlightedBinIdx !== null) {
+                return i === highlightedBinIdx ? AppPalette.accent.yellow : ColorUtils.applyAlpha(AppPalette.text.muted, 40);
             }
             return i < bins.length / 2 ? AppPalette.accent.red : AppPalette.accent.orange;
         });
@@ -365,10 +365,10 @@ class ChartDock {
         startCircle.setAttribute('fill', AppPalette.accent.cyan);
         svg.appendChild(startCircle);
 
-        const hoveredRun = this.expectationViewModel ? this.expectationViewModel.hoveredRun : null;
+        const highlightedRun = this.expectationViewModel ? this.expectationViewModel.highlightedRun : null;
 
         branches.forEach((branch, i) => {
-            const isHovered = hoveredRun !== null && branch.runIndices.includes(hoveredRun);
+            const isHovered = highlightedRun !== null && branch.runIndices.includes(highlightedRun);
             const strokeColor = isHovered ? AppPalette.accent.yellow : AppPalette.edge.default;
             const strokeWidth = isHovered ? '2.5' : '1';
 

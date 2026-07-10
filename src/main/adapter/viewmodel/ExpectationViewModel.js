@@ -76,4 +76,11 @@ class ExpectationViewModel {
     invalidateLayout() {
         this.layoutStale = true;
     }
+
+    // Combined getter: pinned run wins over hovered, for chart-dock highlighting.
+    // When a run is pinned (focusedRunIndex !== null), that takes precedence;
+    // otherwise use the hovered run for live-linking highlights.
+    get highlightedRun() {
+        return this.focusedRunIndex !== null ? this.focusedRunIndex : this.hoveredRun;
+    }
 }
