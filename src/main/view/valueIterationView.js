@@ -87,7 +87,7 @@ class ValueIterationView {
         this.ACTION_NODE_RADIUS = VI_ACTION_NODE_RADIUS;
         this.tween = new VITweenEngine();
         this._lastPhaseKey = null;
-        this._lastVisibleColumnCount = 0;
+        this._lastPulseSweep = undefined;
         // Accessors for the real right-panel width / top-bar height, so placeholder/status-strip
         // layout stays correct even if those dimensions change (panel resize, spec dimension
         // updates) instead of duplicating magic numbers here.
@@ -121,58 +121,45 @@ class ValueIterationView {
     }
 
     draw() {
-        if (!this.viState || !this.viViewModel || !this.viViewModel.columns.length) {
+        if (!this.viState || !this.viState.initialized || !this.viewModel.graph) {
             this._drawPlaceholder();
             return;
         }
 
-        const visibleCount = this.viViewModel.visibleColumnCount;
-        if (visibleCount === 0) {
+        const graph = this.viewModel.graph;
+        const stateNodes = graph.nodes.filter(n => n.type === 'state');
+        if (stateNodes.length === 0) {
             this._drawPlaceholder();
             return;
         }
 
-        const detail = this.viViewModel.backupDetail;
+        const sweep = this.viState.currentSweepIndex;
 
-        // Phase change detection — starts tweens for new phases
-        const phaseKey = this._getPhaseKey(detail);
-        if (phaseKey !== this._lastPhaseKey) {
-            this._onPhaseChange(detail);
-            this._lastPhaseKey = phaseKey;
-        }
-        this._detectNewColumnTweens();
+        // Pulse all nodes when the sweep index advances (the per-sweep "beat").
+        this._detectSweepPulse(sweep, stateNodes);
 
-        const activeColIdx = this.viViewModel.activeColumnIndex;
-        const activeStateId = this.viViewModel.activeStateId;
+        // Edges (policy-highlighted state->action->state chains) behind the nodes.
+        this._drawPolicyGraph(stateNodes, sweep, graph);
 
-        // Draw edges between adjacent visible columns (behind nodes)
-        for (let i = 0; i < visibleCount - 1; i++) {
-            const fromCol = this.viViewModel.columns[i];
-            const toCol = this.viViewModel.columns[i + 1];
-            if (fromCol && toCol) {
-                this._drawColumnEdges(fromCol, toCol, i, activeColIdx, activeStateId);
-            }
+        // Heat-mapped state nodes with V labels.
+        const values = this.viState.getValues(sweep);
+        const maxAbs = this._maxAbsValue(values);
+        for (const node of stateNodes) {
+            this._drawHeatStateNode(node, sweep, values, maxAbs);
         }
 
-        // Draw visible columns
-        for (let i = 0; i < visibleCount; i++) {
-            const col = this.viViewModel.columns[i];
-            if (!col) continue;
-            this._drawColumn(col, i, activeColIdx, activeStateId);
-        }
-
-        // Draw timestep labels at top
-        this._drawTimestepLabels(visibleCount);
-
-        // Draw live backup animation overlay (suppressed while explanation is open)
-        if (detail && !this.viViewModel.explanationDetail) {
-            this._drawBackupAnimation(detail);
-        }
-
-        // Draw explanation overlay if a Q-cell is being explained
+        // Explanation overlay if a Q-cell is being explained (re-anchored fan-out to real node).
         const explanationDetail = this.viViewModel.explanationDetail;
         if (explanationDetail) {
+            // Phase-change detection restarts the explanation tweens on step-through.
+            const phaseKey = this._getPhaseKey(explanationDetail);
+            if (phaseKey !== this._lastPhaseKey) {
+                this._onPhaseChange(explanationDetail);
+                this._lastPhaseKey = phaseKey;
+            }
             this._drawExplanationOverlay(explanationDetail);
+        } else {
+            this._lastPhaseKey = null;
         }
 
         // Loop management — continuous during active tweens, noLoop when idle
@@ -190,161 +177,192 @@ class ValueIterationView {
         textAlign(CENTER, CENTER);
         textSize(18);
         textFont(Typography.sans());
-        text('Set T and click Play to start Value Iteration',
+        text('Set max sweeps (T) and click Run to start Value Iteration',
             (windowWidth - this.layout.getPanelWidth()) / 2, (windowHeight - this.layout.getTopOffset()) / 2);
         pop();
     }
 
-    _drawTimestepLabels(visibleCount) {
-        for (let i = 0; i < visibleCount; i++) {
-            const col = this.viViewModel.columns[i];
-            if (col) {
-                mathRenderer.draw(drawingContext, `t = ${col.timestep}`, col.x, 10,
-                    { color: AppPalette.text.medium, em: 14, alignX: 'center', alignY: 'top' });
-            }
+    // Method accent hex (teal for VI, purple for LI, yellow for BI/PO-L) for the heat fill.
+    _accentColor() {
+        const entry = ValuesMethodMatrix.resolve(this.viewModel.modelKnown, this.viewModel.observability);
+        return AppPalette.accent[entry.accent] || this.viColors.result;
+    }
+
+    _maxAbsValue(values) {
+        let m = 0;
+        for (const id of Object.keys(values)) {
+            const a = Math.abs(values[id] ?? 0);
+            if (a > m) m = a;
         }
+        return m;
     }
 
-    _drawColumn(col, colIdx, activeColIdx, activeStateId) {
-        for (const stateNode of col.states) {
-            const alpha = this._getNodeAlpha(colIdx, stateNode.id, activeColIdx, activeStateId);
-            this._drawStateNode(stateNode, colIdx, alpha);
-        }
-    }
+    // Heat-map node: fill = method accent at alpha proportional to |V(s)| / max_s|V(s)| at the
+    // current sweep. Single-hue-by-magnitude (not a diverging red/green scale) is a deliberate
+    // simplification: these MDPs can have negative-valued states, so magnitude is the clearest
+    // signal to encode in one channel.
+    _drawHeatStateNode(node, sweep, values, maxAbs) {
+        const r = node.size;
+        const v = values[node.id] ?? 0;
+        const frac = maxAbs > 0 ? Math.min(Math.max(Math.abs(v) / maxAbs, 0), 1) : 0;
+        const heatAlpha = Math.round(0.4 * 255 * frac);
+        const accent = color(this._accentColor());
 
-    _getNodeAlpha(colIdx, stateId, activeColIdx, activeStateId) {
-        if (activeColIdx < 0) return 255;
-        if (colIdx === activeColIdx && stateId === activeStateId) return 255;
-        if (colIdx < activeColIdx) return VI_ALPHA_COMPLETED;
-        if (colIdx === activeColIdx) return VI_ALPHA_ACTIVE_SAME;
-        if (colIdx === activeColIdx + 1) return VI_ALPHA_NEXT_COL;
-        return VI_ALPHA_COMPLETED;
-    }
+        // Sweep pulse ring
+        const pulseId = `sweep:${sweep}:pulse:${node.id}`;
+        const pulseP = this.tween.progress(pulseId);
 
-    _drawStateNode(stateNode, colIdx, alpha) {
-        const r = stateNode.radius;
+        const isPartialObs = this.viewModel.observability === 'partial';
 
         push();
-
-        // Column scale-in animation
-        const scaleId = `column:${colIdx}:state:${stateNode.id}:scale`;
-        const s = this.tween.progress(scaleId);
-        if (s < 1) {
-            translate(stateNode.x, stateNode.y);
-            scale(s, s);
-            translate(-stateNode.x, -stateNode.y);
-        }
-
-        const isRevealed = this.viViewModel.isValueRevealed(colIdx, stateNode.id);
-        const fillColor = isRevealed ? color(76, 175, 80, alpha) : color(200, 200, 200, alpha);
-        const isPartialObs = this.viewModel.observability === 'partial';
-        fill(fillColor);
-        stroke(60, 60, 60, alpha);
+        fill(red(accent), green(accent), blue(accent), heatAlpha);
+        stroke(AppPalette.text.medium);
         strokeWeight(2);
         if (isPartialObs) drawingContext.setLineDash([6, 5]);
-        ellipse(stateNode.x, stateNode.y, r * 2, r * 2);
+        ellipse(node.x, node.y, r * 2, r * 2);
         if (isPartialObs) drawingContext.setLineDash([]);
+        pop();
 
-        if (s > 0.2) {
-            // State name — plain text, not math
-            fill(0, 0, 0, alpha);
-            noStroke();
-            textAlign(CENTER, CENTER);
-            textSize(14);
-            textFont(Typography.sans());
-            text(stateNode.name, stateNode.x, stateNode.y - 6);
-
-            if (isRevealed) {
-                if (isPartialObs) {
-                    const { b, vOfB } = this._beliefFor(stateNode.id, colIdx);
-                    mathRenderer.draw(drawingContext, `b = ${b.toFixed(2)}`,
-                        stateNode.x, stateNode.y + 8,
-                        { color: AppPalette.text.muted, em: 9, alpha, alignX: 'center', alignY: 'middle' });
-                    mathRenderer.draw(drawingContext, `V(b) = ${vOfB.toFixed(2)}`,
-                        stateNode.x, stateNode.y + 21,
-                        { color: this.viColors.result, em: 11, alpha, alignX: 'center', alignY: 'middle' });
-                } else {
-                    const label = this.viewModel.modelKnown
-                        ? `V = ${stateNode.value.toFixed(2)}`
-                        : `Q̂ = ${stateNode.value.toFixed(2)}`;
-                    mathRenderer.draw(drawingContext, label,
-                        stateNode.x, stateNode.y + 10,
-                        { color: this.viColors.result, em: 11, alpha, alignX: 'center', alignY: 'middle' });
-                }
-            }
+        if (pulseP > 0 && pulseP < 1) {
+            push();
+            noFill();
+            stroke(red(accent), green(accent), blue(accent), 200 * (1 - pulseP));
+            strokeWeight(3 * (1 - pulseP));
+            ellipse(node.x, node.y, (r + 12 * pulseP) * 2);
+            pop();
         }
 
+        // State name
+        push();
+        fill(AppPalette.text.black);
+        noStroke();
+        textAlign(CENTER, CENTER);
+        textSize(14);
+        textFont(Typography.sans());
+        text(node.name, node.x, node.y - 6);
         pop();
+
+        // V / belief label
+        if (isPartialObs) {
+            const { b, vOfB } = this._beliefFor(node.id, sweep);
+            mathRenderer.draw(drawingContext, `b = ${b.toFixed(2)}`,
+                node.x, node.y + 8,
+                { color: AppPalette.text.muted, em: 9, alignX: 'center', alignY: 'middle' });
+            mathRenderer.draw(drawingContext, `V(b) = ${vOfB.toFixed(2)}`,
+                node.x, node.y + 21,
+                { color: this.viColors.result, em: 11, alignX: 'center', alignY: 'middle' });
+        } else {
+            const label = this.viewModel.modelKnown
+                ? `V = ${v.toFixed(2)}`
+                : `Q̂ = ${v.toFixed(2)}`;
+            mathRenderer.draw(drawingContext, label,
+                node.x, node.y + 10,
+                { color: this.viColors.result, em: 11, alignX: 'center', alignY: 'middle' });
+        }
     }
 
     // See ValuesMethodMatrix.beliefFor - shared with rightPanel.js's Estimate-vs-exact table so
-    // both surfaces agree on the same illustrative number.
-    _beliefFor(stateId, colIdx) {
-        return ValuesMethodMatrix.beliefFor(this.viState, stateId, colIdx);
+    // both surfaces agree on the same illustrative number. Always reads the CURRENT sweep now
+    // (one node per state, not one per column).
+    _beliefFor(stateId, sweepIdx) {
+        return ValuesMethodMatrix.beliefFor(this.viState, stateId, sweepIdx);
     }
 
-    // --- Edge drawing for completed columns ---
+    // --- Policy-highlighted graph edges ---
 
-    _drawColumnEdges(fromCol, toCol, fromColIdx, activeColIdx, activeStateId) {
-        const graph = this.viewModel.graph;
-        if (!graph || !this.viState) return;
+    // Draws every state->action->state chain, muted gray for non-policy actions. Each state's
+    // ONE greedy (policy) action is emphasized: dashed muted-yellow while it still matches the
+    // arbitrary sweep-0 pick, solid green once its argmax has flipped. Per-edge Q-rank coloring
+    // is intentionally dropped (the heat fill + policy dash/solid already carry the signal).
+    _drawPolicyGraph(stateNodes, sweep, graph) {
+        const grayHex = AppPalette.edge.default;
+        const yellowHex = AppPalette.accent.yellow;
+        const greenHex = AppPalette.reward.positive;
 
-        // Only draw edges for columns that have been reached by animation
-        if (fromColIdx > activeColIdx && activeColIdx >= 0) return;
+        for (const node of stateNodes) {
+            if (!node.actions || node.actions.length === 0) continue;
+            const policyActionId = this.viState.getBestAction(sweep, node.id);
+            const sweep0ActionId = this.viState.getBestAction(0, node.id);
+            const flipped = policyActionId !== null && policyActionId !== sweep0ActionId;
 
-        // Skip edges for the active column — those are drawn by _drawBackupAnimation
-        if (fromColIdx === activeColIdx && this.viViewModel.backupDetail) return;
+            for (const actionId of node.actions) {
+                const actionNode = graph.getNodeById(actionId);
+                if (!actionNode) continue;
+                const isPolicy = actionId === policyActionId;
 
-        for (const fromState of fromCol.states) {
-            const stateNode = graph.getNodeById(fromState.id);
-            if (!stateNode || !stateNode.actions) continue;
+                let edgeHex, weight, dashed, edgeAlpha;
+                if (isPolicy) {
+                    edgeHex = flipped ? greenHex : yellowHex;
+                    weight = 3;
+                    dashed = !flipped;
+                    edgeAlpha = 230;
+                } else {
+                    edgeHex = grayHex;
+                    weight = 1;
+                    dashed = false;
+                    edgeAlpha = 70;
+                }
+                const edgeColor = ColorUtils.applyAlpha(edgeHex, edgeAlpha);
 
-            const isRevealedState = this.viViewModel.isValueRevealed(fromColIdx, fromState.id);
-            if (!isRevealedState) continue;
+                // state -> action
+                this._drawPolicyArrow(node.x, node.y, actionNode.x, actionNode.y,
+                    node.size, actionNode.size, edgeColor, weight, dashed);
 
-            const qValues = this.viState.getQValues(fromColIdx, fromState.id);
-            const bestActionId = this.viState.getBestAction(fromColIdx, fromState.id);
-            const edgeAlpha = this._getEdgeAlpha(fromColIdx, fromState.id, activeColIdx, activeStateId);
+                // action -> successors (thinner, same hue)
+                if (actionNode.sas) {
+                    const succColor = ColorUtils.applyAlpha(edgeHex, isPolicy ? 170 : 55);
+                    actionNode.sas.forEach(({ nextState }) => {
+                        const toNode = graph.getNodeById(nextState);
+                        if (!toNode) return;
+                        this._drawPolicyArrow(actionNode.x, actionNode.y, toNode.x, toNode.y,
+                            actionNode.size, toNode.size, succColor, isPolicy ? 1.5 : 0.9, dashed);
+                    });
+                }
 
-            this._drawSimpleEdges(fromState, toCol, stateNode, graph, qValues, bestActionId, edgeAlpha);
+                // Small action-node marker so edges land on something.
+                this._drawActionDiamond(actionNode.x, actionNode.y, actionNode.name,
+                    ColorUtils.applyAlpha(AppPalette.node.action, isPolicy ? 220 : 110),
+                    isPolicy ? 230 : 130);
+            }
         }
     }
 
-    /** Simple direct edges for completed columns */
-    _drawSimpleEdges(fromState, toCol, stateNode, graph, qValues, bestActionId, alpha) {
-        stateNode.actions.forEach(actionId => {
-            const actionNode = graph.getNodeById(actionId);
-            if (!actionNode || !actionNode.sas) return;
+    _drawPolicyArrow(x1, y1, x2, y2, r1, r2, edgeColor, weight, dashed) {
+        const dx = x2 - x1, dy = y2 - y1;
+        const angle = atan2(dy, dx);
+        const startX = x1 + r1 * cos(angle), startY = y1 + r1 * sin(angle);
+        const endX = x2 - r2 * cos(angle), endY = y2 - r2 * sin(angle);
 
-            const isBest = actionId === bestActionId;
-            const edgeColor = this._getActionColor(actionId, qValues, alpha, [100, 100, 100]);
+        push();
+        stroke(edgeColor);
+        strokeWeight(weight);
+        if (dashed) drawingContext.setLineDash([7, 5]);
+        line(startX, startY, endX, endY);
+        if (dashed) drawingContext.setLineDash([]);
 
-            actionNode.sas.forEach(({ nextState, probability, reward }) => {
-                const toStateNode = toCol.states.find(s => s.id === nextState);
-                if (!toStateNode) return;
+        const arrowSize = 7;
+        fill(edgeColor);
+        noStroke();
+        triangle(
+            endX, endY,
+            endX - arrowSize * cos(angle - 0.4), endY - arrowSize * sin(angle - 0.4),
+            endX - arrowSize * cos(angle + 0.4), endY - arrowSize * sin(angle + 0.4)
+        );
+        pop();
+    }
 
-                this._drawArrowLine(fromState.x, fromState.y, toStateNode.x, toStateNode.y, fromState.radius, toStateNode.radius, edgeColor, 1.5);
-
-                if (alpha > 60) {
-                    const dx = toStateNode.x - fromState.x;
-                    const dy = toStateNode.y - fromState.y;
-                    const ang = atan2(dy, dx);
-                    const sx = fromState.x + fromState.radius * cos(ang);
-                    const sy = fromState.y + fromState.radius * sin(ang);
-                    const ex = toStateNode.x - toStateNode.radius * cos(ang);
-                    const ey = toStateNode.y - toStateNode.radius * sin(ang);
-                    const midX = (sx + ex) / 2;
-                    const midY = (sy + ey) / 2 - 10;
-                    mathRenderer.draw(drawingContext, this._pLabel(probability),
-                        midX, midY, { color: this._pLabelColor(AppPalette.border.canvasDark), em: 10, alpha, alignX: 'center', alignY: 'middle' });
-                    if (reward !== 0) {
-                        const rColor = reward > 0 ? AppPalette.reward.positive : AppPalette.reward.negative;
-                        mathRenderer.draw(drawingContext, `r = ${reward.toFixed(1)}`,
-                            midX, midY + 12, { color: rColor, em: 10, alpha, alignX: 'center', alignY: 'middle' });
-                    }
-                }
+    // Start a short pulse on every state node when the sweep index changes.
+    _detectSweepPulse(sweep, stateNodes) {
+        if (this._lastPulseSweep === undefined) this._lastPulseSweep = -1;
+        if (sweep === this._lastPulseSweep) return;
+        // Only pulse on forward progress past sweep 0 (sweep 0 is the flat init).
+        if (sweep > 0) {
+            stateNodes.forEach((node, i) => {
+                this.tween.start(`sweep:${sweep}:pulse:${node.id}`, VI_DUR_NODE_PULSE * 2, 'easeOut', i * 25);
             });
-        });
+            if (typeof loop === 'function') loop();
+        }
+        this._lastPulseSweep = sweep;
     }
 
     // --- Detailed Bellman backup animation ---
@@ -367,12 +385,6 @@ class ValueIterationView {
     }
 
     _drawBackupAnimation(detail) {
-        if (!detail?.explanationMode && !this.viViewModel.showCalculations) {
-            if (detail?.subPhase !== 'revealing_value') return;
-            this._drawRevealingValueOverlay(detail);
-            return;
-        }
-
         const bundledPhases = ['show_equation', 'show_actions', 'explain_q', 'show_transitions', 'compute_q_values', 'select_max', 'revealing_value'];
         const phaseIdx = bundledPhases.indexOf(detail.subPhase);
         const perActionPhases = ['show_action', 'show_transition', 'compute_transition', 'show_q_result'];
@@ -621,23 +633,12 @@ class ValueIterationView {
             pop();
         }
 
-        // Best action highlight ring — appears with burst or in revealing_value
+        // Best action highlight — colored ring, appears with burst or in revealing_value.
         const ringAlpha = detail.subPhase === 'select_max' ? burstP : 1;
         if (ringAlpha > 0) {
             detail.actions.forEach(action => {
                 if (action.actionId !== detail.bestActionId) return;
-                push();
-                noFill();
-                stroke(46, 160, 67, 255 * ringAlpha);
-                strokeWeight(3);
-                const r = this.ACTION_NODE_RADIUS + 4;
-                beginShape();
-                vertex(action.x, action.y - r);
-                vertex(action.x + r, action.y);
-                vertex(action.x, action.y + r);
-                vertex(action.x - r, action.y);
-                endShape(CLOSE);
-                pop();
+                this._drawWinnerRing(action.x, action.y, this.ACTION_NODE_RADIUS + 6, ringAlpha);
             });
         }
 
@@ -648,6 +649,18 @@ class ValueIterationView {
                 this._drawStaticVBadge(detail, vAlpha);
             }
         }
+    }
+
+    // Colored ring marking the winning (argmax) action. Shared styling for the explanation-card
+    // max-selection moment; uses the method's "best" accent so VI/LI/BI/PO-L stay distinct.
+    _drawWinnerRing(x, y, radius, alpha = 1) {
+        const c = color(this.viColors.best);
+        push();
+        noFill();
+        stroke(red(c), green(c), blue(c), 255 * alpha);
+        strokeWeight(3);
+        ellipse(x, y, radius * 2, radius * 2);
+        pop();
     }
 
     // --- Q-value table (per-action mode) ---
@@ -1022,14 +1035,6 @@ class ValueIterationView {
         pop();
     }
 
-    _getEdgeAlpha(fromColIdx, fromStateId, activeColIdx, activeStateId) {
-        if (activeColIdx < 0) return 180;
-        if (fromColIdx === activeColIdx && fromStateId === activeStateId) return 230;
-        if (fromColIdx < activeColIdx) return 50;
-        if (fromColIdx === activeColIdx) return 30;
-        return 50;
-    }
-
     // --- Animated arrow helper ---
 
     _drawAnimatedArrow(x1, y1, x2, y2, r1, r2, edgeColor, weight, lineProgress, headProgress) {
@@ -1061,7 +1066,7 @@ class ValueIterationView {
     // --- V badge helpers ---
 
     _drawStaticVBadge(detail, alpha = 220) {
-        const latex = `V_{${detail.timestep}}(\\text{${_viLatexEscape(detail.stateName)}}) = ${detail.value.toFixed(2)}`;
+        const latex = `V^{${detail.timestep}}(\\text{${_viLatexEscape(detail.stateName)}}) = ${detail.value.toFixed(2)}`;
         const color = this.viColors.badge;
         const em = 13;
         const vx = detail.stateX;
@@ -1098,10 +1103,10 @@ class ValueIterationView {
         const rawValue = detail.value * countP;
         const displayValue = Math.round(rawValue * 20) / 20;
         const escapedName = _viLatexEscape(detail.stateName);
-        const finalLatex  = `V_{${detail.timestep}}(\\text{${escapedName}}) = ${detail.value.toFixed(2)}`;
+        const finalLatex  = `V^{${detail.timestep}}(\\text{${escapedName}}) = ${detail.value.toFixed(2)}`;
         const currentLatex = countP >= 1
             ? finalLatex
-            : `V_{${detail.timestep}}(\\text{${escapedName}}) = ${displayValue.toFixed(2)}`;
+            : `V^{${detail.timestep}}(\\text{${escapedName}}) = ${displayValue.toFixed(2)}`;
         const badgeColor = this.viColors.badge;
         const em = 13;
         const vx = detail.stateX;
@@ -1200,30 +1205,11 @@ class ValueIterationView {
                 this.tween.start(this._phaseId(detail, 'value_countup'), VI_DUR_VALUE_COUNTUP, 'easeInOut');
                 this.tween.start(this._phaseId(detail, 'node_pulse'), VI_DUR_NODE_PULSE, 'easeOut');
                 // Pre-warm the final badge label so KaTeX image is ready by the time countP reaches 1
-                const _prewarmLatex = `V_{${detail.timestep}}(\\text{${_viLatexEscape(detail.stateName)}}) = ${detail.value.toFixed(2)}`;
+                const _prewarmLatex = `V^{${detail.timestep}}(\\text{${_viLatexEscape(detail.stateName)}}) = ${detail.value.toFixed(2)}`;
                 mathRenderer.getCachedSize(_prewarmLatex, this.viColors.badge, 13);
                 break;
             }
         }
-    }
-
-    _detectNewColumnTweens() {
-        const current = this.viViewModel.visibleColumnCount;
-        if (current < this._lastVisibleColumnCount) {
-            this._lastVisibleColumnCount = 0;
-            this.tween.clear();
-        }
-        if (current <= this._lastVisibleColumnCount) return;
-
-        for (let colIdx = this._lastVisibleColumnCount; colIdx < current; colIdx++) {
-            const col = this.viViewModel.columns[colIdx];
-            if (!col) continue;
-            col.states.forEach((state, i) => {
-                this.tween.start(`column:${colIdx}:state:${state.id}:scale`, VI_DUR_COL_SCALE, 'easeOutBack', i * VI_DUR_COL_STAGGER);
-            });
-        }
-        this._lastVisibleColumnCount = current;
-        if (typeof loop === 'function') loop();
     }
 
     _getPhaseKey(detail) {

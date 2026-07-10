@@ -6,14 +6,16 @@ const CHART_TYPE_LABELS = {
     convergence: 'Convergence',
     histogram: 'Histogram',
     qtable: 'Q-table',
-    mctree: 'MC tree'
+    mctree: 'MC tree',
+    sweephistory: 'Sweep history'
 };
 
 const CHART_TYPE_ACCENT = {
     convergence: 'accent-teal',
     histogram: 'accent-orange',
     qtable: 'accent-cyan',
-    mctree: 'accent-purple'
+    mctree: 'accent-purple',
+    sweephistory: 'accent-teal'
 };
 
 // Bottom chart dock for Values mode: a drag-resizable strip with two chart slots (Convergence,
@@ -181,7 +183,75 @@ class ChartDock {
             this._renderQTable(body, caption);
         } else if (type === 'mctree') {
             this._renderMCTree(body, caption);
+        } else if (type === 'sweephistory') {
+            this._renderSweepHistory(body, caption);
         }
+    }
+
+    // One row per state, one column per sweep 0..T. Cells fill left-to-right as sweeps actually
+    // run; unreached sweep columns show "·". The current sweep's column is tinted with the
+    // method's accent color.
+    _renderSweepHistory(body, caption) {
+        caption.textContent = 'V(s) per sweep';
+        const vi = this.valueIterationState;
+        if (!vi || !vi.initialized || vi.stateIds.length === 0) {
+            const empty = document.createElement('div');
+            empty.className = 'chart-dock-empty';
+            empty.textContent = 'Run Value Iteration to populate.';
+            body.appendChild(empty);
+            return;
+        }
+
+        const accentHex = AppPalette.accent[
+            ValuesMethodMatrix.resolve(this.viewModel.modelKnown, this.viewModel.observability).accent
+        ];
+        const current = vi.currentSweepIndex;
+        const lastComputed = vi.totalSweeps - 1;
+
+        const table = document.createElement('table');
+        table.className = 'chart-dock-qtable';
+
+        // Header: state | k=0 | k=1 | ... | k=T
+        const thead = document.createElement('thead');
+        const headRow = document.createElement('tr');
+        const thS = document.createElement('th');
+        thS.textContent = 's';
+        headRow.appendChild(thS);
+        for (let k = 0; k <= vi.T; k++) {
+            const th = document.createElement('th');
+            th.textContent = `k=${k}`;
+            if (k === current) th.style.color = accentHex;
+            headRow.appendChild(th);
+        }
+        thead.appendChild(headRow);
+        table.appendChild(thead);
+
+        const tbody = document.createElement('tbody');
+        vi.stateIds.forEach(stateId => {
+            const tr = document.createElement('tr');
+            const tdS = document.createElement('td');
+            tdS.textContent = vi.stateNames[stateId] || `S${stateId}`;
+            tdS.className = 'chart-dock-qtable-state';
+            tr.appendChild(tdS);
+
+            for (let k = 0; k <= vi.T; k++) {
+                const td = document.createElement('td');
+                if (k <= lastComputed) {
+                    const v = vi.getValues(k)[stateId] ?? 0;
+                    td.textContent = v.toFixed(2);
+                } else {
+                    td.textContent = '·';
+                }
+                if (k === current) {
+                    td.style.color = accentHex;
+                    td.style.fontWeight = '700';
+                }
+                tr.appendChild(td);
+            }
+            tbody.appendChild(tr);
+        });
+        table.appendChild(tbody);
+        body.appendChild(table);
     }
 
     _renderConvergence(body, caption) {

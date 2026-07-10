@@ -96,6 +96,7 @@ let toolPalette;
 let zoomPill;
 let estimatorPill;
 let mcRunsPill;
+let viSweepChip;
 
 // Simulation Presenter (needs ViewModel and MainView references, created in setup)
 let simulationPresenter;
@@ -309,6 +310,7 @@ canvasController.registerModeLifecycle({
             if (mainView && mainView.chartDock) mainView.chartDock.hide();
             if (mainView && mainView.estimatorPill) mainView.estimatorPill.hide();
             if (mainView && mainView.mcRunsPill) mainView.mcRunsPill.hide();
+            if (mainView && mainView.viSweepChip) mainView.viSweepChip.hide();
         },
         // Policy's canvas is now identical to Build's (fully editable - only the right panel
         // differs), so it shares the same tool-palette show/hide lifecycle.
@@ -344,6 +346,7 @@ canvasController.registerModeLifecycle({
             if (sv === 'mc') {
                 enterMCSubView();
                 if (mainView && mainView.zoomPill) mainView.zoomPill.hide();
+                if (mainView && mainView.viSweepChip) mainView.viSweepChip.hide();
                 if (mainView && mainView.mcRunsPill) {
                     mainView.mcRunsPill.updateBounds(0, windowWidth - mainView.RIGHT_PANEL_WIDTH);
                     mainView.mcRunsPill.show();
@@ -351,6 +354,11 @@ canvasController.registerModeLifecycle({
                 }
             } else if (sv === 'vi') {
                 if (mainView && mainView.zoomPill) mainView.zoomPill.show();
+                if (mainView && mainView.viSweepChip) {
+                    mainView.viSweepChip.updateBounds(0, windowWidth - mainView.RIGHT_PANEL_WIDTH);
+                    mainView.viSweepChip.show();
+                    mainView.viSweepChip.refresh();
+                }
             }
         }
     },
@@ -359,6 +367,7 @@ canvasController.registerModeLifecycle({
             enterMCSubView();
             if (mainView && mainView.zoomPill) mainView.zoomPill.hide();
             if (mainView && mainView.estimatorPill) mainView.estimatorPill.refresh();
+            if (mainView && mainView.viSweepChip) mainView.viSweepChip.hide();
             if (mainView && mainView.mcRunsPill) {
                 mainView.mcRunsPill.updateBounds(0, windowWidth - mainView.RIGHT_PANEL_WIDTH);
                 mainView.mcRunsPill.show();
@@ -370,6 +379,11 @@ canvasController.registerModeLifecycle({
             if (mainView && mainView.zoomPill) mainView.zoomPill.show();
             if (mainView && mainView.estimatorPill) mainView.estimatorPill.refresh();
             if (mainView && mainView.mcRunsPill) mainView.mcRunsPill.hide();
+            if (mainView && mainView.viSweepChip) {
+                mainView.viSweepChip.updateBounds(0, windowWidth - mainView.RIGHT_PANEL_WIDTH);
+                mainView.viSweepChip.show();
+                mainView.viSweepChip.refresh();
+            }
         }
     },
     onLeaveSubView: {
@@ -488,82 +502,51 @@ function checkAndRenormalizeIfNeeded(forceCheck = false) {
 }
 
 // Value Iteration callbacks
-const getVICanvasDimensions = () => {
-    const fullWidth = windowWidth - rightPanel.getWidth();
-    return {
-        width: mainView._valuesPaneWidths(fullWidth).vi,
-        height: windowHeight - mainView.TOP_BARS_HEIGHT - mainView.getDockHeight()
-    };
+const refreshVIButtons = () => {
+    if (!topBar) return;
+    const canStep = valueIterationState.canAdvance();
+    const canPlay = canStep && !valueIterationState.converged;
+    topBar.updateVIButtonStates(valueIterationState.isPlaying, canStep, canPlay);
+};
+
+const ensureVIInitialized = () => {
+    if (valueIterationState.initialized) return;
+    const T = topBar ? topBar.getVIT() : 8;
+    const gamma = rightPanel ? rightPanel.discountFactor : 0.9;
+    runVIInteractor.execute(new RunVIInputData(T, gamma));
 };
 
 const onVIPlay = () => {
     if (!runVIInteractor || !viPlayInteractor) return;
-
-    const T = topBar ? topBar.getVIT() : 5;
-    const gamma = rightPanel ? rightPanel.discountFactor : 0.9;
-
-    if (!valueIterationState.initialized) {
-        const dims = getVICanvasDimensions();
-        runVIInteractor.execute(new RunVIInputData(T, gamma, dims.width, dims.height));
-    }
-
+    ensureVIInitialized();
     viPlayInteractor.execute(new VIPlayInputData());
-
-    if (topBar) {
-        topBar.updateVIButtonStates(valueIterationState.isPlaying, valueIterationState.canAdvance());
-    }
+    refreshVIButtons();
 };
 
 const onVIPause = () => {
     if (!viPauseInteractor) return;
     viPauseInteractor.execute(new VIPauseInputData());
-    if (topBar) {
-        topBar.updateVIButtonStates(valueIterationState.isPlaying, valueIterationState.canAdvance());
-    }
+    refreshVIButtons();
 };
 
 const onVIStep = () => {
     if (!viStepInteractor) return;
-
-    const T = topBar ? topBar.getVIT() : 5;
-    const gamma = rightPanel ? rightPanel.discountFactor : 0.9;
-
-    if (!valueIterationState.initialized) {
-        const dims = getVICanvasDimensions();
-        runVIInteractor.execute(new RunVIInputData(T, gamma, dims.width, dims.height));
-    }
-
+    ensureVIInitialized();
     viStepInteractor.execute(new VIStepInputData());
-
-    if (topBar) {
-        topBar.updateVIButtonStates(valueIterationState.isPlaying, valueIterationState.canAdvance());
-    }
+    refreshVIButtons();
 };
 
 const onVISkip = () => {
     if (!viSkipInteractor) return;
-
-    const T = topBar ? topBar.getVIT() : 5;
-    const gamma = rightPanel ? rightPanel.discountFactor : 0.9;
-
-    if (!valueIterationState.initialized) {
-        const dims = getVICanvasDimensions();
-        runVIInteractor.execute(new RunVIInputData(T, gamma, dims.width, dims.height));
-    }
-
+    ensureVIInitialized();
     viSkipInteractor.execute(new VISkipInputData());
-
-    if (topBar) {
-        topBar.updateVIButtonStates(valueIterationState.isPlaying, valueIterationState.canAdvance());
-    }
+    refreshVIButtons();
 };
 
 const onVIReset = () => {
     if (!viResetInteractor) return;
     viResetInteractor.execute(new VIResetInputData());
-    if (topBar) {
-        topBar.updateVIButtonStates(false, true);
-    }
+    refreshVIButtons();
 };
 
 const onPlay = () => {
@@ -690,17 +673,6 @@ function setup() {
         onVIStep: onVIStep,
         onVISkip: onVISkip,
         onVIReset: onVIReset,
-        onVIPerActionToggle: (enabled) => {
-            if (valueIterationViewModel) {
-                valueIterationViewModel.perActionMode = enabled;
-            }
-        },
-        onVIShowCalcsToggle: (enabled) => {
-            if (valueIterationViewModel) {
-                valueIterationViewModel.showCalculations = enabled;
-                redraw();
-            }
-        },
         onExpectationPlay: () => {
             if (mainView && mainView.expectationView) mainView.expectationView.startPlay();
         },
@@ -762,6 +734,12 @@ function setup() {
     mainView.mcRunsPill = mcRunsPill;
     mcRunsPill.hide();
 
+    viSweepChip = new ViSweepChip(canvasViewModel);
+    viSweepChip.setup(mainView.TOP_BARS_HEIGHT);
+    viSweepChip.updateBounds(0, windowWidth - mainView.RIGHT_PANEL_WIDTH);
+    mainView.viSweepChip = viSweepChip;
+    viSweepChip.hide();
+
     AppPalette._onThemeChange = () => {
         mainView.invalidateDotGrid();
         rightPanel.updateContent();
@@ -794,13 +772,16 @@ function setup() {
     viPresenter.setTopBar(topBar);
     viPresenter.setRightPanel(rightPanel);
     viPresenter.setChartDock(mainView.chartDock);
+    viPresenter.setSweepChip(viSweepChip);
 
+    // Between-sweep pause tracks the animation-speed slider (fast .. slow).
+    const viAnimOptions = { getPauseMs: () => Math.round(150 + 650 * currentSpeed) };
     runVIInteractor = new RunVIInteractor(graph, valueIterationState, viPresenter);
-    viPlayInteractor = new VIPlayInteractor(valueIterationState, viPresenter, valueIterationViewModel);
+    viPlayInteractor = new VIPlayInteractor(valueIterationState, viPresenter, graph, viAnimOptions);
     viPauseInteractor = new VIPauseInteractor(valueIterationState, viPresenter);
-    viStepInteractor = new VIStepInteractor(valueIterationState, viPresenter, valueIterationViewModel);
+    viStepInteractor = new VIStepInteractor(valueIterationState, viPresenter, graph, viAnimOptions);
     viResetInteractor = new VIResetInteractor(valueIterationState, viPresenter);
-    viSkipInteractor = new VISkipInteractor(valueIterationState, viPresenter, valueIterationViewModel);
+    viSkipInteractor = new VISkipInteractor(valueIterationState, viPresenter, graph, viAnimOptions);
 
     // Create Value Iteration view
     const valueIterationView = new ValueIterationView(canvasViewModel, {

@@ -15,7 +15,8 @@ const ChartDataBuilders = {
         let vStar = null;
         if (valueIterationState && valueIterationState.initialized && valueIterationState.stateIds.length > 0) {
             const s0 = valueIterationState.stateIds[0];
-            viValues = valueIterationState.history.map(col => col[s0] ?? 0);
+            // history[k] is now {V, Q, policy, backupDetails, delta} - read V[s0], not col[s0].
+            viValues = valueIterationState.history.map(entry => entry.V[s0] ?? 0);
             vStar = viValues.length > 0 ? viValues[viValues.length - 1] : null;
         }
         const viLabels = viValues.map((_, i) => i);
@@ -62,7 +63,7 @@ const ChartDataBuilders = {
     // structure for a read-only display table (no VI-mode explain-click wiring).
     buildQTableData(valueIterationState) {
         if (!valueIterationState || !valueIterationState.initialized) return { rows: [] };
-        const colIdx = valueIterationState.totalColumns - 1;
+        const colIdx = valueIterationState.totalSweeps - 1;
         const rows = valueIterationState.stateIds.map(stateId => {
             const actionQs = valueIterationState.getQValues(colIdx, stateId);
             const bestActionId = valueIterationState.getBestAction(colIdx, stateId);

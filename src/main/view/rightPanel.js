@@ -828,11 +828,11 @@ class RightPanel {
         eqDiv.parent(this.contentContainer);
         eqDiv.addClass('panel-section-content');
         if (matrixKey === 'known:full') {
-            eqDiv.elt.innerHTML = renderKatex('V_t(s) = \\max_a \\sum_{s\'} P(s\'|s,a)[R + \\gamma V_{t+1}(s\')]', true);
+            eqDiv.elt.innerHTML = renderKatex('V^{k}(s) = \\max_a \\sum_{s\'} P(s\'|s,a)[R + \\gamma V^{k-1}(s\')]', true);
         } else if (matrixKey === 'unknown:full') {
             eqDiv.html('P is unknown, so the true action values can\'t be computed. Manually estimate them below.');
         } else if (matrixKey === 'known:partial') {
-            eqDiv.elt.innerHTML = renderKatex('V(b) = \\max_a \\sum_{s\'} P(s\'|s,a)[R + \\gamma V(b\')]', true);
+            eqDiv.elt.innerHTML = renderKatex('V^{k}(b) = \\max_a \\sum_{s\'} P(s\'|s,a)[R + \\gamma V^{k-1}(b\')]', true);
         } else {
             eqDiv.elt.innerHTML = renderKatex('Q(b,a) \\leftarrow Q + \\alpha[r + \\gamma \\max_{a\'} Q(b\',a\') - Q]', true);
         }
@@ -844,19 +844,18 @@ class RightPanel {
         paramsDiv.style('margin-top', '10px');
 
         if (viState && viState.initialized) {
-            const tLine = createDiv(`<strong>Horizon (T):</strong> ${viState.T}`);
+            const tLine = createDiv(`<strong>Max sweeps (T):</strong> ${viState.T}`);
             tLine.parent(paramsDiv);
             tLine.style('margin-bottom', '4px');
 
-            const progressLine = createDiv(`<strong>Column:</strong> ${viState.currentColumnIndex + 1} / ${viState.totalColumns}`);
+            const progressLine = createDiv(`<strong>Sweep:</strong> ${viState.currentSweepIndex} / ${viState.T}`);
             progressLine.parent(paramsDiv);
             progressLine.style('margin-bottom', '4px');
         }
 
-        // Convergence - the "converged" check is real (viState.lastDelta, computed once at the
-        // end of the real backward-induction backup); the sweep/episode/vector framing per
-        // quadrant is illustrative for LI/BI/PO-L, same precedent as Learning Iteration's
-        // existing "no real algorithm" framing.
+        // Convergence - the "converged" check is real (live max-norm delta from the synchronous
+        // Bellman sweep); the sweep/episode/vector framing per quadrant is illustrative for
+        // LI/BI/PO-L, same precedent as Learning Iteration's existing "no real algorithm" framing.
         if (viState && viState.initialized) {
             this.createSection('Convergence', () => {
                 const convDiv = createDiv();
@@ -864,20 +863,27 @@ class RightPanel {
                 convDiv.addClass('panel-section-content');
 
                 const perQuadrant = {
-                    'known:full':      `T = ${viState.T} sweeps`,
+                    'known:full':      `max ${viState.T} sweeps`,
                     'unknown:full':    'α = 0.1 · 40 episodes',
-                    'known:partial':   `${viState.T + 1} α-vectors · horizon ${viState.T}`,
+                    'known:partial':   `belief update · max ${viState.T} sweeps`,
                     'unknown:partial': 'α = 0.1 · belief memory'
                 };
                 const line1 = createDiv(perQuadrant[matrixKey]);
                 line1.parent(convDiv);
                 line1.style('margin-bottom', '4px');
 
-                const convergedLine = viState.lastDelta < 0.01
-                    ? '✓ converged Δ < 0.01'
-                    : `Δ = ${viState.lastDelta.toFixed(4)}`;
-                const line2 = createDiv(convergedLine);
+                const delta = viState.getDelta(viState.currentSweepIndex);
+                const line2 = createDiv();
                 line2.parent(convDiv);
+                if (viState.converged) {
+                    line2.html(`✓ converged Δ &lt; ${viState.epsilon.toFixed(2)}`);
+                    line2.style('color', 'var(--reward-positive)');
+                } else if (delta === null) {
+                    line2.html('Δ = — (init)');
+                } else {
+                    line2.html(`Δ = ${delta.toFixed(4)}`);
+                    line2.style('color', 'var(--accent-yellow)');
+                }
             });
         }
 
@@ -1203,7 +1209,7 @@ class RightPanel {
             const expectationState = this.expectationState;
 
             const mcMeans = (expectationState && expectationState.computed) ? expectationState.getPerStateMeans() : {};
-            const finalCol = (viState && viState.initialized) ? viState.totalColumns - 1 : -1;
+            const finalCol = (viState && viState.initialized) ? viState.totalSweeps - 1 : -1;
 
             const table = document.createElement('table');
             table.className = 'estimate-vs-exact-table';
@@ -1262,7 +1268,13 @@ class RightPanel {
         });
     }
 
+    // Q*(s,a) per sweep. One column per computed sweep k=0..totalSweeps-1 (sweep 0 = the V=0
+    // init). Rows come from the real graph so structure is stable even at sweep 0; every
+    // computed sweep's values are shown directly (no per-state "reveal" cursor anymore).
     _renderQTable(container, viState, viViewModel, modelKnown = true) {
+        const graph = this.viewModel.graph;
+        const totalSweeps = viState.totalSweeps;
+
         const tableEl = document.createElement('table');
         tableEl.className = 'q-table';
 
@@ -1278,9 +1290,9 @@ class RightPanel {
         thA.textContent = 'a';
         headerRow.appendChild(thA);
 
-        for (let colIdx = 0; colIdx < viState.totalColumns; colIdx++) {
+        for (let colIdx = 0; colIdx < totalSweeps; colIdx++) {
             const th = document.createElement('th');
-            th.textContent = `t=${viState.getTimestep(colIdx)}`;
+            th.textContent = `k=${colIdx}`;
             headerRow.appendChild(th);
         }
         thead.appendChild(headerRow);
@@ -1291,67 +1303,67 @@ class RightPanel {
         let renderedRows = 0;
 
         for (const stateId of viState.stateIds) {
-            // colIdx=1 is first non-terminal; T>=1 enforced by toolbar
-            const actionQs = viState.getQValues(1, stateId);
-            if (actionQs.length === 0) continue;
+            const stateNode = graph ? graph.getNodeById(stateId) : null;
+            const actionIds = (stateNode && stateNode.actions) ? stateNode.actions : [];
+            if (actionIds.length === 0) continue;
 
-            actionQs.forEach((aq, ai) => {
+            actionIds.forEach((actionId, ai) => {
+                const actionNode = graph.getNodeById(actionId);
+                if (!actionNode) return;
                 renderedRows++;
                 const tr = document.createElement('tr');
 
                 if (ai === 0) {
                     const tdState = document.createElement('td');
                     tdState.textContent = viState.stateNames[stateId] || `S${stateId}`;
-                    tdState.rowSpan = actionQs.length;
+                    tdState.rowSpan = actionIds.length;
                     tdState.className = 'q-table-state';
                     tr.appendChild(tdState);
                 }
 
                 const tdAction = document.createElement('td');
-                tdAction.textContent = aq.actionName;
+                tdAction.textContent = actionNode.name;
                 tdAction.className = 'q-table-action';
                 tr.appendChild(tdAction);
 
-                for (let colIdx = 0; colIdx < viState.totalColumns; colIdx++) {
+                for (let colIdx = 0; colIdx < totalSweeps; colIdx++) {
                     const td = document.createElement('td');
                     td.className = 'q-table-cell';
 
                     if (colIdx === 0) {
+                        // Sweep 0 = initialization, V=0 everywhere.
                         td.textContent = '0';
                         td.classList.add('q-table-cell--revealed');
-                    } else if (viViewModel.isQValueRevealed(colIdx, stateId, aq.actionId)) {
-                        const qVals = viState.getQValues(colIdx, stateId);
-                        const qEntry = qVals.find(q => q.actionId === aq.actionId);
-                        const computedVal = qEntry ? qEntry.qValue : 0;
-                        const val = viState.getEffectiveQValue(stateId, aq.actionId, computedVal);
-                        const isBest = viState.bestActions[colIdx] &&
-                            viState.bestActions[colIdx][stateId] === aq.actionId;
-                        td.textContent = val.toFixed(2) + (isBest ? ' ★' : '');
-                        td.classList.add('q-table-cell--revealed');
-                        if (isBest) {
-                            td.classList.add('q-table-cell--best');
+                        tr.appendChild(td);
+                        continue;
+                    }
+
+                    const qVals = viState.getQValues(colIdx, stateId);
+                    const qEntry = qVals.find(q => q.actionId === actionId);
+                    const computedVal = qEntry ? qEntry.qValue : 0;
+                    const val = viState.getEffectiveQValue(stateId, actionId, computedVal);
+                    const isBest = viState.getBestAction(colIdx, stateId) === actionId;
+                    td.textContent = val.toFixed(2) + (isBest ? ' ★' : '');
+                    td.classList.add('q-table-cell--revealed');
+                    if (isBest) td.classList.add('q-table-cell--best');
+
+                    if (modelKnown) {
+                        td.classList.add('q-table-cell--clickable');
+                        const activeExplain = this.viewModel.valueIterationViewModel?.explanationDetail;
+                        if (activeExplain &&
+                            activeExplain.columnIndex === colIdx &&
+                            activeExplain.stateId === stateId &&
+                            activeExplain.actionId === actionId) {
+                            td.classList.add('q-table-cell--explaining');
                         }
-                        if (modelKnown) {
-                            td.classList.add('q-table-cell--clickable');
-                            const activeExplain = this.viewModel.valueIterationViewModel?.explanationDetail;
-                            if (activeExplain &&
-                                activeExplain.columnIndex === colIdx &&
-                                activeExplain.stateId === stateId &&
-                                activeExplain.actionId === aq.actionId) {
-                                td.classList.add('q-table-cell--explaining');
+                        td.addEventListener('click', () => {
+                            if (this.callbacks.onVICellClick) {
+                                this.callbacks.onVICellClick(colIdx, stateId, actionId);
                             }
-                            td.addEventListener('click', () => {
-                                if (this.callbacks.onVICellClick) {
-                                    this.callbacks.onVICellClick(colIdx, stateId, aq.actionId);
-                                }
-                            });
-                        } else {
-                            td.classList.add('q-table-cell--editable');
-                            td.addEventListener('click', () => this._startEditingQCell(td, stateId, aq.actionId, val));
-                        }
+                        });
                     } else {
-                        td.textContent = '?';
-                        td.classList.add('q-table-cell--unknown');
+                        td.classList.add('q-table-cell--editable');
+                        td.addEventListener('click', () => this._startEditingQCell(td, stateId, actionId, val));
                     }
 
                     tr.appendChild(td);
@@ -1364,7 +1376,7 @@ class RightPanel {
         if (renderedRows === 0) {
             const tr = document.createElement('tr');
             const td = document.createElement('td');
-            td.colSpan = 2 + viState.totalColumns;
+            td.colSpan = 2 + totalSweeps;
             td.textContent = 'No available actions';
             td.className = 'q-table-cell q-table-cell--unknown';
             tr.appendChild(td);
@@ -1476,22 +1488,34 @@ class RightPanel {
         }
     }
 
+    // Method accent hex for colored V(s') sub-terms in the explanation equations.
+    _viAccentHex() {
+        const entry = ValuesMethodMatrix.resolve(this.viewModel.modelKnown, this.viewModel.observability);
+        const ns = AppPalette[entry.paletteNamespace];
+        return (ns && ns.result) || AppPalette.text.medium;
+    }
+
     _buildExplainEquationLines(detail) {
         const s = latexEscapeText(detail.stateName);
-        const t = detail.timestep;
+        // Sweep numbering: V^k(s) is backed up from the PREVIOUS sweep's V^{k-1}(s').
+        const k = detail.timestep;
         const g = detail.gamma;
+        const accent = this._viAccentHex();
+        const posHex = AppPalette.reward.positive;
+        const negHex = AppPalette.reward.negative;
+        const vPrev = `\\textcolor{${accent}}{V^{${k - 1}}(s')}`;
 
         if (detail.stepIndex <= 0) {
             return [{
                 type: 'header',
-                text: `V_{${t}}(\\text{${s}}) = \\max_a \\sum_{s'} P(s'|s,a)\\bigl[R + ${g}\\,V_{${t + 1}}(s')\\bigr]`
+                text: `V^{${k}}(\\text{${s}}) = \\max_a \\sum_{s'} P(s'|s,a)\\bigl[R + ${g}\\,${vPrev}\\bigr]`
             }];
         }
 
         if (detail.stepIndex === 1) {
             // What is Q? — definition of Q(s,a)
             return [
-                { type: 'header', text: `Q(s, a) = \\sum_{s'} P(s'|s,a)\\bigl[R(s,a,s') + ${g}\\,V_{${t + 1}}(s')\\bigr]` },
+                { type: 'header', text: `Q(s, a) = \\sum_{s'} P(s'|s,a)\\bigl[R(s,a,s') + ${g}\\,${vPrev}\\bigr]` },
                 { type: 'normal', text: `\\text{expected return from taking action } a \\text{ in state } s` }
             ];
         }
@@ -1499,7 +1523,7 @@ class RightPanel {
         if (detail.stepIndex === 2) {
             const lines = [{
                 type: 'header',
-                text: `V_{${t}}(\\text{${s}}) = \\max\\{\\, Q(\\text{${s}}, a) \\,\\}`
+                text: `V^{${k}}(\\text{${s}}) = \\max\\{\\, Q(\\text{${s}}, a) \\,\\}`
             }];
             (detail.actions || []).forEach(action => {
                 const a = latexEscapeText(action.actionName);
@@ -1513,19 +1537,22 @@ class RightPanel {
             if (!clicked) {
                 return [{
                     type: 'header',
-                    text: `V_{${t}}(\\text{${s}}) = \\max_a \\sum_{s'} P(s'|s,a)\\bigl[R + ${g}\\,V_{${t + 1}}(s')\\bigr]`
+                    text: `V^{${k}}(\\text{${s}}) = \\max_a \\sum_{s'} P(s'|s,a)\\bigl[R + ${g}\\,${vPrev}\\bigr]`
                 }];
             }
             const a = latexEscapeText(clicked.actionName);
             const lines = [{
                 type: 'header',
-                text: `Q(\\text{${s}}, \\text{${a}}) = \\sum_{s'} P(s'|s,a)\\bigl[R + ${g}\\,V_{${t + 1}}(s')\\bigr]`
+                text: `Q(\\text{${s}}, \\text{${a}}) = \\sum_{s'} P(s'|s,a)\\bigl[R + ${g}\\,${vPrev}\\bigr]`
             }];
             (clicked.transitions || []).forEach(tr => {
                 const termVal = tr.term ?? (tr.probability * (tr.reward + g * (tr.nextValue ?? 0)));
+                const rHex = tr.reward >= 0 ? posHex : negHex;
+                const rTerm = `\\textcolor{${rHex}}{${tr.reward.toFixed(1)}}`;
+                const vTerm = `\\textcolor{${accent}}{${(tr.nextValue ?? 0).toFixed(2)}}`;
                 lines.push({
                     type: 'normal',
-                    text: `${tr.probability.toFixed(2)} \\cdot [${tr.reward.toFixed(1)} + ${g} \\cdot ${(tr.nextValue ?? 0).toFixed(2)}] = ${termVal.toFixed(2)}`
+                    text: `${tr.probability.toFixed(2)} \\cdot [${rTerm} + ${g} \\cdot ${vTerm}] = ${termVal.toFixed(2)}`
                 });
             });
             return lines;
@@ -1542,7 +1569,7 @@ class RightPanel {
             'Transitions':  'Each action leads to successor states with probability p and reward r.',
             'Q-Values':     'Q(s,a) sums the weighted future values across all transitions.',
             'Select Max':   'V(s) = max over all Q(s,a). The best action is highlighted green.',
-            'Final Value':  'The final V(s) value is revealed and stored for earlier timesteps.'
+            'Final Value':  'The new V(s) value is revealed and carried into the next sweep.'
         };
 
         // Header row
@@ -1553,7 +1580,7 @@ class RightPanel {
         headerRow.style('align-items', 'center');
         headerRow.style('padding', '10px 12px 6px');
 
-        const headerText = createDiv(`Explain: ${detail.stateName} at t=${detail.timestep}`);
+        const headerText = createDiv(`Explain: ${detail.stateName} at sweep ${detail.timestep}`);
         headerText.parent(headerRow);
         headerText.addClass('panel-title');
         headerText.style('margin', '0');
@@ -1680,7 +1707,7 @@ class RightPanel {
 
         // Result line (steps >= 5, i.e. Select Max and Final Value)
         if (detail.stepIndex >= 5 && detail.value != null) {
-            const resultLine = createDiv(`V<sub>${detail.timestep}</sub>(${detail.stateName}) = ${detail.value.toFixed(2)}`);
+            const resultLine = createDiv(`V<sup>${detail.timestep}</sup>(${detail.stateName}) = ${detail.value.toFixed(2)}`);
             resultLine.parent(this.contentContainer);
             resultLine.style('padding', '4px 12px 8px');
             resultLine.style('font-size', '13px');

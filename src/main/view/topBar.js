@@ -59,10 +59,6 @@ class TopBar {
         this.viResetBtn = null;
         this.viTInput = null;
         this.viTLabel = null;
-        this.viPerActionLabel = null;
-        this.viPerActionToggle = null;
-        this.viShowCalcsLabel = null;
-        this.viShowCalcsToggle = null;
     }
 
     setup() {
@@ -537,38 +533,13 @@ class TopBar {
         this.viTLabel.parent(this.rightSection);
         this.viTLabel.addClass('toolbar-t-label');
 
-        this.viTInput = createInput('5', 'number');
+        this.viTInput = createInput('8', 'number');
         this.viTInput.parent(this.rightSection);
         this.viTInput.addClass('toolbar-t-input');
         this.viTInput.attribute('min', '0');
         this.viTInput.attribute('max', '100');
+        this.viTInput.attribute('title', 'Max sweeps before giving up');
         this.viTInput.size(50);
-
-        this.viPerActionLabel = createSpan('Per-action');
-        this.viPerActionLabel.parent(this.rightSection);
-        this.viPerActionLabel.addClass('toolbar-t-label');
-
-        this.viPerActionToggle = createCheckbox('', false);
-        this.viPerActionToggle.parent(this.rightSection);
-        this.viPerActionToggle.addClass('toolbar-checkbox');
-        this.viPerActionToggle.changed(() => {
-            if (this.callbacks.onVIPerActionToggle) {
-                this.callbacks.onVIPerActionToggle(this.viPerActionToggle.checked());
-            }
-        });
-
-        this.viShowCalcsLabel = createSpan('Show calcs');
-        this.viShowCalcsLabel.parent(this.rightSection);
-        this.viShowCalcsLabel.addClass('toolbar-t-label');
-
-        this.viShowCalcsToggle = createCheckbox('', true);
-        this.viShowCalcsToggle.parent(this.rightSection);
-        this.viShowCalcsToggle.addClass('toolbar-checkbox');
-        this.viShowCalcsToggle.changed(() => {
-            if (this.callbacks.onVIShowCalcsToggle) {
-                this.callbacks.onVIShowCalcsToggle(this.viShowCalcsToggle.checked());
-            }
-        });
     }
 
     _createBtn(label, onClick, modifierClass) {
@@ -615,7 +586,8 @@ class TopBar {
     }
 
     getVIT() {
-        return parseInt(this.viTInput.value()) || 5;
+        const v = parseInt(this.viTInput.value());
+        return (Number.isFinite(v) && v >= 0) ? v : 8;
     }
 
     handlePlayPauseClick() {
@@ -648,10 +620,6 @@ class TopBar {
         this.viResetBtn.hide();
         this.viTLabel.hide();
         this.viTInput.hide();
-        this.viPerActionLabel.hide();
-        this.viPerActionToggle.hide();
-        this.viShowCalcsLabel.hide();
-        this.viShowCalcsToggle.hide();
 
         if (!subView) return;
 
@@ -668,10 +636,6 @@ class TopBar {
             this.viResetBtn.show();
             this.viTLabel.show();
             this.viTInput.show();
-            this.viPerActionLabel.show();
-            this.viPerActionToggle.show();
-            this.viShowCalcsLabel.show();
-            this.viShowCalcsToggle.show();
             this.setVIPlayPauseMode('play');
         }
     }
@@ -802,7 +766,10 @@ class TopBar {
         }
     }
 
-    updateVIButtonStates(isPlaying, canAdvance) {
+    // canStep: can advance one sweep (T cap only). canPlay: canStep AND not yet converged -
+    // Play auto-stops at convergence, but Step/Skip keep working past it (re-confirming the fixed
+    // point) until the T cap. Defaults keep older 2-arg callers working.
+    updateVIButtonStates(isPlaying, canStep, canPlay = canStep) {
         if (isPlaying) {
             this.setVIPlayPauseMode('pause');
         } else {
@@ -810,17 +777,17 @@ class TopBar {
         }
 
         if (this.viPlayPauseBtn) {
-            if (canAdvance) this.viPlayPauseBtn.removeAttribute('disabled');
+            if (isPlaying || canPlay) this.viPlayPauseBtn.removeAttribute('disabled');
             else this.viPlayPauseBtn.attribute('disabled', '');
         }
 
         if (this.viStepBtn) {
-            if (!isPlaying && canAdvance) this.viStepBtn.removeAttribute('disabled');
+            if (!isPlaying && canStep) this.viStepBtn.removeAttribute('disabled');
             else this.viStepBtn.attribute('disabled', '');
         }
 
         if (this.viSkipBtn) {
-            if (!isPlaying && canAdvance) this.viSkipBtn.removeAttribute('disabled');
+            if (!isPlaying && canStep) this.viSkipBtn.removeAttribute('disabled');
             else this.viSkipBtn.attribute('disabled', '');
         }
     }

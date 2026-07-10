@@ -78,6 +78,10 @@ class MainView {
         // Floating Values-mode estimator pill (set after construction)
         this.estimatorPill = null;
 
+        // Floating Values-mode pills set after construction
+        this.mcRunsPill = null;
+        this.viSweepChip = null;
+
         // Cached dot-grid background layer; rebuilt on resize/theme change, not every redraw()
         this._dotGridLayer = null;
         this._dotGridTheme = null;
@@ -1279,6 +1283,7 @@ class MainView {
         if (this.zoomPill) this.zoomPill.updateBounds(this.RIGHT_PANEL_WIDTH);
         if (this.estimatorPill) this.estimatorPill.updateBounds(0, windowWidth - this.RIGHT_PANEL_WIDTH);
         if (this.mcRunsPill) this.mcRunsPill.updateBounds(0, windowWidth - this.RIGHT_PANEL_WIDTH);
+        if (this.viSweepChip) this.viSweepChip.updateBounds(0, windowWidth - this.RIGHT_PANEL_WIDTH);
         const valuesHeight = canvasHeight - this.getDockHeight();
         const paneWidths = this._valuesPaneWidths(canvasWidth);
         this._relayoutValueIterationIfActive(paneWidths.vi, valuesHeight);
@@ -1311,6 +1316,7 @@ class MainView {
         if (this.zoomPill) this.zoomPill.updateBounds(this.RIGHT_PANEL_WIDTH);
         if (this.estimatorPill) this.estimatorPill.updateBounds(0, windowWidth - this.RIGHT_PANEL_WIDTH);
         if (this.mcRunsPill) this.mcRunsPill.updateBounds(0, windowWidth - this.RIGHT_PANEL_WIDTH);
+        if (this.viSweepChip) this.viSweepChip.updateBounds(0, windowWidth - this.RIGHT_PANEL_WIDTH);
         const valuesHeight = canvasHeight - this.getDockHeight();
         const paneWidths = this._valuesPaneWidths(canvasWidth);
         this._relayoutValueIterationIfActive(paneWidths.vi, valuesHeight);
@@ -1321,46 +1327,18 @@ class MainView {
         redraw();
     }
 
+    // Value Iteration now draws the single live graph at real node positions (like Build/Policy),
+    // so there is no synthetic column layout to recompute on resize. An open explanation card's
+    // fan-out geometry is derived from real node positions too, but is cleared here since a
+    // resize/dock-drag is a natural point to dismiss the overlay rather than re-anchor it.
     _relayoutValueIterationIfActive(canvasWidth, canvasHeight) {
         if (this.viewModel.interaction.mode !== 'values') return;
         if (this.viewModel.valuesSubView !== 'vi') return;
-        const viState = this.viewModel.valueIterationState;
         const viViewModel = this.viewModel.valueIterationViewModel;
-        if (!viState || !viViewModel || !viState.initialized) return;
-
-        const visibleCount = viViewModel.visibleColumnCount;
-
-        // Save reveal state — computeLayout clears both objects
-        const savedRevealedValues = {};
-        const savedRevealedQValues = {};
-        for (const colIdx of Object.keys(viViewModel.revealedValues || {})) {
-            savedRevealedValues[colIdx] = new Set(viViewModel.revealedValues[colIdx]);
+        if (!viViewModel) return;
+        if (viViewModel.explanationDetail) {
+            viViewModel.clearExplanationDetail();
+            if (this.rightPanel) this.rightPanel.updateContent();
         }
-        for (const colIdx of Object.keys(viViewModel.revealedQValues || {})) {
-            savedRevealedQValues[colIdx] = {};
-            for (const stateId of Object.keys(viViewModel.revealedQValues[colIdx] || {})) {
-                savedRevealedQValues[colIdx][stateId] = new Set(viViewModel.revealedQValues[colIdx][stateId]);
-            }
-        }
-
-        viViewModel.computeLayout(viState, canvasWidth, canvasHeight);
-        for (let i = 0; i < visibleCount; i++) {
-            viViewModel.showNextColumn();
-        }
-
-        // Restore reveal state so right-panel table stays populated
-        viViewModel.revealedValues = savedRevealedValues;
-        viViewModel.revealedQValues = savedRevealedQValues;
-
-        // backupDetail has stale absolute positions — clear it
-        // (animator regenerates it on next step via _callPresenterForSubPhase)
-        viViewModel.clearBackupDetail();
-
-        // Clear explanation: documented design clears explanationDetail on layout recompute
-        // (action diamond/transition positions in the detail are all stale after x-shift)
-        viViewModel.clearExplanationDetail();
-
-        // Refresh right panel HTML (reveal state changed, explanation cleared)
-        if (this.rightPanel) this.rightPanel.updateContent();
     }
 }
