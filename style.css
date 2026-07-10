@@ -643,6 +643,12 @@ input[type="range"].menubar-speed-slider::-moz-range-thumb {
   padding-bottom: 6px;
 }
 
+/* Scoped accent for Policy mode's "Policy π" section header only - added alongside
+   .panel-section-title (not instead of it), so every other section header stays muted-gray. */
+.panel-section-title--policy {
+  color: var(--accent-teal);
+}
+
 .panel-section-content {
   margin-bottom: 10px;
   color: var(--text-dark);
@@ -847,6 +853,33 @@ input[type="range"].panel-param-row-slider::-moz-range-thumb {
   height: 10px;
 }
 
+/* γ-only cyan accent - modifier class layered on top of .panel-param-row-slider (not a
+   recolor of the shared base rule itself), so Monte Carlo's Max Steps slider - which also
+   uses .panel-param-row-slider for its size but not this modifier - stays the default color.
+   Selector is prefixed with input[type="range"] for the same specificity reason documented
+   above the base rule (a bare class selector loses the cascade fight against a plain
+   input[type="range"] rule). Mirrors the base rule's --fill/--thumb-d gradient technique
+   exactly, just swapping var(--color-primary) for var(--accent-cyan). */
+input[type="range"].panel-param-row-slider--gamma {
+  background: linear-gradient(to right,
+    var(--accent-cyan) 0,
+    var(--accent-cyan) calc(var(--thumb-d) / 2 + var(--fill) * (100% - var(--thumb-d))),
+    var(--track-color) calc(var(--thumb-d) / 2 + var(--fill) * (100% - var(--thumb-d))),
+    var(--track-color) 100%);
+}
+
+input[type="range"].panel-param-row-slider--gamma::-webkit-slider-thumb {
+  background: var(--accent-cyan);
+}
+
+input[type="range"].panel-param-row-slider--gamma::-moz-range-thumb {
+  background: var(--accent-cyan);
+}
+
+input[type="range"].panel-param-row-slider--gamma::-moz-range-progress {
+  background: var(--accent-cyan);
+}
+
 .panel-param-row-value {
   font-family: var(--font-family-mono, monospace);
   font-size: 12px;
@@ -951,7 +984,7 @@ input[type="range"]::-moz-range-thumb {
 .panel-t-progress-fill {
   height: 100%;
   border-radius: 2px;
-  background: var(--color-primary);
+  background: var(--accent-yellow);
   transition: width 0.2s ease;
 }
 

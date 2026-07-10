@@ -392,13 +392,26 @@ class MainView {
                 strokeWeight(2);
             }
 
-            if (isNodeFaded) {
+            // Partial-observability state nodes get the same dash pattern as faded nodes
+            // (reused rather than introducing a near-duplicate pair - see MV_DASH_NODE_LINE/GAP)
+            // to hint that the agent doesn't fully observe the state in this mode.
+            const isPartialObsNode = node.type === 'state' && this.viewModel.observability === 'partial';
+            const useDashedStroke = isNodeFaded || isPartialObsNode;
+
+            if (useDashedStroke) {
                 drawingContext.setLineDash([MV_DASH_NODE_LINE, MV_DASH_NODE_GAP]);
             }
 
-            circle(node.x, node.y, node.size * 2);
+            if (node.type === 'action') {
+                // Action nodes render as rounded squares (not circles) - side length matches the
+                // circle's footprint exactly (node.size * 2) so hit-testing/resize math elsewhere
+                // that treats node.size as a bounding radius stays correct.
+                rect(node.x - node.size, node.y - node.size, node.size * 2, node.size * 2, 8);
+            } else {
+                circle(node.x, node.y, node.size * 2);
+            }
 
-            if (isNodeFaded) {
+            if (useDashedStroke) {
                 drawingContext.setLineDash([]);
             }
 

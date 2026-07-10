@@ -312,12 +312,16 @@ class TopBar {
         this._refreshParamsPopover();
     }
 
-    // Bucket a continuous t (0-1) into the same Fast/Medium/Slow vocabulary the old 3-preset
-    // buttons used, for the slider's live readout and the trigger chip's short label.
+    // Display-only: reparametrizes the continuous t (0-1, 0=fastest/1=slowest) onto a
+    // 0.25x-3x numeric multiplier range for the slider's live readout and the trigger chip's
+    // short label. Purely presentational - main.js's actual SPEED_FAST/SPEED_SLOW timing
+    // interpolation (onSetAnimationSpeed) is untouched, so the real animation speed/feel at
+    // any given slider position is unchanged; only this label text changed from the old
+    // Fast/Medium/Slow buckets.
     _speedLabelForT(t) {
-        if (t < 0.33) return 'Fast';
-        if (t > 0.67) return 'Slow';
-        return 'Medium';
+        const clamped = Math.max(0, Math.min(1, t));
+        const displayMultiplier = 0.25 + (3 - 0.25) * (1 - clamped);
+        return displayMultiplier.toFixed(2) + '×';
     }
 
     _buildSpeedSection(dropdown) {

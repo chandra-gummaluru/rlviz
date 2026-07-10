@@ -379,7 +379,7 @@ class RightPanel {
                         + ' <span class="panel-hint-suffix">· used by Simulate and Values</span>';
                 }
             }
-        });
+        }, { titleClass: 'panel-section-title--policy' });
     }
 
     // Random-mode weight editor: one independent slider per action (raw weight, not forced to
@@ -397,18 +397,34 @@ class RightPanel {
         sliderContainer.addClass('policy-weight-sliders');
 
         const readouts = [];
+        // Paired cyan/purple π(a₀)/π(a₁) notation is intentionally scoped to the 2-action case -
+        // it's a complementary pair (p, 1-p) that doesn't generalize to 1- or 3+-action states,
+        // which fall back to one generic per-row readout with a subscripted action index instead.
+        const isPaired = actions.length === 2;
 
         const refreshReadouts = () => {
             const currentWeights = simulationState.getPolicyWeights(stateNode.id) || {};
             const sum = actions.reduce((s, id) => s + (currentWeights[id] ?? 0), 0);
-            readouts.forEach(({ actionId, valueDisplay }) => {
-                const w = currentWeights[actionId] ?? 0;
-                const pct = sum > 0 ? w / sum : 1 / actions.length;
-                valueDisplay.html(`π = ${pct.toFixed(2)}`);
+            const pcts = actions.map(id => {
+                const w = currentWeights[id] ?? 0;
+                return sum > 0 ? w / sum : 1 / actions.length;
             });
+
+            if (isPaired) {
+                const p = pcts[0];
+                const pairedHtml =
+                    `<span style="color: var(--accent-cyan)">π(a${this._toSubscript(0)}) = ${p.toFixed(2)}</span>` +
+                    ` / ` +
+                    `<span style="color: var(--accent-purple)">π(a${this._toSubscript(1)}) = ${(1 - p).toFixed(2)}</span>`;
+                readouts.forEach(({ valueDisplay }) => valueDisplay.html(pairedHtml));
+            } else {
+                readouts.forEach(({ index, valueDisplay }) => {
+                    valueDisplay.html(`π(a${this._toSubscript(index)}) = ${pcts[index].toFixed(2)}`);
+                });
+            }
         };
 
-        actions.forEach(actionId => {
+        actions.forEach((actionId, index) => {
             const actionNode = this.viewModel.graph.nodes.find(n => n.type === 'action' && n.id === actionId);
             if (!actionNode) return;
 
@@ -422,7 +438,10 @@ class RightPanel {
 
             const rawWeight = weights[actionId] ?? 0;
             const { slider, valueDisplay } = RightPanelBuilder.sliderRow(weightRow, 0, 1, rawWeight, 0.01);
-            readouts.push({ actionId, valueDisplay });
+            // Paired readout uses mono digits (same --font-family-mono token every numeric
+            // readout in this file already builds on) so the two probabilities align visually.
+            if (isPaired) valueDisplay.style('font-family', 'var(--font-family-mono, monospace)');
+            readouts.push({ actionId, index, valueDisplay });
 
             slider.input(() => {
                 const newValue = parseFloat(slider.value());
@@ -908,6 +927,7 @@ class RightPanel {
         slider.attribute('step', '0.01');
         slider.attribute('value', String(this.discountFactor));
         slider.addClass('panel-param-row-slider');
+        slider.addClass('panel-param-row-slider--gamma');
         slider.elt.addEventListener('mousedown', e => e.stopPropagation());
         slider.elt.addEventListener('click', e => e.stopPropagation());
         // WebKit/Blink have no native "filled portion" for a fully custom (appearance:none)
@@ -994,6 +1014,7 @@ class RightPanel {
         slider.attribute('step', '0.01');
         slider.attribute('value', String(gamma));
         slider.addClass('panel-param-row-slider');
+        slider.addClass('panel-param-row-slider--gamma');
         slider.elt.addEventListener('mousedown', e => e.stopPropagation());
         slider.elt.addEventListener('click', e => e.stopPropagation());
         slider.elt.style.setProperty('--fill', gamma);
@@ -1303,10 +1324,11 @@ class RightPanel {
                         const qEntry = qVals.find(q => q.actionId === aq.actionId);
                         const computedVal = qEntry ? qEntry.qValue : 0;
                         const val = viState.getEffectiveQValue(stateId, aq.actionId, computedVal);
-                        td.textContent = val.toFixed(2);
+                        const isBest = viState.bestActions[colIdx] &&
+                            viState.bestActions[colIdx][stateId] === aq.actionId;
+                        td.textContent = val.toFixed(2) + (isBest ? ' ★' : '');
                         td.classList.add('q-table-cell--revealed');
-                        if (viState.bestActions[colIdx] &&
-                            viState.bestActions[colIdx][stateId] === aq.actionId) {
+                        if (isBest) {
                             td.classList.add('q-table-cell--best');
                         }
                         if (modelKnown) {
@@ -1635,7 +1657,9 @@ class RightPanel {
                 tr.appendChild(tdName);
 
                 const tdQ = document.createElement('td');
-                tdQ.textContent = action.qValue != null ? action.qValue.toFixed(2) : '—';
+                tdQ.textContent = action.qValue != null
+                    ? action.qValue.toFixed(2) + (isBest ? ' ★' : '')
+                    : '—';
                 tdQ.className = 'q-table-cell q-table-cell--revealed';
                 if (isBest) tdQ.classList.add('q-table-cell--best');
                 tr.appendChild(tdQ);
@@ -1671,10 +1695,14 @@ class RightPanel {
         else element.style('color', 'var(--reward-zero)');
     }
 
-    createSection(title, contentCallback) {
+    createSection(title, contentCallback, opts = {}) {
         const sectionTitle = createDiv(title);
         sectionTitle.parent(this.contentContainer);
         sectionTitle.addClass('panel-section-title');
+        // Optional scoped accent (e.g. Policy π's teal header) added alongside, not instead of,
+        // the shared .panel-section-title rule - keeps this a per-call-site override rather than
+        // a global header color change.
+        if (opts.titleClass) sectionTitle.addClass(opts.titleClass);
 
         contentCallback();
     }

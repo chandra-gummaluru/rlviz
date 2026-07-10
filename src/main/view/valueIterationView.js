@@ -967,6 +967,18 @@ class ValueIterationView {
         const sorted = [...actionsArray].sort((a, b) => b.qValue - a.qValue);
         const rank = sorted.findIndex(a => a.actionId === actionId);
         const t = rank / (sorted.length - 1); // 0 = best, 1 = worst
+
+        // Belief Iteration / PO Q-Learning are illustrative-only (see ValuesMethodMatrix) - use
+        // a yellow-family accent instead of the green/grey/red rank gradient below, faded by
+        // rank via alpha so best/worst actions are still distinguishable even though everything
+        // stays yellow-family. Composes with the caller's existing alpha-blending since this
+        // still returns a color(...) with an alpha channel, just like every other branch here.
+        if (this.viewModel.observability === 'partial') {
+            const yellow = color(AppPalette.accent.yellow);
+            const fadedAlpha = alpha * (1 - 0.5 * t);
+            return color(red(yellow), green(yellow), blue(yellow), fadedAlpha);
+        }
+
         let r, g, b;
         if (t <= 0.5) {
             const s = t * 2;
