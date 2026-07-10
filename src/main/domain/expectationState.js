@@ -77,6 +77,34 @@ class ExpectationState {
         return Math.sqrt(variance);
     }
 
+    // Standard error of the mean at time t. Deliberately uses the FULL rollout population
+    // (this.rollouts, same as getMeanAtT/getSigmaAtT above) rather than the on-screen
+    // displayRuns slice - intentional asymmetry from getEpisodeStatsAtT() below, which
+    // aggregates over the currently-displayed slice instead, to mirror what's on screen.
+    getSEAtT(t) {
+        const sigma = this.getSigmaAtT(t);
+        if (sigma === null) return null;
+        const n = this.rollouts.length; // full population, NOT getDisplaySlice().length
+        return n > 0 ? sigma / Math.sqrt(n) : null;
+    }
+
+    // Win/loss counts and return range at time t, aggregated over the CURRENTLY DISPLAYED slice
+    // (expectationState.displayRuns rollouts) - deliberately a different population from
+    // getSEAtT() above (which always uses the full 128-rollout population), so this mirrors
+    // exactly what's visible in the mini-panel grid. Reuses _getUtility(), the same per-rollout
+    // utility computation getMeanAtT/getAllUtilitiesAtT already use, rather than re-deriving it.
+    getEpisodeStatsAtT(t) {
+        const slice = this.getDisplaySlice();
+        let posCount = 0, negCount = 0, min = Infinity, max = -Infinity;
+        for (const rollout of slice) {
+            const g = this._getUtility(rollout, t);
+            if (g >= 0) posCount++; else negCount++;
+            if (g < min) min = g;
+            if (g > max) max = g;
+        }
+        return { posCount, negCount, min: slice.length ? min : null, max: slice.length ? max : null };
+    }
+
     getMeansOverTime() {
         if (!this.computed) return [];
         return Array.from({ length: this.maxT + 1 }, (_, t) => this.getMeanAtT(t));

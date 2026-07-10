@@ -66,6 +66,11 @@ class RightPanel {
         this.simStatAnimationFrame = null;
         this.expectationViewModel = null;
         this.expectationState = null;
+        // Scoped subtree holding the Estimate/Episodes/Selected Run sections (see
+        // renderExpectationPanel()/updateExpectationData()) - re-rendered on its own by
+        // updateExpectationData() without rebuilding the whole panel (which would tear down and
+        // recreate the Parameters gamma/max-steps sliders on every scrubber tick / play frame).
+        this._mcStatsContainer = null;
 
         this.callbacks = {
             onSpinningArrowToggle: (enabled) => {
@@ -109,6 +114,10 @@ class RightPanel {
         if (this.contentContainer) this.contentContainer.remove();
         this.contentContainer = createDiv();
         this.contentContainer.parent(this.panelElement);
+        // The old container (and any _mcStatsContainer child of it) was just destroyed above -
+        // drop the stale reference so a later updateExpectationData() call is a no-op instead of
+        // rebuilding into a detached DOM node, until renderExpectationPanel() creates a fresh one.
+        this._mcStatsContainer = null;
 
         const selectedNode = this.viewModel.selection.selectedNode;
         const selectedEdge = this.viewModel.selection.selectedEdge;
@@ -1784,13 +1793,163 @@ class RightPanel {
             hintDiv.style('margin-top', '2px');
         });
 
+        // Estimate/Episodes/Selected Run all depend on expectationState.currentT and
+        // expectationViewModel.focusedRunIndex, both of which change on every scrubber tick/play
+        // frame/focus toggle - isolated into their own container so updateExpectationData() can
+        // rebuild just this subtree (see below) instead of the whole panel.
+        this._mcStatsContainer = createDiv();
+        this._mcStatsContainer.parent(this.contentContainer);
+        this._renderMcStatsSections();
+    }
+
+    // Small createSection()-equivalent that parents into an explicit container rather than
+    // always this.contentContainer, so the MC stats subtree (below) can be rebuilt on its own.
+    _createSectionInto(parent, title, contentCallback) {
+        const sectionTitle = createDiv(title);
+        sectionTitle.parent(parent);
+        sectionTitle.addClass('panel-section-title');
+        contentCallback(parent);
+    }
+
+    // Rebuilds the Estimate/Episodes/Selected Run sections into this._mcStatsContainer. Safe to
+    // call repeatedly (e.g. from updateExpectationData()) - clears its own subtree first, never
+    // touches Parameters/Policy above it or the sliders they contain.
+    _renderMcStatsSections() {
+        if (!this._mcStatsContainer) return;
+        const state = this.expectationState;
+        if (!state || !state.computed) return;
+
+        this._mcStatsContainer.html('');
+        const t = state.currentT;
+
+        this._renderEstimateSection(this._mcStatsContainer, state, t);
+        this._renderEpisodesSection(this._mcStatsContainer, state, t);
+        this._renderSelectedRunSection(this._mcStatsContainer, state, t);
+    }
+
+    // Big always-orange V̂(S0) estimate (mean discounted return across ALL rollouts, not
+    // just the displayed slice - see ExpectationState.getMeanAtT/getSEAtT) with a SE subtitle.
+    // Uses a dedicated .panel-estimate-value class rather than .panel-utility-value since this
+    // number is never sign-colored (it's an estimate, not a live positive/negative reward).
+    _renderEstimateSection(parent, state, t) {
+        this._createSectionInto(parent, 'Estimate', (sectionParent) => {
+            const container = createDiv();
+            container.parent(sectionParent);
+            container.addClass('panel-section-content');
+
+            const mean = state.getMeanAtT(t);
+            const se = state.getSEAtT(t);
+
+            const valueDiv = createDiv(`V̂(S₀) = ${mean !== null ? mean.toFixed(2) : '—'}`);
+            valueDiv.parent(container);
+            valueDiv.addClass('panel-estimate-value');
+
+            const subtitle = createDiv(
+                `mean of ${state.rollouts.length} returns · SE ± ${se !== null ? se.toFixed(2) : '—'}`);
+            subtitle.parent(container);
+            subtitle.addClass('panel-hint');
+            subtitle.style('margin-top', '2px');
+        });
+    }
+
+    // Win/loss counts (over the currently DISPLAYED slice, matching what's on screen in the
+    // mini-panel grid - see ExpectationState.getEpisodeStatsAtT) plus the observed return range.
+    _renderEpisodesSection(parent, state, t) {
+        this._createSectionInto(parent, 'Episodes', (sectionParent) => {
+            const container = createDiv();
+            container.parent(sectionParent);
+            container.addClass('panel-section-content');
+
+            const stats = state.getEpisodeStatsAtT(t);
+
+            const countsDiv = createDiv();
+            countsDiv.parent(container);
+            countsDiv.addClass('panel-stat-value');
+
+            const posSpan = document.createElement('span');
+            posSpan.textContent = `${stats.posCount} ✓`;
+            posSpan.style.color = 'var(--reward-positive)';
+            countsDiv.elt.appendChild(posSpan);
+
+            const sepSpan = document.createElement('span');
+            sepSpan.textContent = ' / ';
+            countsDiv.elt.appendChild(sepSpan);
+
+            const negSpan = document.createElement('span');
+            negSpan.textContent = `${stats.negCount} ✗`;
+            negSpan.style.color = 'var(--reward-negative)';
+            countsDiv.elt.appendChild(negSpan);
+
+            const rangeDiv = createDiv(
+                `G ∈ [${stats.min !== null ? stats.min.toFixed(2) : '—'}, ${stats.max !== null ? stats.max.toFixed(2) : '—'}]`);
+            rangeDiv.parent(container);
+            rangeDiv.addClass('panel-hint');
+            rangeDiv.style('margin-top', '4px');
+        });
+    }
+
+    // Only rendered while a mini-panel card is focused (expectationViewModel.focusedRunIndex !==
+    // null) - disappears entirely (no section title, no empty placeholder) once the user exits
+    // focus mode back to the full grid.
+    _renderSelectedRunSection(parent, state, t) {
+        const vm = this.expectationViewModel;
+        if (!vm || vm.focusedRunIndex === null || vm.focusedRunIndex === undefined) return;
+
+        const focusedIdx = vm.focusedRunIndex;
+        const rollout = state.getDisplaySlice()[focusedIdx];
+        if (!rollout) return;
+
+        this._createSectionInto(parent, 'Selected Run', (sectionParent) => {
+            const container = createDiv();
+            container.parent(sectionParent);
+            container.addClass('panel-section-content');
+
+            const header = createDiv(`Run ${String(focusedIdx + 1).padStart(2, '0')}`);
+            header.parent(container);
+            header.addClass('panel-stat-value');
+
+            const graph = this.viewModel.graph;
+            const trajectory = RolloutFormatter.formatTrajectory(graph, rollout, t);
+            const trajDiv = createDiv(trajectory || 'No steps taken yet.');
+            trajDiv.parent(container);
+            trajDiv.addClass('panel-hint');
+            trajDiv.style('margin-top', '4px');
+            trajDiv.style('word-break', 'break-word');
+
+            const effectiveT = Math.floor(Math.min(t, rollout.numSteps));
+            const utility = state._getUtility(rollout, t);
+            const totalReward = rollout.rewards.slice(0, effectiveT).reduce((a, b) => a + b, 0);
+
+            const gRow = createDiv();
+            gRow.parent(container);
+            gRow.addClass('panel-utility-row');
+            gRow.style('margin-top', '8px');
+
+            const gLabel = createDiv('G');
+            gLabel.parent(gRow);
+            gLabel.addClass('panel-latex--inline');
+
+            const gValue = createDiv(utility.toFixed(2));
+            gValue.parent(gRow);
+            gValue.addClass('panel-utility-value');
+            this._applyRewardColor(gValue, utility);
+
+            const totalRewardDiv = createDiv(`Total reward: ${totalReward.toFixed(2)}`);
+            totalRewardDiv.parent(container);
+            totalRewardDiv.addClass('panel-hint');
+            totalRewardDiv.style('margin-top', '4px');
+        });
     }
 
     // Per-tick refresh hook called by ExpectationView (scrubber move, play tick, focus toggle).
-    // The MC right-panel content (gamma/display-runs/max-steps/policy) doesn't depend on
-    // currentT or the focused run, so there's nothing to refresh here - the bottom chart dock
-    // (Convergence/Histogram/Q-table/MC-tree) is what live-updates on those events instead.
-    updateExpectationData() {}
+    // Re-renders ONLY the Estimate/Episodes/Selected Run subtree (this._mcStatsContainer) - a
+    // full updateContent() rebuild would tear down and recreate the Parameters gamma/max-steps
+    // sliders on this same ~250ms cadence, causing visible flicker and interrupting any
+    // in-progress drag on those controls. No-ops if the MC panel isn't currently rendered
+    // (this._mcStatsContainer is null, e.g. while another mode/sub-view is showing).
+    updateExpectationData() {
+        this._renderMcStatsSections();
+    }
 
     show() {
         if (this.panelElement) {

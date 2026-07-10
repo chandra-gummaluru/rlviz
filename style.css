@@ -1346,6 +1346,16 @@ input[type="range"]::-moz-range-thumb {
   font-weight: 600;
 }
 
+/* Monte Carlo "Estimate" section: big V̂(S0) number, ALWAYS orange regardless of sign - a
+   distinct class from .panel-utility-value above, which colors green/red by sign. This is an
+   estimate of the true value, not a live per-episode reward, so sign-coloring doesn't apply. */
+.panel-estimate-value {
+  font-family: var(--font-family-mono, var(--font-family));
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--accent-orange);
+}
+
 /* Utility G contribution bar: always-visible, one block per non-zero reward step, width
    proportional to the discounted magnitude |gamma^t * r_t|, plus a trailing gray block for the
    remaining episode tail with no more reward. */
