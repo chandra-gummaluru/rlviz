@@ -1,8 +1,8 @@
-// Floating, top-right Values -> Monte Carlo control: "runs" label + a [12][24][48]
+// Floating, top-right Values -> Monte Carlo control: "runs" label + a [16][32][64]
 // segmented switch, replacing the right panel's old "Display Runs" dropdown (same options,
 // same underlying expectationState.displayRuns - just relocated and restyled as a pill,
 // mirroring EstimatorPill/ZoomPill's floating-chip pattern).
-const MC_RUNS_PILL_OPTIONS = [12, 24, 48];
+const MC_RUNS_PILL_OPTIONS = [16, 32, 64];
 
 class McRunsPill {
     constructor(callbacks, canvasViewModel) {

@@ -678,13 +678,13 @@ class TopBar {
         }
     }
 
-    // "Run" in Build, "Preview rollout" in Policy (now differentiated by mode).
+    // "Run" in both Build and Policy - Policy's Run/Renormalize/Step/Reset row is identical to
+    // Build's (per CLAUDE.md: Policy's canvas/top-bar are intentionally the same as Build's).
     // Values gets its own method-specific labels, handled separately via setPlayPauseMode's
     // callers passing 'play'/'pause'.
     _updateRunButtonLabel() {
         if (!this.playPauseBtn || this.playPauseBtn.elt.dataset.mode !== 'play') return;
-        const label = this.currentMode === 'policy' ? '▶ Preview rollout' : '▶ Run';
-        this.playPauseBtn.html(label);
+        this.playPauseBtn.html('▶ Run');
     }
 
     updateWidth(newWidth) {
