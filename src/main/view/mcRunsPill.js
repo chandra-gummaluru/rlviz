@@ -1,4 +1,4 @@
-// Floating, top-right Values -> Monte Carlo control: "runs" label + a [4][8][16][32][64]
+// Floating, top-right Values -> Monte Carlo control: "runs" label + a [12][24][48]
 // segmented switch, replacing the right panel's old "Display Runs" dropdown (same options,
 // same underlying expectationState.displayRuns - just relocated and restyled as a pill,
 // mirroring EstimatorPill/ZoomPill's floating-chip pattern).
