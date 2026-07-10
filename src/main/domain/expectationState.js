@@ -5,7 +5,7 @@ class ExpectationState {
         this.rollouts = [];
         this.currentT = 0;
         this.maxT = 0;
-        this.displayRuns = 16;  // how many of the 128 to show in the grid
+        this.displayRuns = 24;  // how many of the 128 to show in the grid
         this.maxSteps = 100;
         this.gamma = 0.9;
         this.computed = false;

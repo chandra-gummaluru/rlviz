@@ -15,9 +15,9 @@ class RunExpectationInteractor extends RunExpectationInputBoundary {
             return this.outputBoundary.presentError('Start node is not a valid state.');
         }
 
-        const validDisplayCounts = [4, 8, 16, 32, 64];
+        const validDisplayCounts = [12, 24, 48];
         if (!validDisplayCounts.includes(displayRuns)) {
-            return this.outputBoundary.presentError(`Invalid display run count: ${displayRuns}. Must be 4, 8, 16, 32, or 64.`);
+            return this.outputBoundary.presentError(`Invalid display run count: ${displayRuns}. Must be 12, 24, or 48.`);
         }
         if (!Number.isInteger(maxSteps) || maxSteps < 1 || maxSteps > 1000) {
             return this.outputBoundary.presentError(`Invalid maxSteps: ${maxSteps}. Must be integer in [1, 1000].`);

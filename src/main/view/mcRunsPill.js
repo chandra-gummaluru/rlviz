@@ -2,7 +2,7 @@
 // segmented switch, replacing the right panel's old "Display Runs" dropdown (same options,
 // same underlying expectationState.displayRuns - just relocated and restyled as a pill,
 // mirroring EstimatorPill/ZoomPill's floating-chip pattern).
-const MC_RUNS_PILL_OPTIONS = [4, 8, 16, 32, 64];
+const MC_RUNS_PILL_OPTIONS = [12, 24, 48];
 
 class McRunsPill {
     constructor(callbacks, canvasViewModel) {

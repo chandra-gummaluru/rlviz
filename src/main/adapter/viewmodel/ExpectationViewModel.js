@@ -18,7 +18,7 @@ class ExpectationViewModel {
     // truth, rather than applying a separate draw-time transform hit-testing would need to
     // duplicate.
     computeLayout(canvasW, canvasH, displayRuns, graph, topOffset = 0) {
-        const GRID = { 4: [2,2], 8: [4,2], 16: [4,4], 32: [8,4], 64: [8,8] };
+        const GRID = { 12: [6,2], 24: [6,4], 48: [6,8] };
         const [cols, rows] = GRID[displayRuns] || [4, 4];
         const panelW = Math.floor(canvasW / cols);
         const panelH = Math.floor(canvasH / rows);
