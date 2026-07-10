@@ -20,6 +20,12 @@ const expectationViewModel = new ExpectationViewModel();
 canvasViewModel.expectationState = expectationState;
 canvasViewModel.expectationViewModel = expectationViewModel;
 
+// Learning Iteration (unknown:full quadrant) real Q-learning domain. Presentation/session-only,
+// excluded from graph import/export (attached to the viewmodel, never touched by graphObj.js).
+const qLearningState = new QLearningState();
+const qLearningEpisodeGenerator = new QLearningEpisodeGenerator(graph, traceGenerator);
+canvasViewModel.qLearningState = qLearningState;
+
 // Presenters for existing use cases
 const createNodePresenter = new CreateNodePresenter(canvasViewModel.interaction);
 const createEdgePresenter = new CreateEdgePresenter(canvasViewModel);
@@ -97,6 +103,7 @@ let zoomPill;
 let estimatorPill;
 let mcRunsPill;
 let viSweepChip;
+let learningTreePill;
 
 // Simulation Presenter (needs ViewModel and MainView references, created in setup)
 let simulationPresenter;
@@ -216,6 +223,9 @@ const onModelKnownToggle = (known) => {
     if (rightPanel) rightPanel.updateContent();
     if (mainView && mainView.chartDock) mainView.chartDock.refresh();
     if (estimatorPill) estimatorPill.refresh();
+    // Entering/leaving the Learning Iteration quadrant toggles the Graph|Tree pill (and seeds
+    // the tree root on first entry) without waiting for a Run/Step click.
+    refreshLearningTreePill();
     redraw();
 };
 
@@ -225,8 +235,46 @@ const onObservabilityToggle = (value) => {
     if (estimatorPill) estimatorPill.refresh();
     if (rightPanel) rightPanel.updateContent();
     if (mainView && mainView.chartDock) mainView.chartDock.refresh();
+    refreshLearningTreePill();
     redraw();
 };
+
+// True when the resolved Values-mode quadrant is unknown:full (Learning Iteration) - the only
+// quadrant driven by the real Q-learning subsystem rather than VI's Bellman sweep.
+function _isLearningIterationActive() {
+    return ValuesMethodMatrix.key(canvasViewModel.modelKnown, canvasViewModel.observability) === 'unknown:full';
+}
+
+// Idempotently seeds the Q-learning tree root from the current start state, so Tree mode shows a
+// root placeholder immediately on entering the quadrant (not gated behind the first Run/Step).
+function ensureQLRoot() {
+    const startNode = canvasViewModel.startNode;
+    if (startNode) qLearningState.ensureRoot(startNode.id, startNode.name);
+}
+
+// Show/hide + refresh the floating Graph|Tree pill based on the current quadrant/sub-view (the
+// pill self-gates in show()); called from the same lifecycle points as the other Values pills.
+function refreshLearningTreePill() {
+    if (!learningTreePill || !mainView) return;
+    const inVi = canvasViewModel.mode === 'values' && canvasViewModel.valuesSubView === 'vi';
+    const isLI = inVi && _isLearningIterationActive();
+    const w = windowWidth - mainView.RIGHT_PANEL_WIDTH;
+    if (isLI) {
+        // Learning Iteration owns the top-right pill slot: show Graph|Tree, hide VI's sweep chip
+        // (the two share the same anchor; VI's sweep status is meaningless in this quadrant).
+        learningTreePill.updateBounds(0, w);
+        ensureQLRoot();
+        learningTreePill.show();
+        if (mainView.viSweepChip) mainView.viSweepChip.hide();
+    } else {
+        learningTreePill.hide();
+        if (inVi && mainView.viSweepChip) {
+            mainView.viSweepChip.updateBounds(0, w);
+            mainView.viSweepChip.show();
+            mainView.viSweepChip.refresh();
+        }
+    }
+}
 
 // ===== Values-mode sub-view lifecycle (registered on canvasController below) =====
 // mc entry: pause other playback, run MC rollouts, set up the scrubber. Mirrors what entering
@@ -307,10 +355,15 @@ canvasController.registerModeLifecycle({
             leaveVISubView();
             resetMCData();
             resetVIData();
+            // Leaving Values mode entirely is the ONE full-reset boundary for Q-learning (the
+            // graph may be edited before Values is re-entered, so stale learned Q must not
+            // survive). Switching quadrants/algorithm/sub-view deliberately preserves it.
+            qLearningState.reset();
             if (mainView && mainView.chartDock) mainView.chartDock.hide();
             if (mainView && mainView.estimatorPill) mainView.estimatorPill.hide();
             if (mainView && mainView.mcRunsPill) mainView.mcRunsPill.hide();
             if (mainView && mainView.viSweepChip) mainView.viSweepChip.hide();
+            if (learningTreePill) learningTreePill.hide();
         },
         // Policy's canvas is now identical to Build's (fully editable - only the right panel
         // differs), so it shares the same tool-palette show/hide lifecycle.
@@ -359,6 +412,7 @@ canvasController.registerModeLifecycle({
                     mainView.viSweepChip.show();
                     mainView.viSweepChip.refresh();
                 }
+                refreshLearningTreePill();
             }
         }
     },
@@ -368,6 +422,7 @@ canvasController.registerModeLifecycle({
             if (mainView && mainView.zoomPill) mainView.zoomPill.hide();
             if (mainView && mainView.estimatorPill) mainView.estimatorPill.refresh();
             if (mainView && mainView.viSweepChip) mainView.viSweepChip.hide();
+            if (learningTreePill) learningTreePill.hide();
             if (mainView && mainView.mcRunsPill) {
                 mainView.mcRunsPill.updateBounds(0, windowWidth - mainView.RIGHT_PANEL_WIDTH);
                 mainView.mcRunsPill.show();
@@ -384,6 +439,7 @@ canvasController.registerModeLifecycle({
                 mainView.viSweepChip.show();
                 mainView.viSweepChip.refresh();
             }
+            refreshLearningTreePill();
         }
     },
     onLeaveSubView: {
@@ -516,7 +572,23 @@ const ensureVIInitialized = () => {
     runVIInteractor.execute(new RunVIInputData(T, gamma));
 };
 
+// The VI Play/Step/Skip/Reset buttons are shared by all four Values-mode Method quadrants. In
+// the unknown:full (Learning Iteration) quadrant they drive the real Q-learning subsystem
+// instead of VI's Bellman sweep. Each callback branches at the top and returns before touching
+// any VI state, so the two subsystems stay fully decoupled.
+function _afterQLChange() {
+    if (rightPanel) rightPanel.updateContent();
+    if (mainView && mainView.chartDock) mainView.chartDock.refresh();
+    if (learningTreePill) learningTreePill.refresh();
+    redraw();
+}
+
 const onVIPlay = () => {
+    if (_isLearningIterationActive()) {
+        canvasController.runQLearning(10);   // "▶ Run learning": 10 episodes
+        _afterQLChange();
+        return;
+    }
     if (!runVIInteractor || !viPlayInteractor) return;
     ensureVIInitialized();
     viPlayInteractor.execute(new VIPlayInputData());
@@ -524,12 +596,19 @@ const onVIPlay = () => {
 };
 
 const onVIPause = () => {
+    // No continuous playback in Q-learning (Run is synchronous) - nothing to pause.
+    if (_isLearningIterationActive()) return;
     if (!viPauseInteractor) return;
     viPauseInteractor.execute(new VIPauseInputData());
     refreshVIButtons();
 };
 
 const onVIStep = () => {
+    if (_isLearningIterationActive()) {
+        canvasController.stepQLearning();    // exactly one episode
+        _afterQLChange();
+        return;
+    }
     if (!viStepInteractor) return;
     ensureVIInitialized();
     viStepInteractor.execute(new VIStepInputData());
@@ -537,6 +616,13 @@ const onVIStep = () => {
 };
 
 const onVISkip = () => {
+    if (_isLearningIterationActive()) {
+        // Skip has no distinct meaning here yet - behave like Run (10 episodes) as an interim
+        // stopgap rather than a dead button.
+        canvasController.runQLearning(10);
+        _afterQLChange();
+        return;
+    }
     if (!viSkipInteractor) return;
     ensureVIInitialized();
     viSkipInteractor.execute(new VISkipInputData());
@@ -544,6 +630,12 @@ const onVISkip = () => {
 };
 
 const onVIReset = () => {
+    if (_isLearningIterationActive()) {
+        canvasController.resetQLearning();
+        ensureQLRoot();                      // re-seed root so Tree shows its placeholder again
+        _afterQLChange();
+        return;
+    }
     if (!viResetInteractor) return;
     viResetInteractor.execute(new VIResetInputData());
     refreshVIButtons();
@@ -740,6 +832,19 @@ function setup() {
     mainView.viSweepChip = viSweepChip;
     viSweepChip.hide();
 
+    // Floating Graph|Tree switch for the Learning Iteration (unknown:full) quadrant only.
+    learningTreePill = new LearningTreeTogglePill({
+        onSelectView: (view) => {
+            canvasController.setLearningIterationCanvasView(view);
+            learningTreePill.refresh();
+            redraw();
+        }
+    }, canvasViewModel);
+    learningTreePill.setup(mainView.TOP_BARS_HEIGHT);
+    learningTreePill.updateBounds(0, windowWidth - mainView.RIGHT_PANEL_WIDTH);
+    mainView.learningTreePill = learningTreePill;
+    learningTreePill.hide();
+
     AppPalette._onThemeChange = () => {
         mainView.invalidateDotGrid();
         rightPanel.updateContent();
@@ -790,6 +895,28 @@ function setup() {
         getBottomOffset: () => topBar.getHeight()
     });
     mainView.valueIterationView = valueIterationView;
+
+    // ===== Learning Iteration (unknown:full) real Q-learning wiring =====
+    const qlPresenter = new QLPresenter(canvasViewModel);
+    qlPresenter.onComplete = () => {
+        // Panel/pill/canvas refresh is done by the callers' _afterQLChange()/rightPanel handlers;
+        // keep the presenter minimal so it doesn't double-rebuild the panel.
+        if (typeof redraw === 'function') redraw();
+    };
+    qlPresenter.onError = () => {
+        if (rightPanel) rightPanel.updateContent();
+    };
+    const runQLInteractor = new RunQLInteractor(graph, qLearningEpisodeGenerator, qLearningState, qlPresenter);
+    const qlResetInteractor = new QLResetInteractor(qLearningState, qlPresenter);
+    const setQLAlgorithmInteractor = new SetQLAlgorithmInteractor(qLearningState, qlPresenter);
+    // Registered on the controller's interactor table so the thin runQLearning/stepQLearning/
+    // resetQLearning/setQLAlgorithm controller methods can reach them (mirrors setManualQOverride).
+    canvasController.interactors.runQL = runQLInteractor;
+    canvasController.interactors.qlReset = qlResetInteractor;
+    canvasController.interactors.setQLAlgorithm = setQLAlgorithmInteractor;
+
+    const learningIterationView = new LearningIterationView(canvasViewModel);
+    mainView.learningIterationView = learningIterationView;
 
     // VI explanation phase constants (local to setup; labels/counts passed into buildExplanationDetail)
     const VI_EXPLAIN_PHASES = [

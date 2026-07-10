@@ -1806,6 +1806,81 @@ input[type="range"]::-moz-range-thumb {
   color: var(--color-primary-contrast, var(--text-white));
 }
 
+/* ── Learning Iteration Graph|Tree pill (Values -> Method, unknown:full) ─── */
+
+.learning-tree-pill {
+  position: absolute;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.learning-tree-pill-label {
+  font-size: 10px;
+  color: var(--text-lighter);
+}
+
+.learning-tree-pill-track {
+  display: flex;
+  gap: 2px;
+  background: var(--surface-card2, var(--bg-card));
+  border: 1px solid var(--border-hairline, var(--border-light));
+  border-radius: 8px;
+  padding: 2px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.learning-tree-pill-btn {
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-family);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+
+.learning-tree-pill-btn:hover {
+  background: var(--surface-hover, var(--bg-dark-hover));
+}
+
+.learning-tree-pill-btn--active {
+  background: var(--accent-purpleT);
+  color: var(--color-primary-contrast, var(--text-white));
+}
+
+/* ── Q-learning Algorithm subsection (Learning Iteration right panel) ─────── */
+
+.ql-algo-toggle {
+  flex-wrap: wrap;
+}
+
+.ql-param-row {
+  display: flex;
+  align-items: center;
+  margin-top: 6px;
+}
+
+.ql-param-chip {
+  display: inline-block;
+  font-family: var(--font-family-mono, var(--font-family));
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary, var(--text-muted));
+  background: var(--surface-card2, var(--bg-card));
+  border: 1px solid var(--border-input, var(--border-medium));
+  border-radius: var(--radius-btn, 4px);
+  padding: 3px 8px;
+  cursor: pointer;
+}
+
+.ql-param-chip:hover {
+  border-color: var(--accent-purpleT);
+}
+
 /* ── Value Iteration sweep chip (Values -> Method) ───────────────────────── */
 
 .vi-sweep-chip {

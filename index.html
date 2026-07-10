@@ -33,6 +33,8 @@
     <script src="src/main/domain/traceGenerator.js"></script>
     <script src="src/main/domain/valueIterationState.js"></script>
     <script src="src/main/domain/expectationState.js"></script>
+    <script src="src/main/domain/qLearningState.js"></script>
+    <script src="src/main/domain/qLearningEpisodeGenerator.js"></script>
 
     <!-- Use Case Layer - CreateNode -->
     <script src="src/main/use_case/createNode/createNodeInputBoundary.js"></script>
@@ -218,6 +220,19 @@
     <script src="src/main/use_case/expectation/updateExpectationGammaInteractor.js"></script>
     <script src="src/main/use_case/expectation/expectationPresenter.js"></script>
 
+    <!-- Use Case - Q-learning (Learning Iteration) -->
+    <script src="src/main/use_case/qLearning/qlOutputBoundary.js"></script>
+    <script src="src/main/use_case/qLearning/qlPresenter.js"></script>
+    <script src="src/main/use_case/qLearning/runQLInputBoundary.js"></script>
+    <script src="src/main/use_case/qLearning/runQLInputData.js"></script>
+    <script src="src/main/use_case/qLearning/runQLInteractor.js"></script>
+    <script src="src/main/use_case/qLearning/qlResetInputBoundary.js"></script>
+    <script src="src/main/use_case/qLearning/qlResetInputData.js"></script>
+    <script src="src/main/use_case/qLearning/qlResetInteractor.js"></script>
+    <script src="src/main/use_case/qLearning/setQLAlgorithmInputBoundary.js"></script>
+    <script src="src/main/use_case/qLearning/setQLAlgorithmInputData.js"></script>
+    <script src="src/main/use_case/qLearning/setQLAlgorithmInteractor.js"></script>
+
     <!-- Presentation Shared -->
     <script src="src/main/view/helpers/AppPalette.js"></script>
     <script src="src/main/view/helpers/Typography.js"></script>
@@ -251,11 +266,13 @@
     <script src="src/main/view/zoomPill.js"></script>
     <script src="src/main/view/estimatorPill.js"></script>
     <script src="src/main/view/mcRunsPill.js"></script>
+    <script src="src/main/view/learningTreeTogglePill.js"></script>
     <script src="src/main/view/viSweepChip.js"></script>
     <script src="src/main/view/RightPanelBuilder.js"></script>
     <script src="src/main/view/rightPanel.js"></script>
     <script src="src/main/view/rewardParticleSystem.js"></script>
     <script src="src/main/view/valueIterationView.js"></script>
+    <script src="src/main/view/learningIterationView.js"></script>
     <script src="src/main/view/expectationScrubber.js"></script>
     <script src="src/main/view/expectationView.js"></script>
     <script src="src/main/view/chartDock.js"></script>

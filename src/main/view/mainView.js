@@ -66,6 +66,10 @@ class MainView {
         // Value Iteration view (set after construction)
         this.valueIterationView = null;
 
+        // Learning Iteration view (unknown:full quadrant real Q-learning; set after construction)
+        this.learningIterationView = null;
+        this.learningTreePill = null;
+
         // Bottom chart dock (Values mode; instantiated in a later phase)
         this.chartDock = null;
 
@@ -183,7 +187,14 @@ class MainView {
                 translate(0, MV_VALUES_PILL_CLEARANCE);
                 translate(this.viewModel.viewport.panX, this.viewModel.viewport.panY);
                 scale(this.viewModel.viewport.zoom);
-                this.valueIterationView.draw();
+                // The unknown:full quadrant (Learning Iteration) is a genuinely separate
+                // subsystem (real episodic Q-learning + search tree), not VI's rendering.
+                const quadrant = ValuesMethodMatrix.key(this.viewModel.modelKnown, this.viewModel.observability);
+                if (quadrant === 'unknown:full' && this.learningIterationView) {
+                    this.learningIterationView.draw();
+                } else {
+                    this.valueIterationView.draw();
+                }
                 pop();
             }
             return;
@@ -1284,6 +1295,7 @@ class MainView {
         if (this.estimatorPill) this.estimatorPill.updateBounds(0, windowWidth - this.RIGHT_PANEL_WIDTH);
         if (this.mcRunsPill) this.mcRunsPill.updateBounds(0, windowWidth - this.RIGHT_PANEL_WIDTH);
         if (this.viSweepChip) this.viSweepChip.updateBounds(0, windowWidth - this.RIGHT_PANEL_WIDTH);
+        if (this.learningTreePill) this.learningTreePill.updateBounds(0, windowWidth - this.RIGHT_PANEL_WIDTH);
         const valuesHeight = canvasHeight - this.getDockHeight();
         const paneWidths = this._valuesPaneWidths(canvasWidth);
         this._relayoutValueIterationIfActive(paneWidths.vi, valuesHeight);
@@ -1317,6 +1329,7 @@ class MainView {
         if (this.estimatorPill) this.estimatorPill.updateBounds(0, windowWidth - this.RIGHT_PANEL_WIDTH);
         if (this.mcRunsPill) this.mcRunsPill.updateBounds(0, windowWidth - this.RIGHT_PANEL_WIDTH);
         if (this.viSweepChip) this.viSweepChip.updateBounds(0, windowWidth - this.RIGHT_PANEL_WIDTH);
+        if (this.learningTreePill) this.learningTreePill.updateBounds(0, windowWidth - this.RIGHT_PANEL_WIDTH);
         const valuesHeight = canvasHeight - this.getDockHeight();
         const paneWidths = this._valuesPaneWidths(canvasWidth);
         this._relayoutValueIterationIfActive(paneWidths.vi, valuesHeight);

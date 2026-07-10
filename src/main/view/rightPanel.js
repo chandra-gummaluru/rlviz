@@ -782,6 +782,14 @@ class RightPanel {
 
         this.renderInitialStateSection();
 
+        // unknown:full (Learning Iteration) is a genuinely separate subsystem: real episodic
+        // Q-learning (algorithm toggle + Q/N table), not VI's Bellman sweep / editable-Q-table.
+        const liKey = ValuesMethodMatrix.key(modelKnown, this.viewModel.observability);
+        if (liKey === 'unknown:full') {
+            this._renderLearningIterationPanel();
+            return;
+        }
+
         // Explanation mode: show explanation + Q-table only (not the full VI panel)
         const explanationDetail = viViewModel?.explanationDetail;
         if (explanationDetail) {
@@ -910,6 +918,225 @@ class RightPanel {
             hint.style('margin-top', '10px');
         }
 
+    }
+
+    // ===== Learning Iteration (unknown:full): real episodic Q-learning =====
+
+    // Panel body for the unknown:full quadrant: title, description, Algorithm subsection
+    // (ε-greedy | UCB | Optimistic toggle + editable hyperparameter chip), and a live Q/N table.
+    // Replaces VI's Bellman-sweep/editable-Q-table content for this quadrant only.
+    _renderLearningIterationPanel() {
+        const qls = this.viewModel.qLearningState;
+        const matrixEntry = ValuesMethodMatrix.resolve(this.viewModel.modelKnown, this.viewModel.observability);
+
+        // Keep the Q-learning discount in sync with the shared γ slider rendered above.
+        if (qls) qls.gamma = this.discountFactor;
+
+        const title = createDiv(matrixEntry.title);
+        title.parent(this.contentContainer);
+        title.addClass('panel-title');
+
+        const desc = createDiv();
+        desc.parent(this.contentContainer);
+        desc.addClass('panel-section-content');
+        desc.html('P is unknown. Sample episodes and learn Q by trial and error: '
+            + 'Q(s,a) &larr; running mean of r + &gamma;·max<sub>a\'</sub> Q(s\',a\').');
+
+        if (!qls) return;
+
+        this._renderQLAlgorithmSection(qls);
+
+        // Episode count readout.
+        const stat = createDiv(`<strong>Episodes:</strong> ${qls.episodeCount}`);
+        stat.parent(this.contentContainer);
+        stat.addClass('panel-section-content');
+        stat.style('margin-top', '8px');
+
+        // Q / N table.
+        const tableTitle = createDiv('Learned Q-values');
+        tableTitle.parent(this.contentContainer);
+        tableTitle.addClass('panel-section-title');
+        tableTitle.style('margin-top', '12px');
+
+        if (qls.episodeCount === 0) {
+            const hint = createDiv('Press Run learning or Step to begin sampling.');
+            hint.parent(this.contentContainer);
+            hint.addClass('panel-hint');
+            hint.style('margin-top', '6px');
+        }
+
+        const tableContainer = createDiv();
+        tableContainer.parent(this.contentContainer);
+        tableContainer.addClass('q-table-scroll');
+        this._renderQLearningTable(tableContainer, qls);
+    }
+
+    // Algorithm toggle (ε-greedy | UCB | Optimistic) + a small click-to-edit hyperparameter chip
+    // for the active algorithm. Toggle DOM/styling mirrors Policy mode's Deterministic|Random
+    // toggle; the chip's click-to-edit mirrors the Q-table cell override interaction.
+    _renderQLAlgorithmSection(qls) {
+        this.createSection('Algorithm', () => {
+            const wrap = createDiv();
+            wrap.parent(this.contentContainer);
+            wrap.addClass('panel-section-content');
+
+            const toggle = createDiv();
+            toggle.parent(wrap);
+            toggle.addClass('policy-det-random-toggle');
+            toggle.addClass('ql-algo-toggle');
+
+            const options = [
+                { key: 'epsilonGreedy', label: 'ε-greedy' },
+                { key: 'ucb', label: 'UCB' },
+                { key: 'optimistic', label: 'Optimistic' }
+            ];
+            options.forEach(opt => {
+                const btn = createButton(opt.label);
+                btn.parent(toggle);
+                btn.addClass('policy-det-random-btn');
+                if (qls.algorithm === opt.key) btn.addClass('policy-det-random-btn--active');
+                btn.mousePressed(() => {
+                    if (qls.algorithm !== opt.key) {
+                        this.controller.setQLAlgorithm(opt.key);   // no reset of learned Q/N
+                        this.updateContent();
+                        if (typeof redraw === 'function') redraw();
+                    }
+                });
+            });
+
+            // Hyperparameter chip for the active algorithm (click to edit).
+            const chipRow = createDiv();
+            chipRow.parent(wrap);
+            chipRow.addClass('ql-param-row');
+
+            const paramMeta = {
+                epsilonGreedy: { label: 'ε', value: qls.epsilon, step: '0.01' },
+                ucb:           { label: 'c', value: qls.ucbC, step: '0.1' },
+                optimistic:    { label: 'Q₀', value: qls.optimisticQ0, step: '0.5' }
+            }[qls.algorithm];
+
+            const chip = createDiv(`${paramMeta.label} = ${this._fmtParam(paramMeta.value)}`);
+            chip.parent(chipRow);
+            chip.addClass('ql-param-chip');
+            chip.elt.title = 'Click to edit';
+            chip.mousePressed(() => this._startEditingQLParam(chip.elt, qls.algorithm, paramMeta));
+        });
+    }
+
+    _fmtParam(v) {
+        return (Math.round(v * 100) / 100).toString();
+    }
+
+    // Inline click-to-edit for the algorithm hyperparameter (same pattern as _startEditingQCell).
+    _startEditingQLParam(chipEl, algorithm, meta) {
+        if (chipEl.querySelector('input')) return;
+        chipEl.textContent = '';
+
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.step = meta.step;
+        input.value = this._fmtParam(meta.value);
+        input.className = 'q-table-cell-input';
+        chipEl.appendChild(input);
+        input.focus();
+        input.select();
+
+        let settled = false;
+        const commit = () => {
+            if (settled) return;
+            settled = true;
+            const parsed = parseFloat(input.value);
+            if (isFinite(parsed)) {
+                this.controller.setQLAlgorithm(algorithm, parsed);
+            }
+            this.updateContent();
+            if (typeof redraw === 'function') redraw();
+        };
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { commit(); }
+            else if (e.key === 'Escape') { settled = true; this.updateContent(); }
+        });
+        input.addEventListener('blur', commit);
+    }
+
+    // Q/N table for the learned tabular estimate: rows = (state, action), columns = N and Q,
+    // with a ★ marker on each state's greedy (argmax-Q) action - same ★ convention as VI's
+    // _renderQTable. Reads qLearningState.getQ/getN instead of viState's per-sweep values.
+    _renderQLearningTable(container, qls) {
+        const graph = this.viewModel.graph;
+        const states = graph.nodes.filter(n => n.type === 'state');
+
+        const tableEl = document.createElement('table');
+        tableEl.className = 'q-table';
+
+        const thead = document.createElement('thead');
+        const headerRow = document.createElement('tr');
+        ['s', 'a', 'N', 'Q'].forEach(h => {
+            const th = document.createElement('th');
+            th.textContent = h;
+            headerRow.appendChild(th);
+        });
+        thead.appendChild(headerRow);
+        tableEl.appendChild(thead);
+
+        const tbody = document.createElement('tbody');
+        let renderedRows = 0;
+
+        states.forEach(stateNode => {
+            const actionIds = stateNode.actions || [];
+            if (actionIds.length === 0) return;
+            const bestAction = qls.greedyAction(stateNode.id, actionIds);
+
+            actionIds.forEach((actionId, ai) => {
+                const actionNode = graph.getNodeById(actionId);
+                if (!actionNode) return;
+                renderedRows++;
+                const tr = document.createElement('tr');
+
+                if (ai === 0) {
+                    const tdState = document.createElement('td');
+                    tdState.textContent = stateNode.name;
+                    tdState.rowSpan = actionIds.length;
+                    tdState.className = 'q-table-state';
+                    tr.appendChild(tdState);
+                }
+
+                const tdAction = document.createElement('td');
+                tdAction.textContent = actionNode.name;
+                tdAction.className = 'q-table-action';
+                tr.appendChild(tdAction);
+
+                const n = qls.getN(stateNode.id, actionId);
+                const q = qls.getQ(stateNode.id, actionId);
+                const isBest = actionId === bestAction && n > 0;
+
+                const tdN = document.createElement('td');
+                tdN.className = 'q-table-cell q-table-cell--revealed';
+                tdN.textContent = String(n);
+                tr.appendChild(tdN);
+
+                const tdQ = document.createElement('td');
+                tdQ.className = 'q-table-cell q-table-cell--revealed';
+                if (isBest) tdQ.classList.add('q-table-cell--best');
+                tdQ.textContent = q.toFixed(2) + (isBest ? ' ★' : '');
+                tr.appendChild(tdQ);
+
+                tbody.appendChild(tr);
+            });
+        });
+
+        if (renderedRows === 0) {
+            const tr = document.createElement('tr');
+            const td = document.createElement('td');
+            td.colSpan = 4;
+            td.textContent = 'No available actions';
+            td.className = 'q-table-cell q-table-cell--unknown';
+            tr.appendChild(td);
+            tbody.appendChild(tr);
+        }
+
+        tableEl.appendChild(tbody);
+        container.elt.appendChild(tableEl);
     }
 
     // Shared discount-factor (γ) slider, used by Build's Parameters section and Values mode's
@@ -1238,7 +1465,16 @@ class RightPanel {
                 tr.appendChild(tdMC);
 
                 const tdMethod = document.createElement('td');
-                if (finalCol >= 0) {
+                if (matrixKey === 'unknown:full') {
+                    // Learning Iteration's "method" column is the learned V̂ = max_a Q̂(s,a),
+                    // not VI's exact numbers (no Bellman sweep runs in this quadrant).
+                    const qls = this.viewModel.qLearningState;
+                    const actionIds = stateNode.actions || [];
+                    const hasData = qls && actionIds.some(a => qls.getN(stateNode.id, a) > 0);
+                    tdMethod.textContent = hasData
+                        ? Math.max(...actionIds.map(a => qls.getQ(stateNode.id, a))).toFixed(2)
+                        : '—';
+                } else if (finalCol >= 0) {
                     const methodVal = observability === 'partial'
                         ? ValuesMethodMatrix.beliefFor(viState, stateNode.id, finalCol).vOfB
                         : (viState.getValues(finalCol)[stateNode.id] ?? 0);
