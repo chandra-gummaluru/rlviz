@@ -589,7 +589,9 @@ class TopBar {
         if (!this.expectationPlayPauseBtn) return;
         this.expectationPlayPauseBtn.elt.dataset.mode = mode;
         if (mode === 'play') {
-            this.expectationPlayPauseBtn.html('▶ Play');
+            // Use the current display-run count in the label
+            const displayRuns = (this.viewModel && this.viewModel.expectationState) ? this.viewModel.expectationState.displayRuns : 24;
+            this.expectationPlayPauseBtn.html(`▶ Run ${displayRuns} episodes`);
             this.expectationPlayPauseBtn.removeClass('toolbar-btn--pause');
             this.expectationPlayPauseBtn.addClass('toolbar-btn--play');
         } else {
@@ -708,11 +710,13 @@ class TopBar {
         }
     }
 
-    // "Run" in both Build and Policy (identical top bars); Values gets its own method-specific
-    // labels, handled separately via setPlayPauseMode's callers passing 'play'/'pause'.
+    // "Run" in Build, "Preview rollout" in Policy (now differentiated by mode).
+    // Values gets its own method-specific labels, handled separately via setPlayPauseMode's
+    // callers passing 'play'/'pause'.
     _updateRunButtonLabel() {
         if (!this.playPauseBtn || this.playPauseBtn.elt.dataset.mode !== 'play') return;
-        this.playPauseBtn.html('▶ Run');
+        const label = this.currentMode === 'policy' ? '▶ Preview rollout' : '▶ Run';
+        this.playPauseBtn.html(label);
     }
 
     updateWidth(newWidth) {
@@ -779,7 +783,12 @@ class TopBar {
         this.viPlayPauseBtn.elt.dataset.mode = mode;
 
         if (mode === 'play') {
-            this.viPlayPauseBtn.html('▶ Play');
+            // Resolve the current VI quadrant's runLabel through ValuesMethodMatrix
+            const modelKnown = this.viewModel ? this.viewModel.modelKnown : true;
+            const observability = (this.viewModel && this.viewModel.observability) || 'full';
+            const entry = ValuesMethodMatrix.resolve(modelKnown, observability);
+            const label = (entry && entry.runLabel) ? entry.runLabel : '▶ Play';
+            this.viPlayPauseBtn.html(label);
             this.viPlayPauseBtn.removeClass('toolbar-btn--pause');
             this.viPlayPauseBtn.addClass('toolbar-btn--play');
         } else {

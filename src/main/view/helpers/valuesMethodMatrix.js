@@ -10,10 +10,10 @@
 // theme-aware.
 const ValuesMethodMatrix = {
     entries: {
-        'known:full':      { title: 'Value Iteration',   pillLabel: 'Value Iter',   paletteNamespace: 'valueIteration',       accent: 'teal' },
-        'unknown:full':    { title: 'Learning Iteration', pillLabel: 'Learning Iter', paletteNamespace: 'learningIteration',    accent: 'purpleT' },
-        'known:partial':   { title: 'Belief Iteration',   pillLabel: 'Belief Iter',  paletteNamespace: 'partialObservability', accent: 'yellow' },
-        'unknown:partial': { title: 'PO Q-Learning',      pillLabel: 'PO Learning',  paletteNamespace: 'partialObservability', accent: 'yellow' }
+        'known:full':      { title: 'Value Iteration',   pillLabel: 'Value Iter',   paletteNamespace: 'valueIteration',       accent: 'teal',     runLabel: '▶ Run all sweeps' },
+        'unknown:full':    { title: 'Learning Iteration', pillLabel: 'Learning Iter', paletteNamespace: 'learningIteration',    accent: 'purpleT',  runLabel: '▶ Run learning' },
+        'known:partial':   { title: 'Belief Iteration',   pillLabel: 'Belief Iter',  paletteNamespace: 'partialObservability', accent: 'yellow',   runLabel: '▶ Run belief update' },
+        'unknown:partial': { title: 'PO Q-Learning',      pillLabel: 'PO Learning',  paletteNamespace: 'partialObservability', accent: 'yellow',   runLabel: '▶ Run PO learning' }
     },
 
     key(modelKnown, observability) {
