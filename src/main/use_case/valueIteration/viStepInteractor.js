@@ -1,10 +1,10 @@
-// Interactor for VI Step — advances one sub-phase of the Bellman backup
+// Interactor for VI Step — advances exactly one sweep. Not blocked by convergence (only the T cap).
 class VIStepInteractor extends VIStepInputBoundary {
-    constructor(viState, outputBoundary, viViewModel) {
+    constructor(viState, outputBoundary, graph, options = {}) {
         super();
         this.viState = viState;
         this.outputBoundary = outputBoundary;
-        this.animator = new VIAnimator(viState, outputBoundary, viViewModel);
+        this.animator = new VIAnimator(viState, outputBoundary, graph, options);
     }
 
     execute(inputData) {
@@ -12,17 +12,9 @@ class VIStepInteractor extends VIStepInputBoundary {
             this.outputBoundary.presentError('Value iteration not initialized.');
             return;
         }
-
-        if (!this.viState.canAdvance()) {
-            this.outputBoundary.presentComplete();
-            return;
-        }
-
         if (this.viState.isPlaying) {
             this.viState.pause();
         }
-
-        this.viState.phase = 'stepping';
-        this.animator.animateOneSubPhase();
+        this.animator.stepOneSweep();
     }
 }

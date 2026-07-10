@@ -10,12 +10,16 @@ function latexEscapeText(value) {
         .replace(/\$/g, '\\$');
 }
 
-// Presenter for Value Iteration — translates state changes to ViewModel updates
+// Presenter for synchronous-sweep Value Iteration — translates domain sweep events into
+// ViewModel / view / right-panel / chart-dock / sweep-chip updates.
 class VIPresenter extends VIOutputBoundary {
     constructor(canvasViewModel) {
         super();
         this.viewModel = canvasViewModel;
         this.topBar = null;
+        this.rightPanel = null;
+        this.chartDock = null;
+        this.sweepChip = null;
     }
 
     get viViewModel() {
@@ -26,93 +30,48 @@ class VIPresenter extends VIOutputBoundary {
         return this.viewModel.valueIterationState;
     }
 
-    setTopBar(topBar) {
-        this.topBar = topBar;
-    }
+    setTopBar(topBar) { this.topBar = topBar; }
+    setRightPanel(rightPanel) { this.rightPanel = rightPanel; }
+    setChartDock(chartDock) { this.chartDock = chartDock; }
+    setSweepChip(sweepChip) { this.sweepChip = sweepChip; }
 
-    setRightPanel(rightPanel) {
-        this.rightPanel = rightPanel;
-    }
-
-    setChartDock(chartDock) {
-        this.chartDock = chartDock;
-    }
-
-    presentLayoutNeeded(canvasWidth, canvasHeight) {
-        if (this.viViewModel) {
-            const viState = this.viewModel.valueIterationState;
-            this.viViewModel.reset();
-            this.viViewModel.computeLayout(viState, canvasWidth, canvasHeight);
-        }
-        this._redraw();
-    }
+    // --- Lifecycle events ---
 
     presentInitialized() {
-        this._redraw();
-    }
-
-    presentColumnStart(columnIndex) {
-        if (this.viViewModel && this.viViewModel.visibleColumnCount <= columnIndex) {
-            this.viViewModel.showNextColumn();
-        }
-        if (this.viViewModel) {
-            this.viViewModel.activeColumnIndex = columnIndex;
-        }
-        this._redraw();
-    }
-
-    presentStateBackupStart(columnIndex, stateId) {
-        if (this.viViewModel) {
-            this.viViewModel.activeColumnIndex = columnIndex;
-            this.viViewModel.activeStateId = stateId;
-            this.viViewModel.clearBackupDetail();
-        }
-        this._redraw();
-    }
-
-    presentStateBackupComplete(columnIndex, stateId) {
-        if (this.viViewModel) {
-            this.viViewModel.revealValue(columnIndex, stateId);
-            this.viViewModel.clearBackupDetail();
-        }
+        if (this.viViewModel) this.viViewModel.reset();
+        this._refreshSweepChip();
+        this._updateButtonStates();
         this._redraw();
         this._updateRightPanel();
     }
 
-    presentColumnComplete(columnIndex) {
-        if (this.viViewModel) {
-            this.viViewModel.revealColumn(columnIndex);
-            this.viViewModel.clearBackupDetail();
-        }
+    presentSweepComplete(sweepIndex) {
+        this._refreshSweepChip();
+        this._updateButtonStates();
         this._redraw();
         this._updateRightPanel();
     }
 
     presentComplete() {
-        const viState = this.viewModel.valueIterationState;
-        if (viState) viState.isPlaying = false;
-        if (this.viViewModel) this.viViewModel.clearBackupDetail();
+        if (this.viState) this.viState.isPlaying = false;
+        this._refreshSweepChip();
         this._updateButtonStates();
         this._redraw();
         this._updateRightPanel();
     }
 
     presentPaused() {
+        this._refreshSweepChip();
         this._updateButtonStates();
         this._redraw();
     }
 
     presentReset() {
-        if (this.viViewModel) {
-            this.viViewModel.reset();
-        }
+        if (this.viViewModel) this.viViewModel.reset();
+        this._refreshSweepChip();
         this._updateButtonStates();
         this._redraw();
         this._updateRightPanel();
-    }
-
-    presentPhaseChange(phase, duration) {
-        this._redraw();
     }
 
     presentError(message) {
@@ -120,197 +79,12 @@ class VIPresenter extends VIOutputBoundary {
         this._redraw();
     }
 
-    // --- Detailed Bellman backup sub-phase presenters ---
-
-    presentEquationStart(columnIndex, stateId) {
-        this._buildBackupDetail(columnIndex, stateId, this.viState.subPhase);
-        this._redraw();
-    }
-
-    presentActionsRevealed(columnIndex, stateId) {
-        this._buildBackupDetail(columnIndex, stateId, this.viState.subPhase);
-        this._redraw();
-    }
-
-    presentTransitionsRevealed(columnIndex, stateId) {
-        this._buildBackupDetail(columnIndex, stateId, this.viState.subPhase);
-        this._redraw();
-    }
-
-    presentQValuesComputed(columnIndex, stateId) {
-        this._buildBackupDetail(columnIndex, stateId, this.viState.subPhase);
-        this._redraw();
-
-        if (this.viViewModel) {
-            const subPhase = this.viState.subPhase;
-            const qVals = this.viState.getQValues(columnIndex, stateId);
-            if (subPhase === 'compute_q_values') {
-                qVals.forEach(q => this.viViewModel.revealQValue(columnIndex, stateId, q.actionId));
-            } else if (subPhase === 'show_q_result') {
-                const aq = qVals[this.viState.currentActionIndex];
-                if (aq) this.viViewModel.revealQValue(columnIndex, stateId, aq.actionId);
-            }
-        }
-        this._updateRightPanel();
-    }
-
-    presentMaxSelected(columnIndex, stateId) {
-        this._buildBackupDetail(columnIndex, stateId, this.viState.subPhase);
-        this._redraw();
-    }
-
-    presentValueRevealStart(columnIndex, stateId) {
-        this._buildBackupDetail(columnIndex, stateId, this.viState.subPhase);
-        this._redraw();
-    }
-
-    // --- Internal helpers ---
-
-    _buildBackupDetail(columnIndex, stateId, subPhase) {
-        const detail = this._computeBackupDetail(columnIndex, stateId, subPhase);
-        if (detail && this.viViewModel) {
-            this.viViewModel.setBackupDetail(detail);
-        }
-    }
+    // --- Explanation card (clicking a Q-table cell) ---
 
     /**
-     * Compute the backupDetail object (positions from current column layout).
-     * Returns the object; does not call setBackupDetail.
-     * Pass options.explanationMode = true to add explanation metadata and override visibility.
-     */
-    _computeBackupDetail(columnIndex, stateId, subPhase, options = {}) {
-        if (!this.viViewModel || !this.viState) return null;
-
-        const col = this.viViewModel.getColumn(columnIndex);
-        if (!col) return null;
-        const stateNode = col.states.find(s => s.id === stateId);
-        if (!stateNode) return null;
-
-        const detail = this.viState.getBackupDetail(columnIndex, stateId);
-        if (!detail) {
-            // Terminal column or state with no actions
-            return {
-                subPhase,
-                stateId,
-                columnIndex,
-                stateX: stateNode.x,
-                stateY: stateNode.y,
-                stateRadius: stateNode.radius,
-                stateName: stateNode.name,
-                timestep: col.timestep,
-                actions: [],
-                bestActionId: null,
-                value: 0,
-                equationLines: [{ text: this._formatEquationHeader(stateNode.name, col.timestep), type: 'header' }],
-                gamma: this.viState.gamma,
-                phaseDuration: this.viState.phaseDuration,
-                phaseStartTime: this.viState.phaseStartTime,
-                selectedActionId: options.actionId ?? null,
-                explanationMode: options.explanationMode === true,
-                stepIndex: options.stepIndex ?? 0,
-            };
-        }
-
-        // Get next column for positioning transitions
-        const nextCol = this.viViewModel.getColumn(columnIndex + 1);
-
-        // Compute action fan-out positions
-        const actionCount = detail.actions.length;
-        const midX = nextCol ? (stateNode.x + nextCol.x) / 2 : stateNode.x + 125;
-        const spreadRange = Math.max(60, actionCount * 40);
-
-        const actionsWithPositions = detail.actions.map((action, idx) => {
-            const actionY = stateNode.y + (idx - (actionCount - 1) / 2) * (spreadRange / Math.max(actionCount - 1, 1));
-
-            const transitionsWithPositions = action.transitions
-                .filter(t => nextCol && nextCol.states.some(s => s.id === t.nextState))
-                .map(t => {
-                    const toState = nextCol.states.find(s => s.id === t.nextState);
-                    return {
-                        ...t,
-                        toX: toState.x,
-                        toY: toState.y,
-                        toRadius: toState.radius
-                    };
-                });
-
-            return {
-                actionId: action.actionId,
-                actionName: action.actionName,
-                x: midX,
-                y: actionY,
-                qValue: action.qValue,
-                transitions: transitionsWithPositions
-            };
-        });
-
-        // Determine visibility for per-action mode
-        const perAction = this.viViewModel.perActionMode;
-        const actionIdx = this.viState.currentActionIndex;
-        const transIdx = this.viState.currentTransitionIndex;
-        const perActionPhases = ['show_action', 'show_transition', 'compute_transition', 'show_q_result'];
-        const isPerActionPhase = perAction && perActionPhases.includes(subPhase);
-
-        let visibleActionCount;
-        let visibleTransitionCount;
-        if (isPerActionPhase) {
-            visibleActionCount = 1;
-            if (subPhase === 'show_action') {
-                visibleTransitionCount = 0;
-            } else if (subPhase === 'show_transition') {
-                visibleTransitionCount = transIdx + 1;
-            } else if (subPhase === 'compute_transition') {
-                visibleTransitionCount = transIdx + 1;
-            } else { // show_q_result
-                visibleTransitionCount = actionsWithPositions[actionIdx] ? actionsWithPositions[actionIdx].transitions.length : 0;
-            }
-        } else if (perAction && subPhase === 'show_equation') {
-            visibleActionCount = 0;
-            visibleTransitionCount = 0;
-        } else {
-            visibleActionCount = actionsWithPositions.length;
-            visibleTransitionCount = -1;
-        }
-
-        // Explanation mode always shows all actions regardless of perActionMode
-        if (options.explanationMode) {
-            visibleActionCount = actionsWithPositions.length;
-            visibleTransitionCount = -1;
-        }
-
-        // Build equation lines
-        const equationLines = this._formatEquationLines(stateNode.name, col.timestep, detail, subPhase, actionIdx, transIdx);
-
-        return {
-            subPhase,
-            stateId,
-            columnIndex,
-            stateX: stateNode.x,
-            stateY: stateNode.y,
-            stateRadius: stateNode.radius,
-            stateName: stateNode.name,
-            timestep: col.timestep,
-            nextColumnIndex: columnIndex + 1,
-            actions: actionsWithPositions,
-            visibleActionCount,
-            currentActionIndex: actionIdx,
-            currentTransitionIndex: transIdx,
-            visibleTransitionCount,
-            bestActionId: detail.bestActionId,
-            value: detail.value,
-            equationLines,
-            gamma: this.viState.gamma,
-            phaseDuration: this.viState.phaseDuration,
-            phaseStartTime: this.viState.phaseStartTime,
-            selectedActionId: options.actionId ?? null,
-            explanationMode: options.explanationMode === true,
-            stepIndex: options.stepIndex ?? 0,
-        };
-    }
-
-    /**
-     * Build an explanation detail for a specific Q(s,a,t) cell.
-     * Called from main.js when a user clicks a revealed Q-value cell.
+     * Build an explanation detail for a specific Q(s,a) cell at a given sweep. Anchors the
+     * fan-out overlay to the REAL graph node position; its internal spread geometry stays
+     * synthetic (an intentionally decluttered schematic).
      */
     buildExplanationDetail({
         columnIndex,
@@ -340,81 +114,142 @@ class VIPresenter extends VIOutputBoundary {
         };
     }
 
-    _formatEquationHeader(stateName, timestep) {
-        const s = latexEscapeText(stateName);
-        return `V_{${timestep}}(\\text{${s}}) = \\max_a \\sum_{s'} P(s'|s,a)[R + \\gamma V_{${timestep + 1}}(s')]`;
-    }
+    /**
+     * Compute a backup-detail object anchored to the real graph node. sweepIndex is the sweep the
+     * Q-values come from; the fan-out's action diamonds are offset synthetically from the node and
+     * transitions terminate at the real successor nodes.
+     */
+    _computeBackupDetail(sweepIndex, stateId, subPhase, options = {}) {
+        if (!this.viState || !this.viewModel.graph) return null;
+        const graph = this.viewModel.graph;
+        const stateNode = graph.getNodeById(stateId);
+        if (!stateNode) return null;
 
-    _formatEquationLines(stateName, timestep, detail, subPhase, actionIdx, transIdx) {
-        const lines = [];
-        const gamma = this.viState.gamma;
-        const s = latexEscapeText(stateName);
+        const stateRadius = stateNode.size;
+        const detail = this.viState.getBackupDetail(sweepIndex, stateId);
 
-        // Always show the general equation header
-        lines.push({
-            text: `V_{${timestep}}(\\text{${s}}) = \\max\\{ Q(\\text{${s}}, a) \\}`,
-            type: 'header'
+        if (!detail || !detail.actions || detail.actions.length === 0) {
+            return {
+                subPhase,
+                stateId,
+                columnIndex: sweepIndex,
+                stateX: stateNode.x,
+                stateY: stateNode.y,
+                stateRadius,
+                stateName: stateNode.name,
+                timestep: sweepIndex,
+                actions: [],
+                visibleActionCount: 0,
+                visibleTransitionCount: -1,
+                bestActionId: null,
+                value: 0,
+                equationLines: [{ text: this._formatEquationHeader(stateNode.name, sweepIndex), type: 'header' }],
+                gamma: this.viState.gamma,
+                phaseDuration: this.viState.phaseDuration,
+                phaseStartTime: this.viState.phaseStartTime,
+                selectedActionId: options.actionId ?? null,
+                explanationMode: options.explanationMode === true,
+                stepIndex: options.stepIndex ?? 0,
+            };
+        }
+
+        // Synthetic fan-out geometry anchored to the real node; transitions to real successors.
+        const actionCount = detail.actions.length;
+        const midX = stateNode.x + 120;
+        const spreadRange = Math.max(60, actionCount * 44);
+        const step = spreadRange / Math.max(actionCount - 1, 1);
+
+        const actionsWithPositions = detail.actions.map((action, idx) => {
+            const actionY = stateNode.y + (idx - (actionCount - 1) / 2) * step;
+            const transitionsWithPositions = action.transitions
+                .map(t => {
+                    const toNode = graph.getNodeById(t.nextState);
+                    if (!toNode) return null;
+                    return { ...t, toX: toNode.x, toY: toNode.y, toRadius: toNode.size };
+                })
+                .filter(Boolean);
+            return {
+                actionId: action.actionId,
+                actionName: action.actionName,
+                x: midX,
+                y: actionY,
+                qValue: action.qValue,
+                transitions: transitionsWithPositions
+            };
         });
 
-        const bundledPhases = ['show_equation', 'show_actions', 'show_transitions', 'compute_q_values', 'select_max', 'revealing_value'];
-        const phaseIdx = bundledPhases.indexOf(subPhase);
-        const showMax = phaseIdx >= 4;
+        const equationLines = this._formatEquationLines(stateNode.name, sweepIndex, detail, subPhase);
 
-        if (subPhase === 'compute_transition') {
-            const action = detail.actions[actionIdx];
-            if (action) {
-                const visibleTerms = action.transitions.slice(0, transIdx + 1);
-                let runningSum = 0;
-                visibleTerms.forEach(t => {
-                    lines.push({
-                        text: `${t.probability.toFixed(2)} \\cdot [${t.reward.toFixed(1)} + ${gamma} \\cdot ${t.nextValue.toFixed(2)}] = ${t.term.toFixed(2)}`,
-                        type: 'normal'
-                    });
-                    runningSum += t.term;
-                });
-                const a = latexEscapeText(action.actionName);
-                lines.push({
-                    text: `Q(\\text{${s}}, \\text{${a}}) = ${runningSum.toFixed(2)} \\text{ (so far)}`,
-                    type: 'header'
-                });
-            }
-        } else if (subPhase === 'show_q_result') {
-            const action = detail.actions[actionIdx];
-            if (action) {
-                const a = latexEscapeText(action.actionName);
-                lines.push({
-                    text: `Q(\\text{${s}}, \\text{${a}}) = ${action.qValue.toFixed(2)}`,
-                    type: action.actionId === detail.bestActionId ? 'best' : 'normal'
-                });
-            }
-        } else if (phaseIdx >= 3) {
-            for (let i = 0; i < detail.actions.length; i++) {
-                const action = detail.actions[i];
-                const a = latexEscapeText(action.actionName);
-                lines.push({
-                    text: `Q(\\text{${s}}, \\text{${a}}) = ${action.qValue.toFixed(2)}`,
-                    type: action.actionId === detail.bestActionId ? 'best' : 'normal'
-                });
-            }
+        return {
+            subPhase,
+            stateId,
+            columnIndex: sweepIndex,
+            stateX: stateNode.x,
+            stateY: stateNode.y,
+            stateRadius,
+            stateName: stateNode.name,
+            timestep: sweepIndex,
+            actions: actionsWithPositions,
+            visibleActionCount: actionsWithPositions.length,
+            visibleTransitionCount: -1,
+            currentActionIndex: 0,
+            currentTransitionIndex: 0,
+            bestActionId: detail.bestActionId,
+            value: detail.value,
+            equationLines,
+            gamma: this.viState.gamma,
+            phaseDuration: this.viState.phaseDuration,
+            phaseStartTime: this.viState.phaseStartTime,
+            selectedActionId: options.actionId ?? null,
+            explanationMode: options.explanationMode === true,
+            stepIndex: options.stepIndex ?? 0,
+        };
+    }
+
+    // --- Equation formatting (sweep-numbered V^k, per-term color) ---
+
+    _accentHex() {
+        const entry = ValuesMethodMatrix.resolve(this.viewModel.modelKnown, this.viewModel.observability);
+        const ns = AppPalette[entry.paletteNamespace];
+        return (ns && ns.result) || AppPalette.text.medium;
+    }
+
+    _formatEquationHeader(stateName, sweepIndex) {
+        const s = latexEscapeText(stateName);
+        const accent = this._accentHex();
+        return `V^{${sweepIndex}}(\\text{${s}}) = \\max_a \\sum_{s'} P(s'|s,a)\\bigl[R + \\gamma \\textcolor{${accent}}{V^{${sweepIndex - 1}}(s')}\\bigr]`;
+    }
+
+    _formatEquationLines(stateName, sweepIndex, detail, subPhase) {
+        const s = latexEscapeText(stateName);
+        const lines = [{ text: `V^{${sweepIndex}}(\\text{${s}}) = \\max\\{ Q(\\text{${s}}, a) \\}`, type: 'header' }];
+
+        for (const action of detail.actions) {
+            const a = latexEscapeText(action.actionName);
+            lines.push({
+                text: `Q(\\text{${s}}, \\text{${a}}) = ${action.qValue.toFixed(2)}`,
+                type: action.actionId === detail.bestActionId ? 'best' : 'normal'
+            });
         }
 
-        if (showMax) {
-            if (detail.actions.length > 0) {
-                const qVals = detail.actions.map(a => a.qValue.toFixed(2)).join(',\\, ');
-                lines.push({
-                    text: `V_{${timestep}}(\\text{${s}}) = \\max\\{${qVals}\\} = ${detail.value.toFixed(2)}`,
-                    type: 'result'
-                });
-            }
+        if (detail.actions.length > 0) {
+            const qVals = detail.actions.map(a => a.qValue.toFixed(2)).join(',\\, ');
+            lines.push({
+                text: `V^{${sweepIndex}}(\\text{${s}}) = \\max\\{${qVals}\\} = ${detail.value.toFixed(2)}`,
+                type: 'result'
+            });
         }
-
         return lines;
     }
 
+    // --- Internal helpers ---
+
     _redraw() {
-        if (typeof redraw === 'function') {
-            redraw();
-        }
+        if (typeof redraw === 'function') redraw();
+    }
+
+    _refreshSweepChip() {
+        if (this.sweepChip) this.sweepChip.refresh();
     }
 
     _updateRightPanel() {
@@ -425,11 +260,9 @@ class VIPresenter extends VIOutputBoundary {
 
     _updateButtonStates() {
         if (this.viewModel.interaction.mode === 'values' && this.viewModel.valuesSubView === 'mc') return;
-        if (this.topBar) {
-            const viState = this.viewModel.valueIterationState;
-            if (viState) {
-                this.topBar.updateVIButtonStates(viState.isPlaying, viState.canAdvance());
-            }
-        }
+        if (!this.topBar || !this.viState) return;
+        const canStep = this.viState.canAdvance();
+        const canPlay = canStep && !this.viState.converged;
+        this.topBar.updateVIButtonStates(this.viState.isPlaying, canStep, canPlay);
     }
 }

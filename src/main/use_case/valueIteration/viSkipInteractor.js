@@ -1,10 +1,11 @@
-// Interactor for VI Skip — completes one full state backup instantly
+// Interactor for VI Skip — "instant Step": advances exactly one sweep with zero-duration tween,
+// preserving Skip's historical 1:1 relationship to Step (Step with zero timing).
 class VISkipInteractor extends VISkipInputBoundary {
-    constructor(viState, outputBoundary, viViewModel) {
+    constructor(viState, outputBoundary, graph, options = {}) {
         super();
         this.viState = viState;
         this.outputBoundary = outputBoundary;
-        this.animator = new VIAnimator(viState, outputBoundary, viViewModel);
+        this.animator = new VIAnimator(viState, outputBoundary, graph, options);
     }
 
     execute(inputData) {
@@ -12,17 +13,9 @@ class VISkipInteractor extends VISkipInputBoundary {
             this.outputBoundary.presentError('Value iteration not initialized.');
             return;
         }
-
-        if (!this.viState.canAdvance()) {
-            this.outputBoundary.presentComplete();
-            return;
-        }
-
         if (this.viState.isPlaying) {
             this.viState.pause();
         }
-
-        this.viState.phase = 'stepping';
-        this.animator.animateOneState();
+        this.animator.stepOneSweep(0);
     }
 }

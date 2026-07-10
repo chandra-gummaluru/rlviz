@@ -1,9 +1,8 @@
 // Input data for Run Value Iteration use case
 class RunVIInputData {
-    constructor(T, gamma, canvasWidth, canvasHeight) {
+    constructor(T, gamma, epsilon = 0.01) {
         this.T = T;
         this.gamma = gamma;
-        this.canvasWidth = canvasWidth;
-        this.canvasHeight = canvasHeight;
+        this.epsilon = epsilon;
     }
 }

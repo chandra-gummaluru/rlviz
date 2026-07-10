@@ -1,4 +1,4 @@
-// Interactor for initializing and running Value Iteration computation
+// Interactor for initializing synchronous-sweep Value Iteration (sweep 0 only).
 class RunVIInteractor extends RunVIInputBoundary {
     constructor(graph, viState, outputBoundary) {
         super();
@@ -8,8 +8,8 @@ class RunVIInteractor extends RunVIInputBoundary {
     }
 
     execute(inputData) {
-        if (!inputData || !inputData.T || inputData.T < 0) {
-            this.outputBoundary.presentError('T must be a positive integer');
+        if (!inputData || inputData.T === undefined || inputData.T === null || inputData.T < 0) {
+            this.outputBoundary.presentError('T must be a non-negative integer');
             return;
         }
 
@@ -19,11 +19,10 @@ class RunVIInteractor extends RunVIInputBoundary {
             return;
         }
 
-        // Compute full history upfront
+        // Fresh start: clear any prior state (including manual Q overrides), then seed sweep 0.
         this.viState.reset();
-        this.viState.computeHistory(this.graph, inputData.T, inputData.gamma);
+        this.viState.initialize(this.graph, inputData.T, inputData.gamma, inputData.epsilon);
 
-        // Signal presenter to compute layout (presenter has ViewModel access)
-        this.outputBoundary.presentLayoutNeeded(inputData.canvasWidth, inputData.canvasHeight);
+        this.outputBoundary.presentInitialized();
     }
 }
