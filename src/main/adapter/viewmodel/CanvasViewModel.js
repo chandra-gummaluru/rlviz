@@ -47,6 +47,14 @@ class CanvasViewModel {
         // selecting Value Iteration / Learning Iteration / Belief Iteration / PO Q-Learning.
         // Presentation-tier only, same as modelKnown; consumption lives in a later phase.
         this.observability = 'full';
+
+        // Learning Iteration (unknown:full quadrant) canvas view: 'graph' (flat MDP) or 'tree'
+        // (episode search tree). Presentation-tier only, toggled by the floating Graph|Tree pill.
+        this.learningIterationCanvasView = 'graph';
+
+        // Real episodic Q-learning state for the Learning Iteration quadrant. Attached in main.js;
+        // presentation/session-only, excluded from graph import/export (see QLearningState).
+        this.qLearningState = null;
     }
 
     // Factory methods for creating presentation view models

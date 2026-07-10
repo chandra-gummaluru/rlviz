@@ -547,6 +547,41 @@ class CanvasController {
         viState.manualOverrides[`${stateId}:${actionId}`] = value;
     }
 
+    // ===== Q-learning (Learning Iteration, unknown:full quadrant) =====
+    // Thin methods mirroring setManualQOverride's style: build InputData, call the interactor,
+    // no Command/undo (presentation-tier session state). qLearningState lives on the viewModel.
+
+    // Runs `episodeCount` sampled Q-learning episodes (default 10 for "Run learning"). Step
+    // reuses the same interactor with episodeCount 1.
+    runQLearning(episodeCount = 10) {
+        if (!this.interactors.runQL) return;
+        const startNode = this.viewModel.startNode;
+        if (!startNode) return;
+        const gamma = this.viewModel.qLearningState ? this.viewModel.qLearningState.gamma : 0.9;
+        this.interactors.runQL.execute(new RunQLInputData(startNode.id, gamma, episodeCount));
+    }
+
+    stepQLearning() {
+        this.runQLearning(1);
+    }
+
+    resetQLearning() {
+        if (!this.interactors.qlReset) return;
+        this.interactors.qlReset.execute(new QLResetInputData());
+    }
+
+    // Switches exploration algorithm ('epsilonGreedy' | 'ucb' | 'optimistic') and, optionally,
+    // its single hyperparameter. Does NOT reset learned Q/N (see SetQLAlgorithmInteractor).
+    setQLAlgorithm(algorithm, param) {
+        if (!this.interactors.setQLAlgorithm) return;
+        this.interactors.setQLAlgorithm.execute(new SetQLAlgorithmInputData(algorithm, param));
+    }
+
+    // 'graph' | 'tree' canvas view for the Learning Iteration quadrant (presentation-only flag).
+    setLearningIterationCanvasView(view) {
+        this.viewModel.learningIterationCanvasView = view === 'tree' ? 'tree' : 'graph';
+    }
+
     // Sets (or, when actionId is null/undefined, clears back to "random") the policy action
     // for a state. Shared by Build's Policy π section, Simulate's trace generation, and Monte
     // Carlo's policy snapshot - simulationState.policy remains the single source of truth.
