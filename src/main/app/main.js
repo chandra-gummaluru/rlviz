@@ -895,8 +895,12 @@ function setup() {
     viPresenter.setChartDock(mainView.chartDock);
     viPresenter.setSweepChip(viSweepChip);
 
-    // Between-sweep pause tracks the animation-speed slider (fast .. slow).
-    const viAnimOptions = { getPauseMs: () => Math.round(150 + 650 * currentSpeed) };
+    // Between-sweep pause AND the beat's own pulse duration both track the animation-speed
+    // slider (fast .. slow). Beat range (150-450ms) is centered on the old fixed 300ms default.
+    const viAnimOptions = {
+        getPauseMs: () => Math.round(150 + 650 * currentSpeed),
+        getBeatMs: () => Math.round(150 + 300 * currentSpeed)
+    };
     runVIInteractor = new RunVIInteractor(graph, valueIterationState, viPresenter);
     viPlayInteractor = new VIPlayInteractor(valueIterationState, viPresenter, graph, viAnimOptions);
     viPauseInteractor = new VIPauseInteractor(valueIterationState, viPresenter);
@@ -1040,8 +1044,11 @@ function setup() {
     );
 
     // Create Expectation view
+    // Per-tick playback delay tracks the animation-speed slider (fast .. slow), same as Build's
+    // simulation timing and VI's sweep beat/pause - centered on the old fixed 250ms default.
+    const expectationViewOptions = { getTickMs: () => Math.round(100 + 300 * currentSpeed) };
     const expectationView = new ExpectationView(
-        canvasViewModel, expectationViewModel, expectationState, graph
+        canvasViewModel, expectationViewModel, expectationState, graph, expectationViewOptions
     );
     expectationView.setRightPanel(rightPanel);
     expectationView.setChartDock(mainView.chartDock);

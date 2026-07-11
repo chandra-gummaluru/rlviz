@@ -9,10 +9,11 @@ class VIAnimator {
         this.viState = viState;
         this.outputBoundary = outputBoundary;
         this.graph = graph;
-        // Between-sweep pause; wired to the animation-speed slider in main.js. Falls back to a
-        // sensible default so the animator works even if no getter is supplied.
+        // Between-sweep pause AND the beat's own pulse duration are both wired to the
+        // animation-speed slider in main.js. Fall back to sensible defaults so the animator
+        // works even if no getter is supplied.
         this.getPauseMs = options.getPauseMs || (() => 400);
-        this.SWEEP_BEAT_MS = 300; // duration of the per-sweep update beat (pulse plays over this)
+        this.getBeatMs = options.getBeatMs || (() => 300);
     }
 
     _sleep(ms) {
@@ -20,7 +21,7 @@ class VIAnimator {
     }
 
     /** Compute + present exactly one sweep, then let the beat pulse play (durationMs). */
-    async animateOneSweep(durationMs = this.SWEEP_BEAT_MS) {
+    async animateOneSweep(durationMs = this.getBeatMs()) {
         this.viState.computeNextSweep(this.graph);
         this.outputBoundary.presentSweepComplete(this.viState.currentSweepIndex);
         await this._sleep(durationMs);
@@ -41,7 +42,7 @@ class VIAnimator {
      * Advance exactly one sweep (Step). NOT blocked by convergence - only by the T cap. With
      * durationMs = 0 this is the instant "Skip" variant.
      */
-    async stepOneSweep(durationMs = this.SWEEP_BEAT_MS) {
+    async stepOneSweep(durationMs = this.getBeatMs()) {
         if (!this.viState.canAdvance()) {
             this.outputBoundary.presentComplete();
             return;

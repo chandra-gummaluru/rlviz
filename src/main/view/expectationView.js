@@ -11,11 +11,16 @@ const EXPECTATION_Y_STEP = 0.12;
 const EXPECTATION_TOP_CLEARANCE = 90;
 
 class ExpectationView {
-    constructor(canvasViewModel, expectationViewModel, expectationState, graph) {
+    constructor(canvasViewModel, expectationViewModel, expectationState, graph, options = {}) {
         this.viewModel = canvasViewModel;
         this.expectationViewModel = expectationViewModel;
         this.expectationState = expectationState;
         this.graph = graph;
+        // Per-tick playback delay; wired to the animation-speed slider in main.js (same slider
+        // driving Build/Policy's simulation timing and VI's sweep beat/pause). Range (100-400ms)
+        // is centered on the old fixed 250ms default. Falls back to that default if no getter
+        // is supplied.
+        this.getTickMs = options.getTickMs || (() => 250);
         this._scrubber = null;
         this._playTimer = null;
         this._rightPanel = null;
@@ -336,7 +341,7 @@ class ExpectationView {
             } else {
                 this._scheduleNextTick();
             }
-        }, 250);
+        }, this.getTickMs());
     }
 
     stopPlay() {
