@@ -104,6 +104,7 @@ let estimatorPill;
 let mcRunsPill;
 let viSweepChip;
 let learningTreePill;
+let treeViewPill;
 
 // Simulation Presenter (needs ViewModel and MainView references, created in setup)
 let simulationPresenter;
@@ -378,19 +379,31 @@ canvasController.registerModeLifecycle({
         // differs), so it shares the same tool-palette show/hide lifecycle.
         build: () => {
             if (mainView && mainView.toolPalette) mainView.toolPalette.hide();
+            if (treeViewPill) treeViewPill.hide();
+            canvasController.setBuildCanvasView('graph');
         },
         policy: () => {
             if (mainView && mainView.toolPalette) mainView.toolPalette.hide();
+            if (treeViewPill) treeViewPill.hide();
+            canvasController.setBuildCanvasView('graph');
         }
     },
     onEnter: {
         build: () => {
             if (mainView && mainView.toolPalette) mainView.toolPalette.show();
             if (mainView && mainView.zoomPill) mainView.zoomPill.show();
+            if (treeViewPill) {
+                treeViewPill.updateBounds(0, windowWidth - mainView.RIGHT_PANEL_WIDTH);
+                treeViewPill.show();
+            }
         },
         policy: () => {
             if (mainView && mainView.toolPalette) mainView.toolPalette.show();
             if (mainView && mainView.zoomPill) mainView.zoomPill.show();
+            if (treeViewPill) {
+                treeViewPill.updateBounds(0, windowWidth - mainView.RIGHT_PANEL_WIDTH);
+                treeViewPill.show();
+            }
         },
         // Cold-entry into Values mode (e.g. clicking the collapsed slot) runs whatever the
         // current sub-view's enter logic is, same as explicitly selecting that sub-view.
@@ -860,6 +873,27 @@ function setup() {
     learningTreePill.updateBounds(0, windowWidth - mainView.RIGHT_PANEL_WIDTH);
     mainView.learningTreePill = learningTreePill;
     learningTreePill.hide();
+
+    // Full-canvas tree unroll for Build/Policy mode.
+    mainView.treeView = new TreeView(canvasViewModel);
+    treeViewPill = new TreeViewPill({
+        onSelectView: (view) => {
+            canvasController.setBuildCanvasView(view);
+            treeViewPill.refresh();
+            redraw();
+        }
+    }, canvasViewModel);
+    treeViewPill.setup(mainView.TOP_BARS_HEIGHT);
+    treeViewPill.updateBounds(0, windowWidth - mainView.RIGHT_PANEL_WIDTH);
+    mainView.treeViewPill = treeViewPill;
+    // Unlike learningTreePill (Values-only chrome, correctly hidden here since Build is the
+    // default boot mode), treeViewPill is Build/Policy chrome - it must start visible, mirroring
+    // toolPalette/zoomPill's unconditional .show() below. canvasController.setMode()'s
+    // onEnter/onLeave hooks only fire on a genuine mode *transition*, and the app never calls
+    // setMode('build') at boot (mode is already 'build' in the viewmodel's initial state), so an
+    // initial .hide() here would leave the pill stuck hidden until the user leaves and re-enters
+    // Build/Policy at least once.
+    treeViewPill.show();
 
     AppPalette._onThemeChange = () => {
         mainView.invalidateDotGrid();
