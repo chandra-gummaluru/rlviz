@@ -235,6 +235,10 @@ class MainView {
             requestAnimationFrame(() => { if (typeof redraw === 'function') redraw(); });
         }
 
+        if (this._isEditableMode() && this.viewModel.buildCanvasView === 'tree' && this.treeView) {
+            this.treeView.drawChrome();
+        }
+
         // Draw info/error messages
         this.drawMessages();
 

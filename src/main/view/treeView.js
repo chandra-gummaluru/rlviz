@@ -22,10 +22,7 @@ class TreeView {
 
     draw() {
         const tree = this._currentTree();
-        if (!tree) {
-            this._drawEmptyPrompt();
-            return;
-        }
+        if (!tree) return;
 
         push();
         translate(TREE_VIEW_ANCHOR_X, TREE_VIEW_ANCHOR_Y);
@@ -38,8 +35,18 @@ class TreeView {
         TreeLayout.forEach(tree, node => this._drawNode(node));
 
         pop();
+    }
 
-        this._drawFooterCaption();
+    // Screen-fixed UI chrome (empty-state prompt, footer caption) - must be called from OUTSIDE
+    // any pan/zoom transform (mainView.js calls this after its own outer pop(), same pattern as
+    // drawMessages()), so these elements stay pinned regardless of the graph's current pan/zoom.
+    drawChrome() {
+        const tree = this._currentTree();
+        if (!tree) {
+            this._drawEmptyPrompt();
+        } else {
+            this._drawFooterCaption();
+        }
     }
 
     _drawEmptyPrompt() {
