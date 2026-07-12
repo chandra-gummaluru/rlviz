@@ -30,7 +30,7 @@ Today, every outcome edge (action → next state) always shows a mono `p 0.70 ·
 
 - **Removes** the always-visible label entirely for outcome edges.
 - **Color**: `AppPalette.reward.positive` (reward ≥ 0) or `.negative` (reward < 0) — replacing the current muted `AppPalette.edge.default`.
-- **Width**: `1 + 3 * probability` px, the exact formula this app's Policy mode already uses for its own weighted-policy edges (`EdgeViewModel.policyEdgeProbability` → edge stroke weight, per `CLAUDE.md`'s documented convention) — reused verbatim for consistency, not reinvented.
+- **Width**: `1 + 4 * probability` px, this app's existing Action→State edge-width formula (`mainView.js`'s own graph-edge drawing) — reused verbatim for consistency, not reinvented. (Correction from an earlier draft of this doc, which named the unrelated `1 + 3 * probability` State→Action weighted-policy formula; the implementation plan's Global Constraints caught and corrected this before Task 4 implemented it — see `docs/superpowers/plans/2026-07-12-build-tree-view-v2.md`.)
 - **Hover**: hovering an outcome edge shows a tooltip-style label with the precise conditional-probability notation: `P(s' | s, a) = 0.70`, substituting real display names, e.g. `P(S2 | S0, A1) = 0.70` — matching the Bellman-equation notation convention already used in Value Iteration's own on-canvas labels (`V^k(s) = max_a Σ P(s'|s,a)[R + γV(s')]`), rather than the literal `P(s', a, s)` argument order, for mathematical correctness and app-wide notational consistency. The label disappears when the mouse moves off the edge.
 
 State→action edges (structural, no probability/reward) are **unchanged** — plain muted gray, no label, no hover behavior.
