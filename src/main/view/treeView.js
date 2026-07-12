@@ -9,6 +9,7 @@ const TREE_VIEW_ANCHOR_Y     = 80;
 class TreeView {
     constructor(canvasViewModel) {
         this.viewModel = canvasViewModel;
+        this.hoveredStateId = null;
     }
 
     // Builds the current tree (recomputed every draw - same "no cache" convention already used
@@ -33,6 +34,7 @@ class TreeView {
         });
         // Nodes second.
         TreeLayout.forEach(tree, node => this._drawNode(node));
+        this._drawHoverBadge(tree);
 
         pop();
     }
@@ -73,6 +75,16 @@ class TreeView {
             this.viewModel.graph && this._toggle(node.pathId);
         }
         return true;
+    }
+
+    // Public entry point for mainView.js's mouseMoved(). Returns true if the hovered state
+    // changed (caller should redraw), following ExpectationView.handleMouseMove's convention.
+    handleMouseMove(screenX, screenY) {
+        const node = this._hitTest(screenX, screenY);
+        const newHoveredStateId = (node && node.kind === 'state') ? node.stateId : null;
+        const changed = newHoveredStateId !== this.hoveredStateId;
+        this.hoveredStateId = newHoveredStateId;
+        return changed;
     }
 
     _toggle(pathId) {
@@ -134,6 +146,18 @@ class TreeView {
     }
 
     _drawNode(node) {
+        const isHoveredState = node.kind === 'state' && this.hoveredStateId !== null &&
+            node.stateId === this.hoveredStateId;
+
+        if (isHoveredState) {
+            push();
+            noFill();
+            stroke(AppPalette.accent.yellow);
+            strokeWeight(3);
+            circle(node.x, node.y, (TREE_VIEW_STATE_RADIUS + 5) * 2);
+            pop();
+        }
+
         push();
         if (node.kind === 'state') {
             fill(ColorUtils.applyAlpha(AppPalette.node.state, 220));
@@ -153,6 +177,27 @@ class TreeView {
         textSize(10);
         textFont(Typography.sans());
         text(node.name, node.x, node.y);
+        pop();
+    }
+
+    // Small "S2 - 2x" badge drawn once, above the FIRST (shallowest) copy of the hovered state.
+    _drawHoverBadge(tree) {
+        if (this.hoveredStateId === null) return;
+        const copies = [];
+        TreeLayout.forEach(tree, node => {
+            if (node.kind === 'state' && node.stateId === this.hoveredStateId) copies.push(node);
+        });
+        if (copies.length === 0) return;
+        copies.sort((a, b) => a.stateDepth - b.stateDepth);
+        const first = copies[0];
+
+        push();
+        textAlign(CENTER, BOTTOM);
+        textSize(10);
+        textFont(Typography.mono());
+        fill(AppPalette.accent.yellow);
+        noStroke();
+        text(`${first.name} — ${copies.length}× in tree`, first.x, first.y - TREE_VIEW_STATE_RADIUS - 8);
         pop();
     }
 

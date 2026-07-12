@@ -1140,6 +1140,12 @@ class MainView {
     }
 
     mouseMoved() {
+        if (this._isEditableMode() && this.viewModel.buildCanvasView === 'tree' && this.treeView) {
+            const changed = this.treeView.handleMouseMove(mouseX, mouseY);
+            if (changed) redraw();
+            return;
+        }
+
         if (this.viewModel.interaction.mode === 'values' && this.viewModel.valuesSubView === 'mc' && this.expectationView) {
             const hoverChanged = this.expectationView.handleMouseMove(mouseX, mouseY);
             if (hoverChanged) {
