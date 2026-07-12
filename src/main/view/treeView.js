@@ -3,8 +3,17 @@
 // scale itself. Click/hover interaction is added in later tasks (this file grows to own them).
 const TREE_VIEW_STATE_RADIUS = 24;
 const TREE_VIEW_ACTION_HALF  = 16;
-const TREE_VIEW_ANCHOR_X     = 80;
-const TREE_VIEW_ANCHOR_Y     = 80;
+// The tool palette (see toolPalette.js / .tool-palette in style.css) floats at
+// left:12px, top:(topBarHeight + 12) and, measured in a real browser (Chromium,
+// 1400x900, default 40px top bar), spans x:[12, 164], y:[52, 228]. The root's hover ring
+// extends TREE_VIEW_STATE_RADIUS + 5 px beyond its circle, and its hover badge (e.g.
+// "Bud — 1× in tree", measured ~96px wide via textWidth()) is centered on the node and
+// draws above the ring, so it - not the bare node circle - is the widest/leftmost thing
+// that can clip the palette. anchorX=200 left the badge's left edge at ~152px, ~12px
+// under the palette's 164px right edge; anchorX=240 keeps a comfortable ~25px+ margin
+// even for a somewhat longer state name.
+const TREE_VIEW_ANCHOR_X     = 240;
+const TREE_VIEW_ANCHOR_Y     = 120;
 
 class TreeView {
     constructor(canvasViewModel) {
