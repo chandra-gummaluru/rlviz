@@ -19,6 +19,7 @@ class TreeView {
     constructor(canvasViewModel) {
         this.viewModel = canvasViewModel;
         this.hoveredStateId = null;
+        this._usableWidth = 900; // corrected by the first real draw(usableWidth) call
     }
 
     // Builds the current tree (recomputed every draw - same "no cache" convention already used
@@ -27,10 +28,11 @@ class TreeView {
     _currentTree() {
         const startNode = this.viewModel.startNode;
         if (!startNode) return null;
-        return TreeLayout.build(this.viewModel.graph, startNode.id, this.viewModel.treeExpanded, 4);
+        return TreeLayout.build(this.viewModel.graph, startNode.id, this.viewModel.treeExpanded, 1, this._usableWidth);
     }
 
-    draw() {
+    draw(usableWidth) {
+        if (usableWidth) this._usableWidth = usableWidth;
         const tree = this._currentTree();
         if (!tree) return;
 
@@ -48,11 +50,12 @@ class TreeView {
         pop();
     }
 
-    // Converts a tree-local (x, y) - as stored on TreeLayout nodes - into current screen
-    // coordinates, applying the same anchor offset draw() uses plus the shared viewport pan/zoom.
-    _treeToScreen(node) {
-        const worldX = node.x + TREE_VIEW_ANCHOR_X;
-        const worldY = node.y + TREE_VIEW_ANCHOR_Y;
+    // Converts a tree-local (x, y) point into current screen coordinates, applying the same
+    // anchor offset draw() uses plus the shared viewport pan/zoom. Takes plain coordinates (not a
+    // TreeNode) so it can also convert badge-center / edge-midpoint points, not just node centers.
+    _treeToScreen(x, y) {
+        const worldX = x + TREE_VIEW_ANCHOR_X;
+        const worldY = y + TREE_VIEW_ANCHOR_Y;
         return this.viewModel.viewport.worldToScreen(worldX, worldY);
     }
 
@@ -63,7 +66,7 @@ class TreeView {
         const zoom = this.viewModel.viewport.zoom;
         let hit = null;
         TreeLayout.forEach(tree, node => {
-            const p = this._treeToScreen(node);
+            const p = this._treeToScreen(node.x, node.y);
             const halfSize = (node.kind === 'state' ? TREE_VIEW_STATE_RADIUS : TREE_VIEW_ACTION_HALF) * zoom;
             const dx = screenX - p.x, dy = screenY - p.y;
             if (node.kind === 'state') {

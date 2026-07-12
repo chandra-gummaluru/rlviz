@@ -206,7 +206,7 @@ class MainView {
         scale(this.viewModel.viewport.zoom);
 
         if (this._isEditableMode() && this.viewModel.buildCanvasView === 'tree' && this.treeView) {
-            this.treeView.draw();
+            this.treeView.draw(windowWidth - this.RIGHT_PANEL_WIDTH);
         } else {
             this.drawEdges();
             this.drawNodes();
