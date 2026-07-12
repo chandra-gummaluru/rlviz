@@ -37,6 +37,50 @@ class TreeView {
         pop();
     }
 
+    // Converts a tree-local (x, y) - as stored on TreeLayout nodes - into current screen
+    // coordinates, applying the same anchor offset draw() uses plus the shared viewport pan/zoom.
+    _treeToScreen(node) {
+        const worldX = node.x + TREE_VIEW_ANCHOR_X;
+        const worldY = node.y + TREE_VIEW_ANCHOR_Y;
+        return this.viewModel.viewport.worldToScreen(worldX, worldY);
+    }
+
+    // Returns the topmost TreeNode whose on-screen shape contains (screenX, screenY), or null.
+    _hitTest(screenX, screenY) {
+        const tree = this._currentTree();
+        if (!tree) return null;
+        const zoom = this.viewModel.viewport.zoom;
+        let hit = null;
+        TreeLayout.forEach(tree, node => {
+            const p = this._treeToScreen(node);
+            const halfSize = (node.kind === 'state' ? TREE_VIEW_STATE_RADIUS : TREE_VIEW_ACTION_HALF) * zoom;
+            const dx = screenX - p.x, dy = screenY - p.y;
+            if (node.kind === 'state') {
+                if (dx * dx + dy * dy <= halfSize * halfSize) hit = node;
+            } else {
+                if (Math.abs(dx) <= halfSize && Math.abs(dy) <= halfSize) hit = node;
+            }
+        });
+        return hit;
+    }
+
+    // Public entry point for mainView.js's mousePressed(). Toggles expansion if the click hit a
+    // node with real children (collapsed or already-expanded); no-ops on terminal nodes or empty
+    // space. Always returns true so the caller knows Tree view fully owns this click.
+    handleClick(screenX, screenY) {
+        const node = this._hitTest(screenX, screenY);
+        if (node && node.hasChildren) {
+            this.viewModel.graph && this._toggle(node.pathId);
+        }
+        return true;
+    }
+
+    _toggle(pathId) {
+        // Controller is reached via the global canvasController (same convention every other
+        // view in this codebase uses for controller access - e.g. mainView.js's this.controller).
+        canvasController.toggleTreeNodeExpanded(pathId);
+    }
+
     // Screen-fixed UI chrome (empty-state prompt, footer caption) - must be called from OUTSIDE
     // any pan/zoom transform (mainView.js calls this after its own outer pop(), same pattern as
     // drawMessages()), so these elements stay pinned regardless of the graph's current pan/zoom.

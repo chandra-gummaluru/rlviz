@@ -977,6 +977,17 @@ class MainView {
             return;
         }
 
+        // Tree view owns its own synthetic layout (not the graph's real node positions), so it
+        // fully bypasses GeometricHelper-based hit-testing, panning, and edge/node click logic
+        // below. Right-click (set s0) and zoom still work normally - only plain left-click on the
+        // canvas routes here.
+        if (this._isEditableMode() && this.viewModel.buildCanvasView === 'tree' &&
+            this.treeView && mouseButton !== RIGHT) {
+            this.treeView.handleClick(mouseX, mouseY);
+            redraw();
+            return;
+        }
+
         // Right-click in build/policy mode: set start node (s₀)
         if (mouseButton === RIGHT) {
             if (this._isEditableMode()) {
