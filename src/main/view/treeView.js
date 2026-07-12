@@ -3,6 +3,7 @@
 // scale itself. Click/hover interaction is added in later tasks (this file grows to own them).
 const TREE_VIEW_STATE_RADIUS = 24;
 const TREE_VIEW_ACTION_HALF  = 16;
+const TREE_VIEW_BADGE_RADIUS = 8;
 // The tool palette (see toolPalette.js / .tool-palette in style.css) floats at
 // left:12px, top:(topBarHeight + 12) and, measured in a real browser (Chromium,
 // 1400x900, default 40px top bar), spans x:[12, 164], y:[52, 228]. The root's hover ring
@@ -66,6 +67,16 @@ class TreeView {
         return this.viewModel.viewport.worldToScreen(worldX, worldY);
     }
 
+    // Tree-local (x, y) of a node's +/- expand badge - bottom-right corner for both shapes, scaled
+    // to each shape's own size so the badge always sits just outside the node's own boundary.
+    _badgeCenter(node) {
+        if (node.kind === 'state') {
+            const off = TREE_VIEW_STATE_RADIUS * 0.75;
+            return { x: node.x + off, y: node.y + off };
+        }
+        return { x: node.x + TREE_VIEW_ACTION_HALF, y: node.y + TREE_VIEW_ACTION_HALF };
+    }
+
     // Returns the topmost TreeNode whose on-screen shape contains (screenX, screenY), or null.
     _hitTest(screenX, screenY) {
         const tree = this._currentTree();
@@ -85,20 +96,38 @@ class TreeView {
         return hit;
     }
 
-    // Public: whether (screenX, screenY) hits an actual tree node - lets callers (mainView.js)
-    // distinguish "clicked a node" from "clicked empty tree-canvas space" without reaching into
-    // the private _hitTest() directly.
-    hitTestNode(screenX, screenY) {
-        return this._hitTest(screenX, screenY) !== null;
+    // Returns the TreeNode whose +/- badge contains (screenX, screenY), or null. Only nodes with
+    // hasChildren === true have a badge at all (terminal nodes get none).
+    _hitTestBadge(screenX, screenY) {
+        const tree = this._currentTree();
+        if (!tree) return null;
+        const zoom = this.viewModel.viewport.zoom;
+        const badgeRadius = TREE_VIEW_BADGE_RADIUS * zoom;
+        let hit = null;
+        TreeLayout.forEach(tree, node => {
+            if (!node.hasChildren) return;
+            const center = this._badgeCenter(node);
+            const p = this._treeToScreen(center.x, center.y);
+            const dx = screenX - p.x, dy = screenY - p.y;
+            if (dx * dx + dy * dy <= badgeRadius * badgeRadius) hit = node;
+        });
+        return hit;
+    }
+
+    // Public: whether (screenX, screenY) hits a node's expand/collapse badge - lets callers
+    // (mainView.js) distinguish "clicked a badge" from "clicked empty tree-canvas space or a
+    // node's plain body" without reaching into the private _hitTestBadge() directly.
+    hitTestBadge(screenX, screenY) {
+        return this._hitTestBadge(screenX, screenY) !== null;
     }
 
     // Public entry point for mainView.js's mousePressed(). Toggles expansion if the click hit a
-    // node with real children (collapsed or already-expanded); no-ops on terminal nodes or empty
-    // space. Always returns true so the caller knows Tree view fully owns this click.
+    // node's +/- badge (the ONLY way to toggle now - clicking a node's plain body does nothing).
+    // Always returns true so the caller knows Tree view fully owns this click.
     handleClick(screenX, screenY) {
-        const node = this._hitTest(screenX, screenY);
-        if (node && node.hasChildren) {
-            this.viewModel.graph && this._toggle(node.pathId);
+        const node = this._hitTestBadge(screenX, screenY);
+        if (node) {
+            this._toggle(node.pathId);
         }
         return true;
     }
@@ -185,12 +214,6 @@ class TreeView {
         }
 
         push();
-        // Collapsed-but-expandable nodes (real children exist but aren't shown, per the depth
-        // cap) get a dashed outline instead of solid, as a cheap visual cue that clicking reveals
-        // more of the tree - otherwise they look identical to true terminal nodes. Reuses the same
-        // drawingContext.setLineDash() pattern valueIterationView.js already uses for its own
-        // dashed partial-observability node strokes.
-        if (node.isCollapsed) drawingContext.setLineDash([4, 3]);
         if (node.kind === 'state') {
             fill(ColorUtils.applyAlpha(AppPalette.node.state, 220));
             stroke(AppPalette.text.medium);
@@ -203,7 +226,6 @@ class TreeView {
             rect(node.x - TREE_VIEW_ACTION_HALF, node.y - TREE_VIEW_ACTION_HALF,
                 TREE_VIEW_ACTION_HALF * 2, TREE_VIEW_ACTION_HALF * 2, 6);
         }
-        if (node.isCollapsed) drawingContext.setLineDash([]);
         noStroke();
         fill(ColorUtils.contrastText(node.kind === 'state' ? AppPalette.node.state : AppPalette.node.action));
         textAlign(CENTER, CENTER);
@@ -211,6 +233,22 @@ class TreeView {
         textFont(Typography.sans());
         text(node.name, node.x, node.y);
         pop();
+
+        if (node.hasChildren) {
+            const center = this._badgeCenter(node);
+            push();
+            fill(AppPalette.accent.cyan);
+            stroke(ColorUtils.contrastText(AppPalette.accent.cyan));
+            strokeWeight(1);
+            circle(center.x, center.y, TREE_VIEW_BADGE_RADIUS * 2);
+            noStroke();
+            fill(ColorUtils.contrastText(AppPalette.accent.cyan));
+            textAlign(CENTER, CENTER);
+            textSize(11);
+            textFont(Typography.sans());
+            text(node.isCollapsed ? '+' : '−', center.x, center.y - 0.5);
+            pop();
+        }
     }
 
     // Small "S2 - 2x" badge drawn once, above the FIRST (shallowest) copy of the hovered state.

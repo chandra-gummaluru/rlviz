@@ -987,7 +987,7 @@ class MainView {
             if (this.topBar) {
                 this.topBar.closeAllDropdowns();
             }
-            if (this.treeView.hitTestNode(mouseX, mouseY)) {
+            if (this.treeView.hitTestBadge(mouseX, mouseY)) {
                 this.treeView.handleClick(mouseX, mouseY);
                 redraw();
             } else {
