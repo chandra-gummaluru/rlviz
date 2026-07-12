@@ -15,11 +15,14 @@ const TREE_VIEW_BADGE_RADIUS = 8;
 // even for a somewhat longer state name.
 const TREE_VIEW_ANCHOR_X     = 240;
 const TREE_VIEW_ANCHOR_Y     = 120;
+const TREE_VIEW_EDGE_HOVER_PX = 6; // screen-pixel hover tolerance for edge hit-testing
 
 class TreeView {
     constructor(canvasViewModel) {
         this.viewModel = canvasViewModel;
         this.hoveredStateId = null;
+        this.hoveredEdge = null;
+        this._hoveredEdgeKey = null;
         this._usableWidth = 900; // corrected by the first real draw(usableWidth) call
     }
 
@@ -54,6 +57,7 @@ class TreeView {
         // Nodes second.
         TreeLayout.forEach(tree, node => this._drawNode(node));
         this._drawHoverBadge(tree);
+        this._drawEdgeHoverTooltip();
 
         pop();
     }
@@ -96,6 +100,47 @@ class TreeView {
         return hit;
     }
 
+    // Shortest distance from point (px, py) to the line segment (x1,y1)-(x2,y2). Standard
+    // projection-and-clamp formula.
+    _distanceToSegment(px, py, x1, y1, x2, y2) {
+        const dx = x2 - x1, dy = y2 - y1;
+        const lengthSq = dx * dx + dy * dy;
+        if (lengthSq === 0) return Math.hypot(px - x1, py - y1);
+        let t = ((px - x1) * dx + (py - y1) * dy) / lengthSq;
+        t = Math.max(0, Math.min(1, t));
+        const projX = x1 + t * dx, projY = y1 + t * dy;
+        return Math.hypot(px - projX, py - projY);
+    }
+
+    // Returns {stateNode, actionNode, childStateNode} for the outcome edge nearest (screenX,
+    // screenY), if within TREE_VIEW_EDGE_HOVER_PX screen pixels - or null. Only outcome edges
+    // (action -> state) are hoverable; state -> action edges have no probability to show.
+    // Walks state/action pairs explicitly (rather than TreeLayout.forEach's generic node-at-a-time
+    // traversal) because the tooltip needs the ORIGINATING state's name (the action's parent),
+    // which a single node object doesn't carry a reference to.
+    _hitTestEdge(screenX, screenY) {
+        const tree = this._currentTree();
+        if (!tree) return null;
+        let hit = null;
+        let bestDist = TREE_VIEW_EDGE_HOVER_PX;
+        const walk = (stateNode) => {
+            stateNode.children.forEach(actionNode => {
+                const p1 = this._treeToScreen(actionNode.x, actionNode.y);
+                actionNode.children.forEach(childStateNode => {
+                    const p2 = this._treeToScreen(childStateNode.x, childStateNode.y);
+                    const d = this._distanceToSegment(screenX, screenY, p1.x, p1.y, p2.x, p2.y);
+                    if (d <= bestDist) {
+                        bestDist = d;
+                        hit = { stateNode, actionNode, childStateNode };
+                    }
+                    walk(childStateNode);
+                });
+            });
+        };
+        walk(tree);
+        return hit;
+    }
+
     // Returns the TreeNode whose +/- badge contains (screenX, screenY), or null. Only nodes with
     // hasChildren === true have a badge at all (terminal nodes get none).
     _hitTestBadge(screenX, screenY) {
@@ -132,13 +177,23 @@ class TreeView {
         return true;
     }
 
-    // Public entry point for mainView.js's mouseMoved(). Returns true if the hovered state
+    // Public entry point for mainView.js's mouseMoved(). Returns true if either hover target
     // changed (caller should redraw), following ExpectationView.handleMouseMove's convention.
+    // Node-hover (repeated-state ring + badge) and edge-hover (P(s'|s,a) tooltip) are mutually
+    // exclusive per mouse position - edge-hover is only checked when no node is under the cursor.
     handleMouseMove(screenX, screenY) {
         const node = this._hitTest(screenX, screenY);
         const newHoveredStateId = (node && node.kind === 'state') ? node.stateId : null;
-        const changed = newHoveredStateId !== this.hoveredStateId;
+
+        const edgeHit = newHoveredStateId === null ? this._hitTestEdge(screenX, screenY) : null;
+        const newHoveredEdgeKey = edgeHit ? edgeHit.childStateNode.pathId : null;
+
+        const changed = (newHoveredStateId !== this.hoveredStateId) ||
+            (newHoveredEdgeKey !== this._hoveredEdgeKey);
+
         this.hoveredStateId = newHoveredStateId;
+        this.hoveredEdge = edgeHit;
+        this._hoveredEdgeKey = newHoveredEdgeKey;
         return changed;
     }
 
@@ -172,32 +227,23 @@ class TreeView {
     }
 
     _drawEdge(parent, child) {
+        const isOutcomeEdge = child.kind === 'state' && child.incomingProbability !== undefined;
+
         push();
-        stroke(AppPalette.edge.default);
-        strokeWeight(1.5);
+        if (isOutcomeEdge) {
+            // Reward-sign color + probability-proportional width, reusing this app's EXISTING
+            // Action->State edge-width formula (1 + 4*probability, from mainView.js's own graph
+            // rendering) rather than inventing a new one - no default text label anymore, the
+            // precise P(s'|s,a) value is revealed on hover instead (_drawEdgeHoverTooltip).
+            const rewardColor = child.incomingReward >= 0 ? AppPalette.reward.positive : AppPalette.reward.negative;
+            stroke(rewardColor);
+            strokeWeight(1 + 4 * child.incomingProbability);
+        } else {
+            stroke(AppPalette.edge.default);
+            strokeWeight(1.5);
+        }
         line(parent.x, parent.y, child.x, child.y);
         pop();
-
-        // Outcome edges (action -> state) carry a "p 0.8 . +5" label; plain state->action edges
-        // (child.kind === 'action') don't have a probability/reward to show.
-        if (child.kind === 'state' && child.incomingProbability !== undefined) {
-            const midX = (parent.x + child.x) / 2;
-            const midY = (parent.y + child.y) / 2;
-            push();
-            textAlign(CENTER, CENTER);
-            textSize(9);
-            textFont(Typography.mono());
-            noStroke();
-            const pStr = `p ${child.incomingProbability.toFixed(2).replace(/0+$/, '').replace(/\.$/, '.0')} · `;
-            const rewardColor = child.incomingReward >= 0 ? AppPalette.reward.positive : AppPalette.reward.negative;
-            const rStr = (child.incomingReward >= 0 ? '+' : '') + child.incomingReward.toFixed(0);
-            const pWidth = textWidth(pStr);
-            fill(AppPalette.text.muted);
-            text(pStr, midX - pWidth / 2, midY - 8);
-            fill(rewardColor);
-            text(rStr, midX - pWidth / 2 + pWidth + textWidth(rStr) / 2, midY - 8);
-            pop();
-        }
     }
 
     _drawNode(node) {
@@ -269,6 +315,31 @@ class TreeView {
         fill(AppPalette.accent.yellow);
         noStroke();
         text(`${first.name} — ${copies.length}× in tree`, first.x, first.y - TREE_VIEW_STATE_RADIUS - 8);
+        pop();
+    }
+
+    // "P(s' | s, a) = 0.XX" tooltip near the hovered outcome edge's midpoint, using real node
+    // names. Drawn as part of the pannable content (inside draw()'s translate block, alongside
+    // _drawHoverBadge) so it tracks the edge correctly when panning/zooming, unlike the
+    // screen-fixed elements in drawChrome().
+    _drawEdgeHoverTooltip() {
+        if (!this.hoveredEdge) return;
+        const { stateNode, actionNode, childStateNode } = this.hoveredEdge;
+        const midX = (actionNode.x + childStateNode.x) / 2;
+        const midY = (actionNode.y + childStateNode.y) / 2;
+        const label = `P(${childStateNode.name} | ${stateNode.name}, ${actionNode.name}) = ${childStateNode.incomingProbability.toFixed(2)}`;
+
+        push();
+        textAlign(CENTER, CENTER);
+        textSize(10);
+        textFont(Typography.mono());
+        const padding = 4;
+        const labelW = textWidth(label);
+        noStroke();
+        fill(ColorUtils.applyAlpha(AppPalette.text.medium, 235));
+        rect(midX - labelW / 2 - padding, midY - 8 - 7, labelW + padding * 2, 16, 4);
+        fill(ColorUtils.contrastText(AppPalette.text.medium));
+        text(label, midX, midY - 8);
         pop();
     }
 
