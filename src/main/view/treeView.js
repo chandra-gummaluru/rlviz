@@ -1,0 +1,119 @@
+// Renders the Build/Policy "Tree" view: the MDP unrolled left-to-right from startNode, via
+// TreeLayout. Draws inside mainView.js's existing pan/zoom transform - does not push/translate/
+// scale itself. Click/hover interaction is added in later tasks (this file grows to own them).
+const TREE_VIEW_STATE_RADIUS = 24;
+const TREE_VIEW_ACTION_HALF  = 16;
+const TREE_VIEW_ANCHOR_X     = 80;
+const TREE_VIEW_ANCHOR_Y     = 80;
+
+class TreeView {
+    constructor(canvasViewModel) {
+        this.viewModel = canvasViewModel;
+    }
+
+    // Builds the current tree (recomputed every draw - same "no cache" convention already used
+    // by ExpectationViewModel.computeLayout() elsewhere in this codebase; MDP graphs in this app
+    // are small enough that this is cheap).
+    _currentTree() {
+        const startNode = this.viewModel.startNode;
+        if (!startNode) return null;
+        return TreeLayout.build(this.viewModel.graph, startNode.id, this.viewModel.treeExpanded, 4);
+    }
+
+    draw() {
+        const tree = this._currentTree();
+        if (!tree) {
+            this._drawEmptyPrompt();
+            return;
+        }
+
+        push();
+        translate(TREE_VIEW_ANCHOR_X, TREE_VIEW_ANCHOR_Y);
+
+        // Edges first (so nodes draw on top of their own incoming edge).
+        TreeLayout.forEach(tree, node => {
+            node.children.forEach(child => this._drawEdge(node, child));
+        });
+        // Nodes second.
+        TreeLayout.forEach(tree, node => this._drawNode(node));
+
+        pop();
+
+        this._drawFooterCaption();
+    }
+
+    _drawEmptyPrompt() {
+        push();
+        fill(AppPalette.text.muted);
+        noStroke();
+        textAlign(CENTER, CENTER);
+        textSize(14);
+        textFont(Typography.sans());
+        text('Right-click a state to set the start node (s₀) first.', width / 2, height / 2);
+        pop();
+    }
+
+    _drawEdge(parent, child) {
+        push();
+        stroke(AppPalette.edge.default);
+        strokeWeight(1.5);
+        line(parent.x, parent.y, child.x, child.y);
+        pop();
+
+        // Outcome edges (action -> state) carry a "p 0.8 . +5" label; plain state->action edges
+        // (child.kind === 'action') don't have a probability/reward to show.
+        if (child.kind === 'state' && child.incomingProbability !== undefined) {
+            const midX = (parent.x + child.x) / 2;
+            const midY = (parent.y + child.y) / 2;
+            push();
+            textAlign(CENTER, CENTER);
+            textSize(9);
+            textFont(Typography.mono());
+            noStroke();
+            const pStr = `p ${child.incomingProbability.toFixed(2).replace(/0+$/, '').replace(/\.$/, '.0')} · `;
+            const rewardColor = child.incomingReward >= 0 ? AppPalette.reward.positive : AppPalette.reward.negative;
+            const rStr = (child.incomingReward >= 0 ? '+' : '') + child.incomingReward.toFixed(0);
+            const pWidth = textWidth(pStr);
+            fill(AppPalette.text.muted);
+            text(pStr, midX - pWidth / 2, midY - 8);
+            fill(rewardColor);
+            text(rStr, midX - pWidth / 2 + pWidth + textWidth(rStr) / 2, midY - 8);
+            pop();
+        }
+    }
+
+    _drawNode(node) {
+        push();
+        if (node.kind === 'state') {
+            fill(ColorUtils.applyAlpha(AppPalette.node.state, 220));
+            stroke(AppPalette.text.medium);
+            strokeWeight(2);
+            circle(node.x, node.y, TREE_VIEW_STATE_RADIUS * 2);
+        } else {
+            fill(ColorUtils.applyAlpha(AppPalette.node.action, 220));
+            stroke(AppPalette.text.medium);
+            strokeWeight(2);
+            rect(node.x - TREE_VIEW_ACTION_HALF, node.y - TREE_VIEW_ACTION_HALF,
+                TREE_VIEW_ACTION_HALF * 2, TREE_VIEW_ACTION_HALF * 2, 6);
+        }
+        noStroke();
+        fill(ColorUtils.contrastText(node.kind === 'state' ? AppPalette.node.state : AppPalette.node.action));
+        textAlign(CENTER, CENTER);
+        textSize(10);
+        textFont(Typography.sans());
+        text(node.name, node.x, node.y);
+        pop();
+    }
+
+    _drawFooterCaption() {
+        push();
+        fill(AppPalette.text.muted);
+        noStroke();
+        textAlign(LEFT, BOTTOM);
+        textSize(10);
+        textFont(Typography.mono());
+        text('the MDP unrolled from S₀ (initial state) · circles = states · squares = actions',
+            16, height - 12);
+        pop();
+    }
+}

@@ -205,9 +205,13 @@ class MainView {
         translate(this.viewModel.viewport.panX, this.viewModel.viewport.panY);
         scale(this.viewModel.viewport.zoom);
 
-        this.drawEdges();
-        this.drawNodes();
-        this.drawTextLabels();
+        if (this._isEditableMode() && this.viewModel.buildCanvasView === 'tree' && this.treeView) {
+            this.treeView.draw();
+        } else {
+            this.drawEdges();
+            this.drawNodes();
+            this.drawTextLabels();
+        }
 
         // Draw spinning arrow if in spinning arrow phase (action node) or state_spinning_arrow (state node)
         if (this.viewModel.simulationState) {
