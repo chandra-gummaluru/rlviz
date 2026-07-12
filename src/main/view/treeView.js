@@ -75,6 +75,13 @@ class TreeView {
         return hit;
     }
 
+    // Public: whether (screenX, screenY) hits an actual tree node - lets callers (mainView.js)
+    // distinguish "clicked a node" from "clicked empty tree-canvas space" without reaching into
+    // the private _hitTest() directly.
+    hitTestNode(screenX, screenY) {
+        return this._hitTest(screenX, screenY) !== null;
+    }
+
     // Public entry point for mainView.js's mousePressed(). Toggles expansion if the click hit a
     // node with real children (collapsed or already-expanded); no-ops on terminal nodes or empty
     // space. Always returns true so the caller knows Tree view fully owns this click.
@@ -168,6 +175,12 @@ class TreeView {
         }
 
         push();
+        // Collapsed-but-expandable nodes (real children exist but aren't shown, per the depth
+        // cap) get a dashed outline instead of solid, as a cheap visual cue that clicking reveals
+        // more of the tree - otherwise they look identical to true terminal nodes. Reuses the same
+        // drawingContext.setLineDash() pattern valueIterationView.js already uses for its own
+        // dashed partial-observability node strokes.
+        if (node.isCollapsed) drawingContext.setLineDash([4, 3]);
         if (node.kind === 'state') {
             fill(ColorUtils.applyAlpha(AppPalette.node.state, 220));
             stroke(AppPalette.text.medium);
@@ -180,6 +193,7 @@ class TreeView {
             rect(node.x - TREE_VIEW_ACTION_HALF, node.y - TREE_VIEW_ACTION_HALF,
                 TREE_VIEW_ACTION_HALF * 2, TREE_VIEW_ACTION_HALF * 2, 6);
         }
+        if (node.isCollapsed) drawingContext.setLineDash([]);
         noStroke();
         fill(ColorUtils.contrastText(node.kind === 'state' ? AppPalette.node.state : AppPalette.node.action));
         textAlign(CENTER, CENTER);

@@ -978,13 +978,26 @@ class MainView {
         }
 
         // Tree view owns its own synthetic layout (not the graph's real node positions), so it
-        // fully bypasses GeometricHelper-based hit-testing, panning, and edge/node click logic
-        // below. Right-click (set s0) and zoom still work normally - only plain left-click on the
-        // canvas routes here.
+        // fully bypasses GeometricHelper-based hit-testing and edge/node click logic below. Right-
+        // click (set s0) and zoom still work normally - only plain left-click on the canvas routes
+        // here. Clicks on empty tree-canvas space still arm panning (mirroring Graph view's own
+        // empty-click handling further below) so drag-to-pan keeps working in Tree view.
         if (this._isEditableMode() && this.viewModel.buildCanvasView === 'tree' &&
             this.treeView && mouseButton !== RIGHT) {
-            this.treeView.handleClick(mouseX, mouseY);
-            redraw();
+            if (this.topBar) {
+                this.topBar.closeAllDropdowns();
+            }
+            if (this.treeView.hitTestNode(mouseX, mouseY)) {
+                this.treeView.handleClick(mouseX, mouseY);
+                redraw();
+            } else {
+                this.viewModel.viewport.isPanning = true;
+                this.viewModel.viewport.panStartX = mouseX;
+                this.viewModel.viewport.panStartY = mouseY;
+                this.viewModel.viewport.panStartOffsetX = this.viewModel.viewport.panX;
+                this.viewModel.viewport.panStartOffsetY = this.viewModel.viewport.panY;
+                cursor('grab');
+            }
             return;
         }
 
