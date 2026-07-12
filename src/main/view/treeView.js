@@ -31,8 +31,15 @@ class TreeView {
         return TreeLayout.build(this.viewModel.graph, startNode.id, this.viewModel.treeExpanded, 1, this._usableWidth);
     }
 
+    // usableWidth is the canvas's usable width (windowWidth - RIGHT_PANEL_WIDTH, passed by
+    // mainView.js). We reserve TREE_VIEW_ANCHOR_X out of that budget before it reaches
+    // TreeLayout's thirds computation, since draw() also translates everything right by that same
+    // amount (to clear the floating tool palette) - without this, the thirds math and the anchor
+    // translate would double-count that horizontal space and the third column would render
+    // off-canvas at ordinary window widths (this was found by code review; verify the fix with
+    // real window-size numbers, not just by reading the formula, per this task's own instructions).
     draw(usableWidth) {
-        if (usableWidth) this._usableWidth = usableWidth;
+        if (usableWidth) this._usableWidth = Math.max(300, usableWidth - TREE_VIEW_ANCHOR_X);
         const tree = this._currentTree();
         if (!tree) return;
 
