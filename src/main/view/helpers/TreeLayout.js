@@ -6,7 +6,7 @@ class TreeLayout {
     // graph: the domain Graph. startStateId: root state id (may be null/undefined - returns
     // null). expandedSet: Set<pathId> of nodes whose children should be shown beyond
     // defaultDepth. defaultDepth: state-hop depth cap for the default (unexpanded) render.
-    static build(graph, startStateId, expandedSet, defaultDepth = 4) {
+    static build(graph, startStateId, expandedSet, defaultDepth = 1, usableWidth = 900) {
         // Note: use an explicit null/undefined check, not a truthiness check - node ids in this
         // codebase start at 0 (see createNodeInteractor.js), and `!0` is true in JS, which would
         // wrongly reject the very first state a user creates.
@@ -62,17 +62,21 @@ class TreeLayout {
         };
 
         const root = buildState(startStateId, 's0', 0);
-        TreeLayout._assignPositions(root);
+        TreeLayout._assignPositions(root, usableWidth);
         return root;
     }
 
     // Leaves get sequential vertical slots in left-to-right traversal order; each internal node's
-    // slot = mean of its children's slots (same "leaves first, average up" approach already used
-    // by src/main/view/learningIterationView.js's _layoutTree, adapted for a left-to-right tree:
-    // "level" here increments per node regardless of state/action - actions get their own column
-    // between state columns - while stateDepth above only counts state hops, matching the spec's
-    // "~4 state levels" depth-cap wording.
-    static _assignPositions(root) {
+    // slot = mean of its children's slots (unchanged from v1 - same "leaves first, average up"
+    // approach learningIterationView.js's _layoutTree uses).
+    //
+    // Horizontal (x) position differs by column in v2: columns 0-2 (root state, its actions, the
+    // resulting states - exactly what a defaultDepth=1 tree shows before any expansion) partition
+    // usableWidth into thirds, each node centered in its third. Columns 3+ (only reachable by
+    // manually expanding past the default view) fall back to fixed LEVEL_SPACING, continuing on
+    // from column 2's x position - expansion never re-partitions the canvas, only re-rooting
+    // (which already clears treeExpanded) resets back to the fresh thirds view.
+    static _assignPositions(root, usableWidth) {
         if (!root) return;
         let slotCounter = 0;
         const assignSlot = (node, level) => {
@@ -88,8 +92,15 @@ class TreeLayout {
         };
         assignSlot(root, 0);
 
+        const thirdWidth = usableWidth / 3;
+        const col2X = thirdWidth * 2.5; // center of the third third
+        const xForLevel = (level) => {
+            if (level <= 2) return thirdWidth * (level + 0.5);
+            return col2X + (level - 2) * TreeLayout.LEVEL_SPACING;
+        };
+
         TreeLayout.forEach(root, node => {
-            node.x = node._level * TreeLayout.LEVEL_SPACING;
+            node.x = xForLevel(node._level);
             node.y = node._slot * TreeLayout.SLOT_SPACING;
         });
     }
