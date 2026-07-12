@@ -52,6 +52,18 @@ class CanvasViewModel {
         // (episode search tree). Presentation-tier only, toggled by the floating Graph|Tree pill.
         this.learningIterationCanvasView = 'graph';
 
+        // Build/Policy canvas view: 'graph' (normal editor) or 'tree' (the MDP unrolled into a
+        // left-to-right search tree rooted at startNode). Presentation-tier only, toggled by the
+        // floating Graph|Tree pill (Build/Policy only - unrelated to learningIterationCanvasView
+        // above, which is Values -> Learning Iteration's own, separate Graph|Tree toggle).
+        this.buildCanvasView = 'graph';
+
+        // Set<pathId> of tree nodes the user has manually expanded beyond the default depth cap.
+        // pathId format: "s0.a0.1" (state root, then alternating .a<actionIndex>/.<outcomeIndex>
+        // segments) - a state can recur at multiple tree positions, so expansion is keyed by tree
+        // position, not state id. Cleared whenever startNode changes (see setStartNode below).
+        this.treeExpanded = new Set();
+
         // Real episodic Q-learning state for the Learning Iteration quadrant. Attached in main.js;
         // presentation/session-only, excluded from graph import/export (see QLearningState).
         this.qLearningState = null;

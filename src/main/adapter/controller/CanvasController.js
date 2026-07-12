@@ -582,6 +582,20 @@ class CanvasController {
         this.viewModel.learningIterationCanvasView = view === 'tree' ? 'tree' : 'graph';
     }
 
+    setBuildCanvasView(view) {
+        this.viewModel.buildCanvasView = view === 'tree' ? 'tree' : 'graph';
+    }
+
+    // Toggles one tree position's expansion (expand if collapsed, collapse if expanded).
+    toggleTreeNodeExpanded(pathId) {
+        const expanded = this.viewModel.treeExpanded;
+        if (expanded.has(pathId)) {
+            expanded.delete(pathId);
+        } else {
+            expanded.add(pathId);
+        }
+    }
+
     // Sets (or, when actionId is null/undefined, clears back to "random") the policy action
     // for a state. Shared by Build's Policy π section, Simulate's trace generation, and Monte
     // Carlo's policy snapshot - simulationState.policy remains the single source of truth.
@@ -678,6 +692,9 @@ class CanvasController {
 
     setStartNode(node) {
         this.viewModel.startNode = node;
+        // Re-rooting invalidates all prior tree-position expansion state (a pathId like
+        // "s0.a0.1" is meaningless once the root itself changes).
+        this.viewModel.treeExpanded.clear();
     }
 
     // ===== Private Helper Methods =====
