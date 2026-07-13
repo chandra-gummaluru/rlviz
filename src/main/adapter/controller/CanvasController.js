@@ -584,6 +584,14 @@ class CanvasController {
 
     setBuildCanvasView(view) {
         this.viewModel.buildCanvasView = view === 'tree' ? 'tree' : 'graph';
+        // A lingering Graph-view selection would otherwise outrank the new tree edge-hover in
+        // RightPanel.updateContent()'s precedence (selectedNode > selectedEdge > hoveredNode >
+        // hoveredEdge > mode default), silently hiding this feature. Mirrors setStartNode()
+        // clearing treeExpanded for the same category of reason - a view transition invalidating
+        // state that belonged to the old context.
+        if (view === 'tree') {
+            this.viewModel.selection.clearSelection();
+        }
     }
 
     // Toggles one tree position's expansion (expand if collapsed, collapse if expanded).

@@ -57,7 +57,6 @@ class TreeView {
         // Nodes second.
         TreeLayout.forEach(tree, node => this._drawNode(node));
         this._drawHoverBadge(tree);
-        this._drawEdgeHoverTooltip();
 
         pop();
     }
@@ -197,6 +196,20 @@ class TreeView {
         return changed;
     }
 
+    // The real graph EdgeObj for the currently-hovered outcome edge, or null. Tree nodes carry the
+    // real ids they were unrolled from (actionNode.actionId, childStateNode.stateId), so the actual
+    // domain edge - not a tree-local approximation - can be looked up directly. Used to drive
+    // RightPanel's existing hoveredEdge-based rendering verbatim (see mainView.js's tree branch of
+    // mouseMoved()), so the tree's edge-hover panel is pixel-identical to Build mode's own, by
+    // construction rather than by re-implementing the layout.
+    get realHoveredEdge() {
+        if (!this.hoveredEdge) return null;
+        const { actionNode, childStateNode } = this.hoveredEdge;
+        return this.viewModel.graph.edges.find(e =>
+            e.getFromNode().id === actionNode.actionId && e.getToNode().id === childStateNode.stateId
+        ) || null;
+    }
+
     _toggle(pathId) {
         // Controller is reached via the global canvasController (same convention every other
         // view in this codebase uses for controller access - e.g. mainView.js's this.controller).
@@ -315,31 +328,6 @@ class TreeView {
         fill(AppPalette.accent.yellow);
         noStroke();
         text(`${first.name} — ${copies.length}× in tree`, first.x, first.y - TREE_VIEW_STATE_RADIUS - 8);
-        pop();
-    }
-
-    // "P(s' | s, a) = 0.XX" tooltip near the hovered outcome edge's midpoint, using real node
-    // names. Drawn as part of the pannable content (inside draw()'s translate block, alongside
-    // _drawHoverBadge) so it tracks the edge correctly when panning/zooming, unlike the
-    // screen-fixed elements in drawChrome().
-    _drawEdgeHoverTooltip() {
-        if (!this.hoveredEdge) return;
-        const { stateNode, actionNode, childStateNode } = this.hoveredEdge;
-        const midX = (actionNode.x + childStateNode.x) / 2;
-        const midY = (actionNode.y + childStateNode.y) / 2;
-        const label = `P(${childStateNode.name} | ${stateNode.name}, ${actionNode.name}) = ${childStateNode.incomingProbability.toFixed(2)}`;
-
-        push();
-        textAlign(CENTER, CENTER);
-        textSize(10);
-        textFont(Typography.mono());
-        const padding = 4;
-        const labelW = textWidth(label);
-        noStroke();
-        fill(ColorUtils.applyAlpha(AppPalette.text.medium, 235));
-        rect(midX - labelW / 2 - padding, midY - 8 - 7, labelW + padding * 2, 16, 4);
-        fill(ColorUtils.contrastText(AppPalette.text.medium));
-        text(label, midX, midY - 8);
         pop();
     }
 
