@@ -584,19 +584,26 @@ class CanvasController {
 
     setBuildCanvasView(view) {
         this.viewModel.buildCanvasView = view === 'tree' ? 'tree' : 'graph';
-        // A lingering Graph-view selection or hover would otherwise outrank the new tree
-        // edge-hover in RightPanel.updateContent()'s precedence (selectedNode > selectedEdge >
-        // hoveredNode > hoveredEdge > mode default), silently hiding this feature. Mirrors
-        // setStartNode() clearing treeExpanded for the same category of reason - a view
-        // transition invalidating state that belonged to the old context. hoveredNode/hoveredEdge
-        // are cleared directly (not just selection) because Tree view drives its own hover via
-        // treeView.handleMouseMove(), never CanvasController.handleMouseMove() - nothing else
-        // would ever clear a stale Graph-view hover for the rest of the Tree-view session.
+        // A lingering Graph-view selection would otherwise outrank the new tree edge-hover in
+        // RightPanel.updateContent()'s precedence (selectedNode > selectedEdge > hoveredNode >
+        // hoveredEdge > mode default), silently hiding this feature. Mirrors setStartNode()
+        // clearing treeExpanded for the same category of reason - a view transition invalidating
+        // state that belonged to the old context. Only cleared when ENTERING tree view (not on
+        // every call) since this method is also called by the onLeave.build/onLeave.policy
+        // mode-lifecycle hooks whenever Build/Policy mode is left entirely (e.g. to Values mode),
+        // and unconditionally wiping the user's Graph-view selection on every such mode switch
+        // would be a real, unwanted behavior change beyond this fix's scope.
         if (view === 'tree') {
             this.viewModel.selection.clearSelection();
-            this.viewModel.interaction.hoveredNode = null;
-            this.viewModel.interaction.hoveredEdge = null;
         }
+        // hoveredNode/hoveredEdge are cleared on BOTH directions (not just entering tree view):
+        // Graph view's own handleMouseMove() naturally re-populates them on the next real
+        // mouse-move regardless, but Tree view drives its own hover via treeView.handleMouseMove()
+        // and never touches these fields itself - so a real EdgeObj left over from a tree-edge
+        // hover could otherwise leak into Graph view's panel until the next Graph-view mouse-move
+        // happens to overwrite it (and vice versa on entry).
+        this.viewModel.interaction.hoveredNode = null;
+        this.viewModel.interaction.hoveredEdge = null;
     }
 
     // Toggles one tree position's expansion (expand if collapsed, collapse if expanded).
