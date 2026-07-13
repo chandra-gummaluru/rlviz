@@ -273,6 +273,17 @@ class TreeView {
             pop();
         }
 
+        // Either node kind can carry an uploaded image on its real underlying graph node (tree
+        // nodes are ephemeral per-position wrappers; the image lives on the shared real node, so
+        // multiple tree positions of a repeated state - and Build mode itself - share one decoded
+        // p5.Image rather than each loading their own copy). Build mode allows images on both state
+        // and action nodes (mainView.js's drawNodes() and RightPanel's Image section are both
+        // generic across node.type), so this mirrors that rather than restricting to states.
+        const realNodeId = node.kind === 'state' ? node.stateId : node.actionId;
+        const realNode = this.viewModel.graph.getNodeById(realNodeId);
+        const hasImage = !!(realNode && realNode.image);
+        const halfSize = node.kind === 'state' ? TREE_VIEW_STATE_RADIUS : TREE_VIEW_ACTION_HALF;
+
         push();
         if (node.kind === 'state') {
             fill(ColorUtils.applyAlpha(AppPalette.node.state, 220));
@@ -286,13 +297,48 @@ class TreeView {
             rect(node.x - TREE_VIEW_ACTION_HALF, node.y - TREE_VIEW_ACTION_HALF,
                 TREE_VIEW_ACTION_HALF * 2, TREE_VIEW_ACTION_HALF * 2, 6);
         }
-        noStroke();
-        fill(ColorUtils.contrastText(node.kind === 'state' ? AppPalette.node.state : AppPalette.node.action));
-        textAlign(CENTER, CENTER);
-        textSize(10);
-        textFont(Typography.sans());
-        text(node.name, node.x, node.y);
         pop();
+
+        if (hasImage) {
+            push();
+            imageMode(CENTER);
+            if (!realNode._imageObj) {
+                realNode._imageObj = loadImage(realNode.image);
+            }
+            if (realNode._imageObj && realNode._imageObj.width > 0) {
+                // Circular clip regardless of node shape (state circle or action square) - matches
+                // mainView.js's own Build-mode convention, which circle-clips images even inside a
+                // square action node.
+                drawingContext.save();
+                drawingContext.beginPath();
+                drawingContext.arc(node.x, node.y, halfSize * 0.8, 0, TWO_PI);
+                drawingContext.clip();
+                const imgSize = halfSize * 1.6;
+                image(realNode._imageObj, node.x, node.y, imgSize, imgSize);
+                drawingContext.restore();
+            }
+            pop();
+
+            // Name moves above the node instead of centered inside it, so it doesn't sit on top of
+            // the image - matches mainView.js's own Build-mode convention for imaged nodes.
+            push();
+            noStroke();
+            fill(AppPalette.text.black);
+            textAlign(CENTER, CENTER);
+            textSize(10);
+            textFont(Typography.sans());
+            text(node.name, node.x, node.y - halfSize - 8);
+            pop();
+        } else {
+            push();
+            noStroke();
+            fill(ColorUtils.contrastText(node.kind === 'state' ? AppPalette.node.state : AppPalette.node.action));
+            textAlign(CENTER, CENTER);
+            textSize(10);
+            textFont(Typography.sans());
+            text(node.name, node.x, node.y);
+            pop();
+        }
 
         if (node.hasChildren) {
             const center = this._badgeCenter(node);
@@ -322,13 +368,19 @@ class TreeView {
         copies.sort((a, b) => a.stateDepth - b.stateDepth);
         const first = copies[0];
 
+        // An imaged node already has its name label drawn at y - RADIUS - 8 (see _drawNode) -
+        // push this badge further up so the two don't overlap.
+        const realNode = this.viewModel.graph.getNodeById(first.stateId);
+        const hasImage = !!(realNode && realNode.image);
+        const yOffset = hasImage ? TREE_VIEW_STATE_RADIUS + 22 : TREE_VIEW_STATE_RADIUS + 8;
+
         push();
         textAlign(CENTER, BOTTOM);
         textSize(10);
         textFont(Typography.mono());
         fill(AppPalette.accent.yellow);
         noStroke();
-        text(`${first.name} — ${copies.length}× in tree`, first.x, first.y - TREE_VIEW_STATE_RADIUS - 8);
+        text(`${first.name} — ${copies.length}× in tree`, first.x, first.y - yOffset);
         pop();
     }
 
