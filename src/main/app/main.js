@@ -879,6 +879,10 @@ function setup() {
     treeViewPill = new TreeViewPill({
         onSelectView: (view) => {
             canvasController.setBuildCanvasView(view);
+            // setBuildCanvasView() already cleared any stale selection/hover fields above, but
+            // nothing else forces the panel's DOM to repaint until some later event - without this
+            // call the panel can keep showing a stale Graph-view hover/selection until the next
+            // unrelated event happens to trigger a refresh.
             rightPanel.updateContent();
             treeViewPill.refresh();
             redraw();
