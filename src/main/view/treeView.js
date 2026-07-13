@@ -247,7 +247,8 @@ class TreeView {
             // Reward-sign color + probability-proportional width, reusing this app's EXISTING
             // Action->State edge-width formula (1 + 4*probability, from mainView.js's own graph
             // rendering) rather than inventing a new one - no default text label anymore, the
-            // precise P(s'|s,a) value is revealed on hover instead (_drawEdgeHoverTooltip).
+            // precise P(s'|s,a) value is revealed on hover instead, via the right panel's edge
+            // inspector (RightPanel.renderEdgePanel), not an on-canvas tooltip.
             const rewardColor = child.incomingReward >= 0 ? AppPalette.reward.positive : AppPalette.reward.negative;
             stroke(rewardColor);
             strokeWeight(1 + 4 * child.incomingProbability);

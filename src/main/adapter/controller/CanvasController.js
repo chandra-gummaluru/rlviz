@@ -584,13 +584,18 @@ class CanvasController {
 
     setBuildCanvasView(view) {
         this.viewModel.buildCanvasView = view === 'tree' ? 'tree' : 'graph';
-        // A lingering Graph-view selection would otherwise outrank the new tree edge-hover in
-        // RightPanel.updateContent()'s precedence (selectedNode > selectedEdge > hoveredNode >
-        // hoveredEdge > mode default), silently hiding this feature. Mirrors setStartNode()
-        // clearing treeExpanded for the same category of reason - a view transition invalidating
-        // state that belonged to the old context.
+        // A lingering Graph-view selection or hover would otherwise outrank the new tree
+        // edge-hover in RightPanel.updateContent()'s precedence (selectedNode > selectedEdge >
+        // hoveredNode > hoveredEdge > mode default), silently hiding this feature. Mirrors
+        // setStartNode() clearing treeExpanded for the same category of reason - a view
+        // transition invalidating state that belonged to the old context. hoveredNode/hoveredEdge
+        // are cleared directly (not just selection) because Tree view drives its own hover via
+        // treeView.handleMouseMove(), never CanvasController.handleMouseMove() - nothing else
+        // would ever clear a stale Graph-view hover for the rest of the Tree-view session.
         if (view === 'tree') {
             this.viewModel.selection.clearSelection();
+            this.viewModel.interaction.hoveredNode = null;
+            this.viewModel.interaction.hoveredEdge = null;
         }
     }
 
