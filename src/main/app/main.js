@@ -879,6 +879,7 @@ function setup() {
     treeViewPill = new TreeViewPill({
         onSelectView: (view) => {
             canvasController.setBuildCanvasView(view);
+            rightPanel.updateContent();
             treeViewPill.refresh();
             redraw();
         }
