@@ -36,12 +36,14 @@ class TraceScrubber {
 
     mount(x, y, w) {
         this.destroy();
+        this._x = x || 0;
         this._width = w;
 
         const container = document.createElement('div');
         container.className = 'trace-scrubber';
         document.body.appendChild(container);
         this.containerEl = container;
+        this._applyBounds();
 
         const leftArrow = document.createElement('button');
         leftArrow.type = 'button';
@@ -131,7 +133,20 @@ class TraceScrubber {
     }
 
     resize(x, y, w) {
+        this._x = x || 0;
         this._width = w;
+        this._applyBounds();
+    }
+
+    // Centers the container within [x, x+w] (the canvas region, e.g. windowWidth -
+    // RIGHT_PANEL_WIDTH) rather than the full viewport - the CSS class only supplies bottom/
+    // display defaults, horizontal centering is computed here since the caller-supplied bounds
+    // narrow once the right panel is open.
+    _applyBounds() {
+        if (!this.containerEl) return;
+        const centerX = this._x + this._width / 2;
+        this.containerEl.style.left = centerX + 'px';
+        this.containerEl.style.transform = 'translateX(-50%)';
     }
 
     setTicks(labels) {
