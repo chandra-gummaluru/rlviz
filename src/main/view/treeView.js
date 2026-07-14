@@ -210,6 +210,11 @@ class TreeView {
             if (simState.phase === 'state_spinning_arrow') this._drawTreeStateSpinningArrow(current, simState);
             if (simState.phase === 'spinning_arrow') this._drawTreeSpinningArrow(current, simState);
         }
+
+        if (simState.phase === 'highlight' && current && ci + 1 < pathIds.length) {
+            const nextNode = pathMap.get(pathIds[ci + 1]);
+            if (nextNode) this._drawTreeTravelBall(current, nextNode, simState);
+        }
     }
 
     // Tree-positioned analogue of mainView.js's drawStateSpinningArrow() - same simState fields
@@ -284,6 +289,34 @@ class TreeView {
             const probLabel = `p = ${transition.probability.toFixed(2)}`;
             this._drawSpinLabel(midX, midY, probLabel, isHighlighted);
         });
+    }
+
+    // Tree-positioned analogue of SimulationRenderer.drawTravelBall() - always a straight lerp,
+    // no bidirectional-edge curve case (unlike Graph view, a tree position's "reverse" edge is a
+    // distinct pathId - never the literal same two tree nodes traversed in both directions).
+    _drawTreeTravelBall(fromNode, toNode, simState) {
+        const elapsed = Date.now() - simState.phaseStartTime;
+        const t = EasingUtils.easeInOut(Math.min(1, elapsed / simState.phaseDuration));
+
+        const dx = toNode.x - fromNode.x, dy = toNode.y - fromNode.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist === 0) return;
+        const nx = dx / dist, ny = dy / dist;
+        const fromHalf = fromNode.kind === 'state' ? TREE_VIEW_STATE_RADIUS : TREE_VIEW_ACTION_HALF;
+        const toHalf = toNode.kind === 'state' ? TREE_VIEW_STATE_RADIUS : TREE_VIEW_ACTION_HALF;
+
+        const ballX = lerp(fromNode.x + nx * fromHalf, toNode.x - nx * toHalf, t);
+        const ballY = lerp(fromNode.y + ny * fromHalf, toNode.y - ny * toHalf, t);
+
+        const r = 7;
+        noStroke();
+        fill(ColorUtils.applyAlpha(AppPalette.simulation.travelBall, 230));
+        circle(ballX, ballY, r * 2);
+        noFill();
+        stroke(ColorUtils.applyAlpha(AppPalette.simulation.travelBall, Math.round(120 * (1 - t))));
+        strokeWeight(2);
+        circle(ballX, ballY, r * 3);
+        drawingContext.setLineDash([]);
     }
 
     // Shared probability-label chip for both spinning-arrow variants above - a small rect behind
