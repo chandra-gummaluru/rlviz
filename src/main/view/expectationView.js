@@ -394,9 +394,20 @@ class ExpectationView {
         return focusedRollout.trace.map(entry => entry.name);
     }
 
+    // Focus-view ticks are one per RAW trace node (state AND action alternating, 2*numSteps+1
+    // entries - see _buildScrubberTicks()), while currentT is in TRANSITIONS (0..maxT). Grid
+    // view's plain numeric ticks are already 1:1 with currentT (no conversion needed there).
+    // Converts currentT -> the correct scrubber tick index for whichever view is showing.
+    _scrubberIndexForCurrentT() {
+        const vm = this.expectationViewModel;
+        return vm.focusedRunIndex !== null
+            ? this.expectationState.currentT * 2
+            : this.expectationState.currentT;
+    }
+
     _syncScrubber() {
         if (this._scrubber) {
-            this._scrubber.setPosition(this.expectationState.currentT);
+            this._scrubber.setPosition(this._scrubberIndexForCurrentT());
         }
     }
 
@@ -412,7 +423,8 @@ class ExpectationView {
         this._scrubberCallbacks = {
             onScrub: (index, isFinal) => {
                 this.stopPlay();
-                this.expectationState.currentT = index;
+                const vm = this.expectationViewModel;
+                this.expectationState.currentT = vm.focusedRunIndex !== null ? Math.floor(index / 2) : index;
                 if (typeof redraw === 'function') redraw();
                 this._notifyDataChanged();
             },
@@ -425,7 +437,7 @@ class ExpectationView {
         this._positionScrubberAboveDock();
         this._scrubber.show();
         this._scrubber.setTicks(this._buildScrubberTicks());
-        this._scrubber.setPosition(this.expectationState.currentT);
+        this._scrubber.setPosition(this._scrubberIndexForCurrentT());
         this._scrubber.setMaxSteps(this.expectationState.maxSteps);
     }
 
@@ -500,7 +512,10 @@ class ExpectationView {
         if (index < 0 || index >= state.getDisplaySlice().length) return;
         vm.focusedRunIndex = index;
         this._createBackButton();
-        if (this._scrubber) this._scrubber.setTicks(this._buildScrubberTicks());
+        if (this._scrubber) {
+            this._scrubber.setTicks(this._buildScrubberTicks());
+            this._scrubber.setPosition(this._scrubberIndexForCurrentT());
+        }
         this._notifyDataChanged();
         if (typeof redraw === 'function') redraw();
     }
@@ -511,7 +526,10 @@ class ExpectationView {
         vm.focusedRunIndex = null;
         this._removeBackButton();
         vm.invalidateLayout();
-        if (this._scrubber) this._scrubber.setTicks(this._buildScrubberTicks());
+        if (this._scrubber) {
+            this._scrubber.setTicks(this._buildScrubberTicks());
+            this._scrubber.setPosition(this._scrubberIndexForCurrentT());
+        }
         this._notifyDataChanged();
         if (typeof redraw === 'function') redraw();
     }
