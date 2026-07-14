@@ -216,15 +216,21 @@ class MainView {
             this.drawTextLabels();
         }
 
-        // Draw spinning arrow if in spinning arrow phase (action node) or state_spinning_arrow (state node)
-        if (this.viewModel.simulationState) {
+        // Draw spinning arrow if in spinning arrow phase (action node) or state_spinning_arrow
+        // (state node). Gated on NOT being in Tree view - these read real graph node world-
+        // coordinates (graph.getNodeById(id).x/.y), which are meaningless in Tree view's synthetic
+        // TreeLayout coordinate space. Tree view draws its own tree-positioned equivalents from
+        // inside treeView.draw() instead (see treeView.js's _drawTraceReveal(), added in Task 5-6
+        // of docs/superpowers/plans/2026-07-14-tree-view-simulation-animation.md).
+        const _inTreeView = this._isEditableMode() && this.viewModel.buildCanvasView === 'tree';
+        if (!_inTreeView && this.viewModel.simulationState) {
             const _phase = this.viewModel.simulationState.phase;
             if (_phase === 'spinning_arrow') this.drawSpinningArrow();
             if (_phase === 'state_spinning_arrow') this.drawStateSpinningArrow();
         }
 
         // Draw travel ball during edge_highlight phase
-        this.drawHighlightedEdgeTravelBall();
+        if (!_inTreeView) this.drawHighlightedEdgeTravelBall();
 
         pop();
 
