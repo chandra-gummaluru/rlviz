@@ -205,6 +205,106 @@ class TreeView {
                 if (showThisChild) this._drawNode(child, { isCurrent: false, showBadge: false });
             });
         }
+
+        if (current) {
+            if (simState.phase === 'state_spinning_arrow') this._drawTreeStateSpinningArrow(current, simState);
+            if (simState.phase === 'spinning_arrow') this._drawTreeSpinningArrow(current, simState);
+        }
+    }
+
+    // Tree-positioned analogue of mainView.js's drawStateSpinningArrow() - same simState fields
+    // and glyph, resolved against the current tree node's position/children instead of the real
+    // graph's pinned positions. Matches Graph view's existing probability-label text verbatim,
+    // including its pre-existing uniform-1/n-only quirk (see this plan's Global Constraints) -
+    // not a place to "fix" that, out of scope here.
+    _drawTreeStateSpinningArrow(current, simState) {
+        const edges = simState.spinningArrowEdges;
+        if (!edges || edges.length === 0) return;
+
+        const highlightedEdgeIndex = simState.getHighlightedEdgeByArrow();
+        const highlightedEdge = edges[highlightedEdgeIndex];
+
+        let arrowAngle = 0;
+        if (highlightedEdge) {
+            const targetAction = current.children.find(c => c.actionId === highlightedEdge.targetId);
+            if (targetAction) {
+                arrowAngle = atan2(targetAction.y - current.y, targetAction.x - current.x) + PI / 2;
+            }
+        }
+
+        push();
+        translate(current.x, current.y);
+        rotate(arrowAngle);
+        SpinningArrowGlyph.draw(TREE_VIEW_STATE_RADIUS);
+        pop();
+
+        const n = edges.length;
+        edges.forEach((edge, index) => {
+            const actionNode = current.children.find(c => c.actionId === edge.targetId);
+            if (!actionNode) return;
+
+            const midX = (current.x + actionNode.x) / 2;
+            const midY = (current.y + actionNode.y) / 2;
+            const isHighlighted = (index === highlightedEdgeIndex);
+            const probLabel = `p = ${(1 / n).toFixed(2)}`;
+            this._drawSpinLabel(midX, midY, probLabel, isHighlighted);
+        });
+    }
+
+    // Tree-positioned analogue of mainView.js's drawSpinningArrow() (action-node decision among
+    // outcome states) - same simState fields/glyph, resolved against tree positions.
+    _drawTreeSpinningArrow(current, simState) {
+        const actionNodeInGraph = this.viewModel.graph.getNodeById(current.actionId);
+        if (!actionNodeInGraph || !actionNodeInGraph.sas || actionNodeInGraph.sas.length === 0) return;
+
+        const highlightedEdgeIndex = simState.getHighlightedEdgeByArrow();
+        const highlightedTransition = actionNodeInGraph.sas[highlightedEdgeIndex];
+
+        let arrowAngle = 0;
+        if (highlightedTransition) {
+            const targetState = current.children.find(c => c.stateId === highlightedTransition.nextState);
+            if (targetState) {
+                arrowAngle = atan2(targetState.y - current.y, targetState.x - current.x) + PI / 2;
+            }
+        }
+
+        push();
+        translate(current.x, current.y);
+        rotate(arrowAngle);
+        SpinningArrowGlyph.draw(TREE_VIEW_ACTION_HALF);
+        pop();
+
+        actionNodeInGraph.sas.forEach((transition, index) => {
+            const targetState = current.children.find(c => c.stateId === transition.nextState);
+            if (!targetState) return;
+
+            const midX = (current.x + targetState.x) / 2;
+            const midY = (current.y + targetState.y) / 2;
+            const isHighlighted = (index === highlightedEdgeIndex);
+            const probLabel = `p = ${transition.probability.toFixed(2)}`;
+            this._drawSpinLabel(midX, midY, probLabel, isHighlighted);
+        });
+    }
+
+    // Shared probability-label chip for both spinning-arrow variants above - a small rect behind
+    // KaTeX-rendered text via the app's existing mathRenderer global (set up in main.js), matching
+    // Graph view's own label styling exactly, just at Tree view's smaller scale.
+    _drawSpinLabel(midX, midY, probLabel, isHighlighted) {
+        push();
+        noStroke();
+        if (isHighlighted) {
+            fill(ColorUtils.applyAlpha(AppPalette.simulation.spinLabelHighlight, 220));
+        } else {
+            fill(ColorUtils.applyAlpha(AppPalette.simulation.spinLabelBackground, 60));
+        }
+        rect(midX - 22, midY - 9, 44, 18, 4);
+        pop();
+
+        mathRenderer.draw(drawingContext, probLabel, midX, midY, {
+            color: isHighlighted ? AppPalette.text.black : AppPalette.edge.label,
+            em: isHighlighted ? 11 : 9,
+            alpha: isHighlighted ? 255 : 80
+        });
     }
 
     // Converts a tree-local (x, y) point into current screen coordinates, applying the same
