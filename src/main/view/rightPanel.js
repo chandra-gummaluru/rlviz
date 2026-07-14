@@ -1228,46 +1228,6 @@ class RightPanel {
         });
     }
 
-    // Max Steps as an interactive bar (was a plain number input) - same row layout as the
-    // gamma/t sliders. Range mirrors the old input's bounds (1-1000).
-    _renderExpectationMaxStepsBar(parentDiv) {
-        const state = this.expectationState;
-        const maxSteps = state ? state.maxSteps : 100;
-
-        const row = createDiv();
-        row.parent(parentDiv);
-        row.addClass('panel-param-row');
-
-        const label = createDiv('steps');
-        label.parent(row);
-        label.addClass('panel-param-row-label');
-
-        const slider = createElement('input');
-        slider.parent(row);
-        slider.attribute('type', 'range');
-        slider.attribute('min', '1');
-        slider.attribute('max', '100');
-        slider.attribute('step', '1');
-        slider.attribute('value', String(maxSteps));
-        slider.addClass('panel-param-row-slider');
-        slider.elt.addEventListener('mousedown', e => e.stopPropagation());
-        slider.elt.addEventListener('click', e => e.stopPropagation());
-        slider.elt.style.setProperty('--fill', (maxSteps - 1) / 99);
-
-        const value = createDiv(String(maxSteps));
-        value.parent(row);
-        value.addClass('panel-param-row-value');
-        value.addClass('panel-param-row-value--time');
-
-        slider.input(() => {
-            const steps = parseInt(slider.value(), 10);
-            if (state) state.maxSteps = steps;
-            value.html(String(steps));
-            slider.elt.style.setProperty('--fill', (steps - 1) / 99);
-            if (this.callbacks.onExpectationMaxStepsChange) this.callbacks.onExpectationMaxStepsChange(steps);
-        });
-    }
-
     // Steps and Utility G render as one section (Utility nests inside Steps, no separate
     // section title) per the design mockup - Total Reward has been removed entirely.
     _renderStepsAndUtility() {
@@ -2003,7 +1963,6 @@ class RightPanel {
             container.addClass('panel-section-content');
 
             this._renderExpectationGammaSlider(container);
-            this._renderExpectationMaxStepsBar(container);
         });
 
         this.renderInitialStateSection();

@@ -1,4 +1,3 @@
-const EXPECTATION_SCRUBBER_H = ExpectationScrubber.HEIGHT_PX;
 const EXPECTATION_LABEL_H = 18;
 const EXPECTATION_PADDING = 12;
 const EXPECTATION_ARROW_SIZE = 8;
@@ -22,6 +21,7 @@ class ExpectationView {
         // is supplied.
         this.getTickMs = options.getTickMs || (() => 250);
         this._scrubber = null;
+        this._scrubberCallbacks = null;
         this._playTimer = null;
         this._rightPanel = null;
         this._chartDock = null;
@@ -63,7 +63,7 @@ class ExpectationView {
         }
 
         if (vm.layoutStale) {
-            vm.computeLayout(canvasW, canvasH - EXPECTATION_SCRUBBER_H - EXPECTATION_TOP_CLEARANCE, state.displayRuns, this.graph, EXPECTATION_TOP_CLEARANCE);
+            vm.computeLayout(canvasW, canvasH - EXPECTATION_TOP_CLEARANCE, state.displayRuns, this.graph, EXPECTATION_TOP_CLEARANCE);
         }
         if (!vm.panelLayout) {
             this._drawEmptyPrompt(canvasW, canvasH);
@@ -369,9 +369,34 @@ class ExpectationView {
         this._notifyDataChanged();
     }
 
+    // Grid view (no single focused run) has no one canonical path to label ticks with, so it
+    // falls back to plain numeric labels ("0","1","2"...) - matching today's existing behavior.
+    // Focus view (one pinned/hovered run) labels ticks with that rollout's real state/action
+    // names, mirroring Build/Policy's trace-based ticks exactly.
+    _buildScrubberTicks() {
+        const vm = this.expectationViewModel;
+        const focusedRollout = vm.focusedRunIndex !== null
+            ? this.expectationState.getDisplaySlice()[vm.focusedRunIndex]
+            : null;
+
+        if (!focusedRollout) {
+            const maxT = this.expectationState.maxT || 0;
+            const ticks = [];
+            for (let t = 0; t <= maxT; t++) ticks.push(String(t));
+            return ticks;
+        }
+
+        // focusedRollout.trace is produced by TraceGenerator.generate() - the exact same
+        // {id, type, name} shape SimulationState.visited uses for Build/Policy (confirmed by
+        // reading runExpectationInteractor.js/traceGenerator.js), and
+        // rollouts.push({ trace, rewards, utilities, numSteps }) confirms `.trace` is the field
+        // name.
+        return focusedRollout.trace.map(entry => entry.name);
+    }
+
     _syncScrubber() {
         if (this._scrubber) {
-            this._scrubber.updatePosition(this.expectationState.currentT);
+            this._scrubber.setPosition(this.expectationState.currentT);
         }
     }
 
@@ -379,27 +404,49 @@ class ExpectationView {
         this._removeScrubber();
         this._topOffset = topOffset;
 
-        this._scrubber = new ExpectationScrubber(this.expectationState, (t, isFinal) => {
-            this.stopPlay();
-            this.expectationState.currentT = t;
-            if (typeof redraw === 'function') redraw();
-            this._notifyDataChanged();
-        });
+        // Reuses the single shared mainView.traceScrubber instance (constructed once in
+        // main.js, Task 3) rather than constructing a private one - the whole point of the
+        // shared component. Reassigns its callbacks to Monte Carlo's own handlers while this
+        // sub-view is active.
+        this._scrubber = mainView.traceScrubber;
+        this._scrubberCallbacks = {
+            onScrub: (index, isFinal) => {
+                this.stopPlay();
+                this.expectationState.currentT = index;
+                if (typeof redraw === 'function') redraw();
+                this._notifyDataChanged();
+            },
+            onMaxStepsChange: (value) => {
+                this.expectationState.maxSteps = value;
+            }
+        };
+        this._scrubber.callbacks = this._scrubberCallbacks;
+        this._scrubber.resize(0, 0, canvasW);
+        this._positionScrubberAboveDock();
+        this._scrubber.show();
+        this._scrubber.setTicks(this._buildScrubberTicks());
+        this._scrubber.setPosition(this.expectationState.currentT);
+        this._scrubber.setMaxSteps(this.expectationState.maxSteps);
+    }
 
-        const y = topOffset + canvasH - EXPECTATION_SCRUBBER_H;
-        this._scrubber.mount(0, y, canvasW);
-
-        const vm = this.expectationViewModel;
-        const focusedRollout = vm.focusedRunIndex !== null
-            ? this.expectationState.getDisplaySlice()[vm.focusedRunIndex]
-            : null;
-        this._scrubber.setRolloutForRewardDots(focusedRollout);
+    // TraceScrubber's own CSS anchors it a fixed 16px above the viewport bottom - fine for
+    // Build/Policy (nothing else docked there), but Monte Carlo also shows the bottom chart
+    // dock, which would otherwise render on top of (and hide) the scrubber (chart-dock's
+    // z-index is higher, and the two floating elements occupy the same screen region). Lifts
+    // the shared instance above the dock's current reserved height via its public `containerEl`
+    // - not a change to TraceScrubber itself, just how this consumer positions the shared
+    // instance while it owns it. Reset back to the CSS default in _removeScrubber() so
+    // Build/Policy (which has no dock) is unaffected.
+    _positionScrubberAboveDock() {
+        if (!this._scrubber || !this._scrubber.containerEl) return;
+        const dockH = this._chartDock ? this._chartDock.getReservedHeight() : 0;
+        this._scrubber.containerEl.style.bottom = (dockH + 16) + 'px';
     }
 
     updateScrubberMax() {
         if (!this._scrubber) return;
-        this._scrubber.rebuildForNewMaxT();
-        this._scrubber.updatePosition(0);
+        this._scrubber.setTicks(this._buildScrubberTicks());
+        this._scrubber.setPosition(0);
     }
 
     handleClick(mx, my) {
@@ -453,7 +500,7 @@ class ExpectationView {
         if (index < 0 || index >= state.getDisplaySlice().length) return;
         vm.focusedRunIndex = index;
         this._createBackButton();
-        if (this._scrubber) this._scrubber.setRolloutForRewardDots(state.getDisplaySlice()[index]);
+        if (this._scrubber) this._scrubber.setTicks(this._buildScrubberTicks());
         this._notifyDataChanged();
         if (typeof redraw === 'function') redraw();
     }
@@ -464,7 +511,7 @@ class ExpectationView {
         vm.focusedRunIndex = null;
         this._removeBackButton();
         vm.invalidateLayout();
-        if (this._scrubber) this._scrubber.setRolloutForRewardDots(null);
+        if (this._scrubber) this._scrubber.setTicks(this._buildScrubberTicks());
         this._notifyDataChanged();
         if (typeof redraw === 'function') redraw();
     }
@@ -498,7 +545,7 @@ class ExpectationView {
         const rollout = state.getDisplaySlice()[vm.focusedRunIndex];
         if (!rollout) return;
 
-        const availH = canvasH - EXPECTATION_SCRUBBER_H - EXPECTATION_TOP_CLEARANCE;
+        const availH = canvasH - EXPECTATION_TOP_CLEARANCE;
         const fitTransform = this.expectationViewModel._computeFitTransform(this.graph, canvasW, availH);
         if (!fitTransform) return;
 
@@ -559,18 +606,22 @@ class ExpectationView {
         this._imageCache.clear();
     }
 
+    // Hides the shared scrubber and clears this view's local reference/callbacks - does NOT
+    // destroy it, since it's a single instance shared with Build/Policy (mainView.traceScrubber).
     _removeScrubber() {
         if (this._scrubber) {
-            this._scrubber.destroy();
-            this._scrubber = null;
+            if (this._scrubber.containerEl) this._scrubber.containerEl.style.bottom = '';
+            this._scrubber.hide();
         }
+        this._scrubber = null;
+        this._scrubberCallbacks = null;
     }
 
     resize(canvasW, canvasH, topOffset) {
         this._topOffset = topOffset;
         if (this._scrubber) {
-            const y = topOffset + canvasH - EXPECTATION_SCRUBBER_H;
-            this._scrubber.resize(0, y, canvasW);
+            this._scrubber.resize(0, 0, canvasW);
+            this._positionScrubberAboveDock();
         }
         this.expectationViewModel.invalidateLayout();
     }

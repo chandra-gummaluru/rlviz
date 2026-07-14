@@ -106,6 +106,13 @@ let viSweepChip;
 let learningTreePill;
 let treeViewPill;
 let traceScrubber;
+// Build/Policy's own TraceScrubber callbacks (Task 3) - kept as a named reference so the
+// onEnter.build/policy mode-lifecycle hooks below can re-assert ownership of the single shared
+// traceScrubber instance's `callbacks` property whenever Build/Policy is (re-)entered. Monte
+// Carlo (expectationView.js) reassigns `.callbacks` to its own handlers while its sub-view is
+// active (Task 4) - without this, dragging the scrubber after a Values -> Monte Carlo visit
+// would keep calling Monte Carlo's callbacks instead of jumping the Build/Policy simulation.
+let buildPolicyScrubberCallbacks;
 
 // Simulation Presenter (needs ViewModel and MainView references, created in setup)
 let simulationPresenter;
@@ -400,6 +407,14 @@ canvasController.registerModeLifecycle({
                 treeViewPill.show();
             }
             if (traceScrubber) {
+                // Monte Carlo (Values mode) reassigns the shared instance's callbacks/ticks to
+                // its own while active (see expectationView.js) - reassert Build/Policy's own
+                // ownership here so a prior Values -> Monte Carlo visit doesn't leave Build's
+                // scrubber silently driving expectationState instead of the simulation.
+                traceScrubber.callbacks = buildPolicyScrubberCallbacks;
+                traceScrubber.setTicks(simulationState.visited.map(entry => entry.name));
+                traceScrubber.setPosition(simulationState.currentIndex);
+                traceScrubber.setMaxSteps(simulationState.maxSteps);
                 traceScrubber.resize(0, 0, windowWidth - mainView.RIGHT_PANEL_WIDTH);
                 // A trace generated before leaving Build/Policy (e.g. via Values mode, or the
                 // other of this pair) survives the round trip - simulationState isn't reset by
@@ -416,6 +431,10 @@ canvasController.registerModeLifecycle({
                 treeViewPill.show();
             }
             if (traceScrubber) {
+                traceScrubber.callbacks = buildPolicyScrubberCallbacks;
+                traceScrubber.setTicks(simulationState.visited.map(entry => entry.name));
+                traceScrubber.setPosition(simulationState.currentIndex);
+                traceScrubber.setMaxSteps(simulationState.maxSteps);
                 traceScrubber.resize(0, 0, windowWidth - mainView.RIGHT_PANEL_WIDTH);
                 if (simulationState.replayInitialized) traceScrubber.show();
             }
@@ -854,7 +873,7 @@ function setup() {
     zoomPill.updateBounds(mainView.RIGHT_PANEL_WIDTH);
     zoomPill.show();
 
-    traceScrubber = new TraceScrubber({
+    buildPolicyScrubberCallbacks = {
         onScrub: (index, isFinal) => {
             canvasController.jumpSimulationToIndex(index);
             if (rightPanel) rightPanel.updateContent();
@@ -864,7 +883,8 @@ function setup() {
         onMaxStepsChange: (value) => {
             simulationState.maxSteps = value;
         }
-    });
+    };
+    traceScrubber = new TraceScrubber(buildPolicyScrubberCallbacks);
     traceScrubber.mount(0, 0, windowWidth - mainView.RIGHT_PANEL_WIDTH);
     traceScrubber.hide();
     mainView.traceScrubber = traceScrubber;
