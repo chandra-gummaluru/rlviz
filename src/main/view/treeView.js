@@ -25,6 +25,7 @@ class TreeView {
         this._hoveredEdgeKey = null;
         this._usableWidth = 900; // corrected by the first real draw(usableWidth) call
         this._wasSimulating = false;
+        this._panWasAutoFollowed = false;
     }
 
     _isSimulating() {
@@ -109,6 +110,7 @@ class TreeView {
         if (this._wasSimulating && !nowSimulating) {
             this.viewModel.viewport.panX = 0;
             this.viewModel.viewport.panY = 0;
+            this._panWasAutoFollowed = false;
         }
         this._wasSimulating = nowSimulating;
 
@@ -345,6 +347,7 @@ class TreeView {
     // already pinned/user-arranged and never need to be followed.
     _followCamera(current, simState) {
         if (simState.phase !== 'transition' || !current) return;
+        this._panWasAutoFollowed = true;
         const viewport = this.viewModel.viewport;
         const targetScreenX = (this._usableWidth + TREE_VIEW_ANCHOR_X) * 0.4;
         const targetScreenY = height / 2;
@@ -357,6 +360,19 @@ class TreeView {
         const t = EasingUtils.easeInOut(Math.min(1, elapsed / simState.phaseDuration));
         viewport.panX = lerp(viewport.panX, targetPanX, t);
         viewport.panY = lerp(viewport.panY, targetPanY, t);
+    }
+
+    // Called by mainView.js when the user switches AWAY from Tree view (Graph pill, or leaving
+    // Build/Policy mode entirely) - resets ONLY the pan camera-follow (_followCamera) may have
+    // moved, never zoom, and only if camera-follow actually ran at least once since the last
+    // reset. Needed because _followCamera mutates the SHARED viewModel.viewport, which Graph view
+    // also renders through - without this, switching to Graph mid-run (before Reset) strands the
+    // real graph off-canvas at wherever the tree's follow-pan last left it.
+    resetPanIfAutoFollowed() {
+        if (!this._panWasAutoFollowed) return;
+        this.viewModel.viewport.panX = 0;
+        this.viewModel.viewport.panY = 0;
+        this._panWasAutoFollowed = false;
     }
 
     // Shared probability-label chip for both spinning-arrow variants above - a small rect behind
@@ -654,7 +670,7 @@ class TreeView {
         } else {
             push();
             noStroke();
-            fill(ColorUtils.contrastText(node.kind === 'state' ? AppPalette.node.state : AppPalette.node.action));
+            fill(ColorUtils.contrastText(baseFill));
             textAlign(CENTER, CENTER);
             textSize(10);
             textFont(Typography.sans());

@@ -92,6 +92,12 @@ class MainView {
         // Cached dot-grid background layer; rebuilt on resize/theme change, not every redraw()
         this._dotGridLayer = null;
         this._dotGridTheme = null;
+
+        // Tracks whether the previous frame was rendering Tree view - used to detect the
+        // Tree -> non-Tree transition (Graph pill, or leaving Build/Policy mode entirely) so any
+        // camera-follow pan Tree view left on the SHARED viewModel.viewport can be reset before
+        // Graph view (which renders through that same viewport) picks it up.
+        this._wasInTreeView = false;
     }
 
     // Policy's canvas is identical to Build's (fully editable - only the right panel differs),
@@ -223,6 +229,10 @@ class MainView {
         // inside treeView.draw() instead (see treeView.js's _drawTraceReveal(), added in Task 5-6
         // of docs/superpowers/plans/2026-07-14-tree-view-simulation-animation.md).
         const _inTreeView = this._isEditableMode() && this.viewModel.buildCanvasView === 'tree';
+        if (this._wasInTreeView && !_inTreeView && this.treeView) {
+            this.treeView.resetPanIfAutoFollowed();
+        }
+        this._wasInTreeView = _inTreeView;
         if (!_inTreeView && this.viewModel.simulationState) {
             const _phase = this.viewModel.simulationState.phase;
             if (_phase === 'spinning_arrow') this.drawSpinningArrow();
