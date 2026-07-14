@@ -79,6 +79,9 @@ class MainView {
         // Floating zoom pill (set after construction)
         this.zoomPill = null;
 
+        // Floating bottom-center trace scrubber, Build/Policy mode only (set after construction)
+        this.traceScrubber = null;
+
         // Floating Values-mode estimator pill (set after construction)
         this.estimatorPill = null;
 
@@ -1331,6 +1334,7 @@ class MainView {
         if (this.mcRunsPill) this.mcRunsPill.updateBounds(0, windowWidth - this.RIGHT_PANEL_WIDTH);
         if (this.viSweepChip) this.viSweepChip.updateBounds(0, windowWidth - this.RIGHT_PANEL_WIDTH);
         if (this.learningTreePill) this.learningTreePill.updateBounds(0, windowWidth - this.RIGHT_PANEL_WIDTH);
+        if (this.traceScrubber) this.traceScrubber.resize(0, 0, windowWidth - this.RIGHT_PANEL_WIDTH);
         const valuesHeight = canvasHeight - this.getDockHeight();
         const paneWidths = this._valuesPaneWidths(canvasWidth);
         this._relayoutValueIterationIfActive(paneWidths.vi, valuesHeight);
@@ -1365,6 +1369,7 @@ class MainView {
         if (this.mcRunsPill) this.mcRunsPill.updateBounds(0, windowWidth - this.RIGHT_PANEL_WIDTH);
         if (this.viSweepChip) this.viSweepChip.updateBounds(0, windowWidth - this.RIGHT_PANEL_WIDTH);
         if (this.learningTreePill) this.learningTreePill.updateBounds(0, windowWidth - this.RIGHT_PANEL_WIDTH);
+        if (this.traceScrubber) this.traceScrubber.resize(0, 0, windowWidth - this.RIGHT_PANEL_WIDTH);
         const valuesHeight = canvasHeight - this.getDockHeight();
         const paneWidths = this._valuesPaneWidths(canvasWidth);
         this._relayoutValueIterationIfActive(paneWidths.vi, valuesHeight);

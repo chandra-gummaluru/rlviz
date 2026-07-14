@@ -105,6 +105,7 @@ let mcRunsPill;
 let viSweepChip;
 let learningTreePill;
 let treeViewPill;
+let traceScrubber;
 
 // Simulation Presenter (needs ViewModel and MainView references, created in setup)
 let simulationPresenter;
@@ -380,11 +381,13 @@ canvasController.registerModeLifecycle({
         build: () => {
             if (mainView && mainView.toolPalette) mainView.toolPalette.hide();
             if (treeViewPill) treeViewPill.hide();
+            if (traceScrubber) traceScrubber.hide();
             canvasController.setBuildCanvasView('graph');
         },
         policy: () => {
             if (mainView && mainView.toolPalette) mainView.toolPalette.hide();
             if (treeViewPill) treeViewPill.hide();
+            if (traceScrubber) traceScrubber.hide();
             canvasController.setBuildCanvasView('graph');
         }
     },
@@ -396,6 +399,14 @@ canvasController.registerModeLifecycle({
                 treeViewPill.updateBounds(0, windowWidth - mainView.RIGHT_PANEL_WIDTH);
                 treeViewPill.show();
             }
+            if (traceScrubber) {
+                traceScrubber.resize(0, 0, windowWidth - mainView.RIGHT_PANEL_WIDTH);
+                // A trace generated before leaving Build/Policy (e.g. via Values mode, or the
+                // other of this pair) survives the round trip - simulationState isn't reset by
+                // these mode-lifecycle hooks - so re-show immediately rather than waiting for
+                // another presentInitializationComplete() that may never come.
+                if (simulationState.replayInitialized) traceScrubber.show();
+            }
         },
         policy: () => {
             if (mainView && mainView.toolPalette) mainView.toolPalette.show();
@@ -403,6 +414,10 @@ canvasController.registerModeLifecycle({
             if (treeViewPill) {
                 treeViewPill.updateBounds(0, windowWidth - mainView.RIGHT_PANEL_WIDTH);
                 treeViewPill.show();
+            }
+            if (traceScrubber) {
+                traceScrubber.resize(0, 0, windowWidth - mainView.RIGHT_PANEL_WIDTH);
+                if (simulationState.replayInitialized) traceScrubber.show();
             }
         },
         // Cold-entry into Values mode (e.g. clicking the collapsed slot) runs whatever the
@@ -839,6 +854,21 @@ function setup() {
     zoomPill.updateBounds(mainView.RIGHT_PANEL_WIDTH);
     zoomPill.show();
 
+    traceScrubber = new TraceScrubber({
+        onScrub: (index, isFinal) => {
+            canvasController.jumpSimulationToIndex(index);
+            if (rightPanel) rightPanel.updateContent();
+            if (topBar) topBar.updateButtonStates(simulationState.isPlaying, simulationState.canAdvance());
+            redraw();
+        },
+        onMaxStepsChange: (value) => {
+            simulationState.maxSteps = value;
+        }
+    });
+    traceScrubber.mount(0, 0, windowWidth - mainView.RIGHT_PANEL_WIDTH);
+    traceScrubber.hide();
+    mainView.traceScrubber = traceScrubber;
+
     estimatorPill = new EstimatorPill({
         onSelectSubView: onValuesSubViewChange
     }, canvasViewModel);
@@ -913,6 +943,7 @@ function setup() {
     // Create simulation presenter and interactors
     simulationPresenter = new SimulationPresenter(canvasViewModel);
     simulationPresenter.setTopBar(topBar);
+    simulationPresenter.setTraceScrubber(traceScrubber);
     simulationPresenter.setParticleCallbacks(
         (reward, nodeId) => mainView.launchRewardParticles(reward, nodeId),
         () => { if (mainView.rewardParticleSystem) mainView.rewardParticleSystem.destroy(); }

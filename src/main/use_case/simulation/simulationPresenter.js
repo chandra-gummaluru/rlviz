@@ -4,12 +4,17 @@ class SimulationPresenter extends SimulationOutputBoundary {
         super();
         this.viewModel = canvasViewModel;
         this.topBar = null;
+        this.traceScrubber = null;
         this._onLaunchParticles = null;
         this._onDestroyParticles = null;
     }
 
     setTopBar(topBar) {
         this.topBar = topBar;
+    }
+
+    setTraceScrubber(traceScrubber) {
+        this.traceScrubber = traceScrubber;
     }
 
     setParticleCallbacks(launchCb, destroyCb) {
@@ -26,6 +31,12 @@ class SimulationPresenter extends SimulationOutputBoundary {
         const isPlaying = this.viewModel.simulationState.isPlaying;
         const canAdvance = this.viewModel.simulationState.canAdvance();
         if (this.topBar) this.topBar.updateButtonStates(isPlaying, canAdvance);
+        if (this.traceScrubber) {
+            this.traceScrubber.setTicks(this._buildTickLabels());
+            this.traceScrubber.setPosition(this.viewModel.simulationState.currentIndex);
+            this.traceScrubber.setMaxSteps(this.viewModel.simulationState.maxSteps);
+            this.traceScrubber.show();
+        }
         redraw();
     }
 
@@ -37,6 +48,7 @@ class SimulationPresenter extends SimulationOutputBoundary {
         const isPlaying = this.viewModel.simulationState.isPlaying;
         const canAdvance = this.viewModel.simulationState.canAdvance();
         if (this.topBar) this.topBar.updateButtonStates(isPlaying, canAdvance);
+        if (this.traceScrubber) this.traceScrubber.setPosition(this.viewModel.simulationState.currentIndex);
         redraw();
     }
 
@@ -87,5 +99,10 @@ class SimulationPresenter extends SimulationOutputBoundary {
         const canAdvance = this.viewModel.simulationState.canAdvance();
         if (this.topBar) this.topBar.updateButtonStates(false, canAdvance);
         redraw();
+    }
+
+    // Builds one tick label per trace entry ("S0", "a0", "S1", ...) from SimulationState.visited.
+    _buildTickLabels() {
+        return this.viewModel.simulationState.visited.map(entry => entry.name);
     }
 }

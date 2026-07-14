@@ -166,15 +166,15 @@ class RightPanel {
 
     // Build mode's default (nothing selected/hovered) inspector content: Parameters, Initial
     // State, Policy π, then Utility G - in that order per the unified Build/Values workspace
-    // spec. Steps is no longer shown as its own big number (see _renderStepsAndUtility) - the t
-    // progress bar below already shows how far into the episode the simulation is.
+    // spec. Steps is no longer shown as its own big number (see _renderStepsAndUtility) - the
+    // floating TraceScrubber (mainView.traceScrubber) now shows how far into the episode the
+    // simulation is, replacing this panel's old read-only "t" progress bar.
     renderBuildPanel() {
         this.createSection('Parameters', () => {
             const paramsDiv = createDiv();
             paramsDiv.parent(this.contentContainer);
             paramsDiv.addClass('panel-section-content');
             this._renderGammaSlider(paramsDiv);
-            this._renderTProgressBar(paramsDiv);
         });
 
         this.renderInitialStateSection();
@@ -264,7 +264,6 @@ class RightPanel {
             paramsDiv.parent(this.contentContainer);
             paramsDiv.addClass('panel-section-content');
             this._renderGammaSlider(paramsDiv);
-            this._renderTProgressBar(paramsDiv);
         });
 
         this.renderInitialStateSection();
@@ -1186,41 +1185,6 @@ class RightPanel {
             this.updateContent();
             if (typeof redraw === 'function') redraw();
         });
-    }
-
-    // Build mode's read-only "t" progress bar - fills as the running simulation's step count
-    // increases (v1: no scrub-to-any-step control, matching γ's row layout). A plain div bar,
-    // not a styled <input type=range>: Chrome drops the accent-color fill entirely on disabled
-    // range inputs (renders as a flat, valueless gray capsule regardless of position), so a div
-    // is the only reliable way to show real progress here. A nominal max of 20 (matching the
-    // design mockup's t range) sets the bar's fill scale; the numeric readout still shows the
-    // real step count past that point even though the bar itself clamps at 100%.
-    _renderTProgressBar(parentDiv) {
-        const T_BAR_MAX = 20;
-        const stepCount = this.viewModel.simulationState.getSimulationStats().stepCount;
-        const pct = Math.max(0, Math.min(100, (stepCount / T_BAR_MAX) * 100));
-
-        const row = createDiv();
-        row.parent(parentDiv);
-        row.addClass('panel-param-row');
-
-        const label = createDiv('t');
-        label.parent(row);
-        label.addClass('panel-param-row-label');
-
-        const track = createDiv();
-        track.parent(row);
-        track.addClass('panel-t-progress-track');
-
-        const fill = createDiv();
-        fill.parent(track);
-        fill.addClass('panel-t-progress-fill');
-        fill.style('width', pct + '%');
-
-        const value = createDiv(String(stepCount));
-        value.parent(row);
-        value.addClass('panel-param-row-value');
-        value.addClass('panel-param-row-value--time');
     }
 
     // Same row layout/fill-pct pattern as _renderGammaSlider, but bound to

@@ -616,6 +616,15 @@ class CanvasController {
         }
     }
 
+    // Instantly jumps the active Build/Policy simulation to an arbitrary trace position (used by
+    // TraceScrubber's drag-to-scrub and stepper-arrow interactions) - bypasses the normal phase-
+    // by-phase animation advance() drives. No-op if no trace exists yet.
+    jumpSimulationToIndex(index) {
+        const simState = this.viewModel.simulationState;
+        if (!simState || !simState.replayInitialized) return;
+        simState.jumpToIndex(index, this.viewModel.graph);
+    }
+
     // Sets (or, when actionId is null/undefined, clears back to "random") the policy action
     // for a state. Shared by Build's Policy π section, Simulate's trace generation, and Monte
     // Carlo's policy snapshot - simulationState.policy remains the single source of truth.
