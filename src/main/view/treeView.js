@@ -35,6 +35,38 @@ class TreeView {
         return TreeLayout.build(this.viewModel.graph, startNode.id, this.viewModel.treeExpanded, 1, this._usableWidth);
     }
 
+    // Maps each index of simulationState.visited to its exact pathId in the full unrolled tree,
+    // by walking the trace and the domain graph in lockstep - TreeLayout.build() iterates
+    // graph.actions/.sas in this exact same order when constructing children, so the two never
+    // desync by construction (both ultimately read the same arrays off the same graph). Returns a
+    // pathId array parallel to `visited`, truncated at the first index where a match can't be
+    // found (defensive - should never happen with a well-formed trace, but must not crash
+    // rendering if it somehow did).
+    _traceStepToPathId(visited, graph) {
+        if (!visited || visited.length === 0) return [];
+        const pathIds = ['s0'];
+        for (let i = 1; i < visited.length; i++) {
+            const prevEntry = visited[i - 1];
+            const entry = visited[i];
+            const prevPathId = pathIds[i - 1];
+
+            if (entry.type === 'action') {
+                const stateNodeInGraph = graph.getNodeById(prevEntry.id);
+                const ai = (stateNodeInGraph && stateNodeInGraph.actions)
+                    ? stateNodeInGraph.actions.indexOf(entry.id) : -1;
+                if (ai < 0) break;
+                pathIds.push(`${prevPathId}.a${ai}`);
+            } else {
+                const actionNodeInGraph = graph.getNodeById(prevEntry.id);
+                const ti = (actionNodeInGraph && actionNodeInGraph.sas)
+                    ? actionNodeInGraph.sas.findIndex(t => t.nextState === entry.id) : -1;
+                if (ti < 0) break;
+                pathIds.push(`${prevPathId}.${ti}`);
+            }
+        }
+        return pathIds;
+    }
+
     // usableWidth is the canvas's usable width (windowWidth - RIGHT_PANEL_WIDTH, passed by
     // mainView.js). We reserve TREE_VIEW_ANCHOR_X out of that budget before it reaches
     // TreeLayout's thirds computation, since draw() also translates everything right by that same
