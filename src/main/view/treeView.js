@@ -20,7 +20,8 @@ const TREE_VIEW_EDGE_HOVER_PX = 6; // screen-pixel hover tolerance for edge hit-
 class TreeView {
     constructor(canvasViewModel) {
         this.viewModel = canvasViewModel;
-        this.hoveredStateId = null;
+        this.hoveredNode = null;
+        this._hoveredNodeKey = null;
         this.hoveredEdge = null;
         this._hoveredEdgeKey = null;
         this._usableWidth = 900; // corrected by the first real draw(usableWidth) call
@@ -138,7 +139,6 @@ class TreeView {
         });
         // Nodes second.
         TreeLayout.forEach(tree, node => this._drawNode(node));
-        this._drawHoverBadge(tree);
     }
 
     // Builds a pathId -> TreeNode lookup map for one tree (used by _drawTraceReveal to resolve
@@ -511,30 +511,33 @@ class TreeView {
 
     // Public entry point for mainView.js's mouseMoved(). Returns true if either hover target
     // changed (caller should redraw), following ExpectationView.handleMouseMove's convention.
-    // Node-hover (repeated-state ring + badge) and edge-hover (P(s'|s,a) tooltip) are mutually
-    // exclusive per mouse position - edge-hover is only checked when no node is under the cursor.
+    // Node-hover and edge-hover both feed the right panel (via realHoveredNode/realHoveredEdge
+    // below) and are mutually exclusive per mouse position - edge-hover is only checked when no
+    // node is under the cursor.
     handleMouseMove(screenX, screenY) {
         if (this._isSimulating()) {
             // Clear any hover state left over from before Play started - returns true exactly
             // once (the frame that actually clears something), so the caller redraws to remove a
-            // lingering ring/tooltip, then false on subsequent calls (no wasted redraws).
-            const hadHover = this.hoveredStateId !== null || this.hoveredEdge !== null;
-            this.hoveredStateId = null;
+            // lingering right-panel preview, then false on subsequent calls (no wasted redraws).
+            const hadHover = this.hoveredNode !== null || this.hoveredEdge !== null;
+            this.hoveredNode = null;
+            this._hoveredNodeKey = null;
             this.hoveredEdge = null;
             this._hoveredEdgeKey = null;
             return hadHover;
         }
 
         const node = this._hitTest(screenX, screenY);
-        const newHoveredStateId = (node && node.kind === 'state') ? node.stateId : null;
+        const newHoveredNodeKey = node ? node.pathId : null;
 
-        const edgeHit = newHoveredStateId === null ? this._hitTestEdge(screenX, screenY) : null;
+        const edgeHit = newHoveredNodeKey === null ? this._hitTestEdge(screenX, screenY) : null;
         const newHoveredEdgeKey = edgeHit ? edgeHit.childStateNode.pathId : null;
 
-        const changed = (newHoveredStateId !== this.hoveredStateId) ||
+        const changed = (newHoveredNodeKey !== this._hoveredNodeKey) ||
             (newHoveredEdgeKey !== this._hoveredEdgeKey);
 
-        this.hoveredStateId = newHoveredStateId;
+        this.hoveredNode = node;
+        this._hoveredNodeKey = newHoveredNodeKey;
         this.hoveredEdge = edgeHit;
         this._hoveredEdgeKey = newHoveredEdgeKey;
         return changed;
@@ -552,6 +555,17 @@ class TreeView {
         return this.viewModel.graph.edges.find(e =>
             e.getFromNode().id === actionNode.actionId && e.getToNode().id === childStateNode.stateId
         ) || null;
+    }
+
+    // The real graph Node (state or action) for the currently-hovered tree node, or null. Mirrors
+    // realHoveredEdge's approach - resolves the tree's ephemeral per-position node back to the one
+    // real underlying domain node, so RightPanel's existing hoveredNode-based readOnly inspector
+    // (the same one Graph view's own node hover already drives) renders identically for Tree view,
+    // without RightPanel needing any Tree-specific code.
+    get realHoveredNode() {
+        if (!this.hoveredNode) return null;
+        const realId = this.hoveredNode.kind === 'state' ? this.hoveredNode.stateId : this.hoveredNode.actionId;
+        return this.viewModel.graph.getNodeById(realId) || null;
     }
 
     _toggle(pathId) {
@@ -606,17 +620,6 @@ class TreeView {
 
     _drawNode(node, opts = {}) {
         const { isCurrent = false, showBadge = true } = opts;
-        const isHoveredState = !this._isSimulating() && node.kind === 'state' &&
-            this.hoveredStateId !== null && node.stateId === this.hoveredStateId;
-
-        if (isHoveredState) {
-            push();
-            noFill();
-            stroke(AppPalette.accent.yellow);
-            strokeWeight(3);
-            circle(node.x, node.y, (TREE_VIEW_STATE_RADIUS + 5) * 2);
-            pop();
-        }
 
         // Either node kind can carry an uploaded image on its real underlying graph node (tree
         // nodes are ephemeral per-position wrappers; the image lives on the shared real node, so
@@ -693,33 +696,6 @@ class TreeView {
             text(node.isCollapsed ? '+' : '−', center.x, center.y - 0.5);
             pop();
         }
-    }
-
-    // Small "S2 - 2x" badge drawn once, above the FIRST (shallowest) copy of the hovered state.
-    _drawHoverBadge(tree) {
-        if (this.hoveredStateId === null) return;
-        const copies = [];
-        TreeLayout.forEach(tree, node => {
-            if (node.kind === 'state' && node.stateId === this.hoveredStateId) copies.push(node);
-        });
-        if (copies.length === 0) return;
-        copies.sort((a, b) => a.stateDepth - b.stateDepth);
-        const first = copies[0];
-
-        // An imaged node already has its name label drawn at y - RADIUS - 8 (see _drawNode) -
-        // push this badge further up so the two don't overlap.
-        const realNode = this.viewModel.graph.getNodeById(first.stateId);
-        const hasImage = !!(realNode && realNode.image);
-        const yOffset = hasImage ? TREE_VIEW_STATE_RADIUS + 22 : TREE_VIEW_STATE_RADIUS + 8;
-
-        push();
-        textAlign(CENTER, BOTTOM);
-        textSize(10);
-        textFont(Typography.mono());
-        fill(AppPalette.accent.yellow);
-        noStroke();
-        text(`${first.name} — ${copies.length}× in tree`, first.x, first.y - yOffset);
-        pop();
     }
 
     _drawFooterCaption() {

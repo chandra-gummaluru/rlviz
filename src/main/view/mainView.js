@@ -1121,6 +1121,7 @@ class MainView {
     mouseMoved() {
         if (this._isEditableMode() && this.viewModel.buildCanvasView === 'tree' && this.treeView) {
             const changed = this.treeView.handleMouseMove(mouseX, mouseY);
+            this.viewModel.interaction.hoveredNode = this.treeView.realHoveredNode;
             this.viewModel.interaction.hoveredEdge = this.treeView.realHoveredEdge;
             if (changed) {
                 redraw();
