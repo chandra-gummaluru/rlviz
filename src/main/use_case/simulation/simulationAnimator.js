@@ -88,6 +88,12 @@ class SimulationAnimator {
      * Shows all outgoing edges, highlights chosen edge, moves to next node.
      */
     async animateTransition(fromNode, toNode) {
+        // Snapshot the jump generation so every await point below can detect a mid-flight
+        // scrub/jump (SimulationState.jumpToIndex()) and abort before mutating state further -
+        // fromNode/toNode become stale the instant a jump happens, and resuming here after that
+        // would corrupt the position/stats jumpToIndex() just recomputed from scratch.
+        const startGeneration = this.simulationState.jumpGeneration;
+
         this.outputBoundary.presentRoundStart(fromNode, toNode);
 
         // Phase 1: REVEAL ALL OUTGOING EDGES AND UPDATE PROBABILITIES
@@ -118,13 +124,15 @@ class SimulationAnimator {
         this.simulationState.setPhase('reveal', this.TIMING.DECISION_PAUSE);
         this.outputBoundary.presentPhaseChange('reveal', this.TIMING.DECISION_PAUSE);
         await this.waitForPhase();
+        if (this.simulationState.jumpGeneration !== startGeneration) return;
 
         // Phase 2: State-level spinning arrow (random policy only)
         if (this.simulationState.spinningArrowEnabled &&
             fromNode.type === 'state' &&
             this.simulationState.policy[fromNode.id] === undefined) {
-            await this._runStateSpinningArrow(fromNode, toNode);
+            await this._runStateSpinningArrow(fromNode, toNode, startGeneration);
         }
+        if (this.simulationState.jumpGeneration !== startGeneration) return;
 
         // Phase 2b: Hide unchosen action nodes (state→action transitions)
         if (fromNode.type === 'state') {
@@ -133,10 +141,11 @@ class SimulationAnimator {
 
         // Phase 2c: SPINNING ARROW (if enabled and at action node)
         if (this.simulationState.spinningArrowEnabled && fromNode.type === 'action') {
-            await this._runSpinningArrow(fromNode, toNode);
+            await this._runSpinningArrow(fromNode, toNode, startGeneration);
         } else if (fromNode.type === 'action') {
             this._hideUnchosenTransitions(fromNode, toNode);
         }
+        if (this.simulationState.jumpGeneration !== startGeneration) return;
 
         // Phase: REWARD PARTICLES (after spinning arrow determines outcome)
         if (fromNode.type === 'action') {
@@ -155,6 +164,7 @@ class SimulationAnimator {
         this.simulationState.setPhase('highlight', this.TIMING.EDGE_HIGHLIGHT);
         this.outputBoundary.presentPhaseChange('edge_highlight', this.TIMING.EDGE_HIGHLIGHT);
         await this.waitForPhase();
+        if (this.simulationState.jumpGeneration !== startGeneration) return;
 
         // Phase 4: ADVANCE TO NEXT NODE
         this.simulationState.advance();
@@ -164,6 +174,7 @@ class SimulationAnimator {
         this.simulationState.setPhase('transition', this.TIMING.CAMERA_TRANSITION);
         this.outputBoundary.presentPhaseChange('camera_move', this.TIMING.CAMERA_TRANSITION);
         await this.waitForPhase();
+        if (this.simulationState.jumpGeneration !== startGeneration) return;
 
         // Phase 6: COMPLETE
         this.simulationState.setPhase('idle', 0);
@@ -221,7 +232,12 @@ class SimulationAnimator {
         }
     }
 
-    async _runStateSpinningArrow(fromNode, toNode) {
+    // `startGeneration` is the jumpGeneration snapshot taken at the top of the calling
+    // animateTransition() - this method has its own internal await (the spinning-arrow phase
+    // itself), so it must re-check the guard before its own post-await mutations
+    // (clearSpinningArrow()) rather than relying solely on the caller's check after this method
+    // returns, which would run too late (the mutation below would already have happened).
+    async _runStateSpinningArrow(fromNode, toNode, startGeneration) {
         const stateNodeInGraph = this.getNodeFromGraph(fromNode.id);
         if (!stateNodeInGraph || !stateNodeInGraph.actions || stateNodeInGraph.actions.length === 0) {
             return;
@@ -240,11 +256,14 @@ class SimulationAnimator {
         this.simulationState.setPhase('state_spinning_arrow', this.simulationState.spinningArrowDuration);
         this.outputBoundary.presentPhaseChange('state_spinning_arrow', this.simulationState.spinningArrowDuration);
         await this.waitForPhase();
+        if (this.simulationState.jumpGeneration !== startGeneration) return;
 
         this.simulationState.clearSpinningArrow();
     }
 
-    async _runSpinningArrow(fromNode, toNode) {
+    // See _runStateSpinningArrow's comment - same reasoning applies here: this method's own
+    // await needs its own guard before clearSpinningArrow()/_hideUnchosenTransitions() run.
+    async _runSpinningArrow(fromNode, toNode, startGeneration) {
         const actionNodeInGraph = this.getNodeFromGraph(fromNode.id);
         if (!actionNodeInGraph || !actionNodeInGraph.sas || actionNodeInGraph.sas.length === 0) {
             return;
@@ -264,6 +283,7 @@ class SimulationAnimator {
         this.simulationState.setPhase('spinning_arrow', this.simulationState.spinningArrowDuration);
         this.outputBoundary.presentPhaseChange('spinning_arrow', this.simulationState.spinningArrowDuration);
         await this.waitForPhase();
+        if (this.simulationState.jumpGeneration !== startGeneration) return;
 
         // Clear spinning arrow state
         this.simulationState.clearSpinningArrow();

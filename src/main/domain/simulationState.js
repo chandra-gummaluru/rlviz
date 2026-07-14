@@ -55,6 +55,12 @@ class SimulationState {
         this.spinningArrowEdges = [];  // Array of {edgeIndex, probability, targetId}
         this.spinningArrowSequence = [];  // Array of edge indices — the tick order
         this.spinningArrowTickTimestamps = [];  // Cumulative ms timestamps for each tick
+
+        // Incremented by jumpToIndex() - lets an in-flight, multi-phase animateTransition()
+        // (SimulationAnimator) detect that a scrub/jump has invalidated it mid-flight and abort
+        // before mutating state further, rather than resuming with stale fromNode/toNode data
+        // and corrupting the position/stats jumpToIndex() just recomputed from scratch.
+        this.jumpGeneration = 0;
     }
 
     // Initialize with a generated trace
@@ -113,6 +119,12 @@ class SimulationState {
     // entries themselves don't carry reward, see TraceGenerator.createVisitedEntry()).
     jumpToIndex(targetIndex, graph) {
         if (this.visited.length === 0) return;
+
+        // Invalidate any in-flight animateTransition() so it aborts at its next generation
+        // check instead of resuming with stale fromNode/toNode and clobbering what we're about
+        // to recompute below.
+        this.jumpGeneration++;
+
         const clamped = Math.max(0, Math.min(this.visited.length - 1, targetIndex));
 
         this.currentIndex = clamped;
