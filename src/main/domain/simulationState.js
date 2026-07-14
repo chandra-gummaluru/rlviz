@@ -30,6 +30,15 @@ class SimulationState {
         this.currentDecisionProbs = [];  // Available actions with uniform probability
         this.currentOutcomeProbs = [];  // Possible next states with their probabilities
 
+        // User-configurable trace-length cap, in TRANSITIONS (state->action->state = 1) - matches
+        // expectationState.maxSteps's semantic exactly (Monte Carlo's own equivalent "steps"
+        // parameter), including the same *2+1 conversion to raw trace-node count when calling
+        // TraceGenerator.generate(). Default 25 reproduces this app's prior hardcoded ~25-
+        // transition behavior (TraceGenerator.generate() used to always be called with a fixed
+        // cap of 50 raw nodes) rather than silently jumping to Monte Carlo's much larger default
+        // of 100.
+        this.maxSteps = 25;
+
         // Policy settings: stateId -> selected actionId. Missing entries use random action selection.
         this.policy = {};
 
@@ -92,6 +101,49 @@ class SimulationState {
             return true;
         }
         return false;  // Reached end of trace
+    }
+
+    // Instantly jump to an arbitrary trace position, bypassing the normal phase-by-phase
+    // animation (reveal/decision/transition/camera) that advance() drives via SimulationAnimator -
+    // used by TraceScrubber's drag-to-scrub and stepper-arrow interactions. Recomputes reward/
+    // visibility state from scratch rather than incrementally replaying advance()/addReward()
+    // calls, since jumping BACKWARD must also un-accumulate reward/visibility past the new
+    // position, not just stop adding to it. `graph` is required to look up each transition's real
+    // reward (mirrors SimulationAnimator.getNodeFromGraph()'s own sas.find() lookup - the trace
+    // entries themselves don't carry reward, see TraceGenerator.createVisitedEntry()).
+    jumpToIndex(targetIndex, graph) {
+        if (this.visited.length === 0) return;
+        const clamped = Math.max(0, Math.min(this.visited.length - 1, targetIndex));
+
+        this.currentIndex = clamped;
+        this.currentNode = this.visited[clamped];
+        this.phase = 'idle';
+        this.isPlaying = false;
+        this.phaseStartTime = 0;
+        this.phaseDuration = 0;
+
+        this.clearVisualState();
+        this.totalReward = 0;
+        this.stepCount = 0;
+        this.rewardHistory = [];
+        this.pendingReward = 0;
+        this.pendingRewardActionNodeId = null;
+
+        for (let i = 0; i <= clamped; i++) {
+            this.revealNode(this.visited[i].id);
+            if (i > 0) this.revealEdge(this.visited[i - 1].id, this.visited[i].id);
+
+            if (i > 0 && this.visited[i - 1].type === 'action' && this.visited[i].type === 'state') {
+                const actionNodeInGraph = graph ? graph.getNodeById(this.visited[i - 1].id) : null;
+                const transition = actionNodeInGraph
+                    ? actionNodeInGraph.sas.find(t => t.nextState === this.visited[i].id)
+                    : null;
+                const reward = transition ? transition.reward : 0;
+                this.totalReward += reward;
+                this.stepCount++;
+                this.rewardHistory.push(reward);
+            }
+        }
     }
 
     // Check if we can advance further

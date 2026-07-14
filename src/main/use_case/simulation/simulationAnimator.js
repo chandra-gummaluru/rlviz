@@ -39,7 +39,8 @@ class SimulationAnimator {
             return false;
         }
 
-        const visited = this.traceGenerator.generate(startNode, 50, this.simulationState.policy, this.simulationState.policyWeights);
+        const rawNodeCap = this.simulationState.maxSteps * 2 + 1;
+        const visited = this.traceGenerator.generate(startNode, rawNodeCap, this.simulationState.policy, this.simulationState.policyWeights);
         this.simulationState.setTrace(visited);
         return true;
     }
