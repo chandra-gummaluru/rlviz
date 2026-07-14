@@ -24,6 +24,7 @@ class TreeView {
         this.hoveredEdge = null;
         this._hoveredEdgeKey = null;
         this._usableWidth = 900; // corrected by the first real draw(usableWidth) call
+        this._wasSimulating = false;
     }
 
     _isSimulating() {
@@ -97,13 +98,27 @@ class TreeView {
     // real window-size numbers, not just by reading the formula, per this task's own instructions).
     draw(usableWidth) {
         if (usableWidth) this._usableWidth = Math.max(300, usableWidth - TREE_VIEW_ANCHOR_X);
+
+        // Camera auto-follow (_followCamera) pans the viewport to track the active node while
+        // simulating; nothing else resets that pan back afterward, so the static full-tree view
+        // (always rendered at the same fixed anchor) could otherwise be left partially/fully
+        // off-screen once a run ends. Reset ONLY pan (not zoom - zoom is the user's own
+        // preference and camera-follow never touches it) exactly once, on the simulating -> not
+        // simulating transition.
+        const nowSimulating = this._isSimulating();
+        if (this._wasSimulating && !nowSimulating) {
+            this.viewModel.viewport.panX = 0;
+            this.viewModel.viewport.panY = 0;
+        }
+        this._wasSimulating = nowSimulating;
+
         const tree = this._currentTree();
         if (!tree) return;
 
         push();
         translate(TREE_VIEW_ANCHOR_X, TREE_VIEW_ANCHOR_Y);
 
-        if (this._isSimulating()) {
+        if (nowSimulating) {
             this._drawTraceReveal(tree, this.viewModel.simulationState);
         } else {
             this._drawStaticTree(tree);
@@ -462,6 +477,7 @@ class TreeView {
     // (mainView.js) distinguish "clicked a badge" from "clicked empty tree-canvas space or a
     // node's plain body" without reaching into the private _hitTestBadge() directly.
     hitTestBadge(screenX, screenY) {
+        if (this._isSimulating()) return false;
         return this._hitTestBadge(screenX, screenY) !== null;
     }
 
@@ -469,6 +485,7 @@ class TreeView {
     // node's +/- badge (the ONLY way to toggle now - clicking a node's plain body does nothing).
     // Always returns true so the caller knows Tree view fully owns this click.
     handleClick(screenX, screenY) {
+        if (this._isSimulating()) return true;
         const node = this._hitTestBadge(screenX, screenY);
         if (node) {
             this._toggle(node.pathId);
@@ -481,6 +498,17 @@ class TreeView {
     // Node-hover (repeated-state ring + badge) and edge-hover (P(s'|s,a) tooltip) are mutually
     // exclusive per mouse position - edge-hover is only checked when no node is under the cursor.
     handleMouseMove(screenX, screenY) {
+        if (this._isSimulating()) {
+            // Clear any hover state left over from before Play started - returns true exactly
+            // once (the frame that actually clears something), so the caller redraws to remove a
+            // lingering ring/tooltip, then false on subsequent calls (no wasted redraws).
+            const hadHover = this.hoveredStateId !== null || this.hoveredEdge !== null;
+            this.hoveredStateId = null;
+            this.hoveredEdge = null;
+            this._hoveredEdgeKey = null;
+            return hadHover;
+        }
+
         const node = this._hitTest(screenX, screenY);
         const newHoveredStateId = (node && node.kind === 'state') ? node.stateId : null;
 
