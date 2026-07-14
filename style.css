@@ -1654,6 +1654,140 @@ input[type="range"]::-moz-range-thumb {
   white-space: nowrap;
 }
 
+/* ── Unified trace scrubber (Build/Policy/MC) ────────────────────────── */
+
+.trace-scrubber {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border-hairline, var(--border-light));
+  background: var(--surface-card2, var(--bg-card));
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  z-index: 10;
+}
+
+.trace-scrubber-arrow {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: transparent;
+  color: var(--text-medium);
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.trace-scrubber-arrow:hover { color: var(--text-dark); }
+.trace-scrubber-arrow:disabled { opacity: 0.3; cursor: default; }
+
+.trace-scrubber-track {
+  position: relative;
+  width: 320px;
+  height: 24px;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+}
+
+.trace-scrubber-track:active { cursor: grabbing; }
+
+.trace-scrubber-ticks {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  will-change: transform;
+}
+
+.trace-scrubber-tick {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  font-family: var(--font-family-mono, var(--font-family));
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.trace-scrubber-tick--active {
+  color: var(--text-dark);
+  font-weight: 700;
+  background: var(--accent-yellow-soft, rgba(245, 215, 110, 0.35));
+  border-radius: 4px;
+}
+
+.trace-scrubber-fade {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  width: 20px;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.trace-scrubber-fade--left {
+  left: 0;
+  background: linear-gradient(to right, var(--surface-card2, var(--bg-card)), transparent);
+}
+
+.trace-scrubber-fade--right {
+  right: 0;
+  background: linear-gradient(to left, var(--surface-card2, var(--bg-card)), transparent);
+}
+
+.trace-scrubber-divider {
+  width: 1px;
+  height: 18px;
+  background: var(--border-hairline, var(--border-light));
+  flex-shrink: 0;
+}
+
+.trace-scrubber-horizon {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.trace-scrubber-horizon-btn {
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--border-hairline, var(--border-light));
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-medium);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.trace-scrubber-horizon-btn:hover { color: var(--text-dark); }
+
+.trace-scrubber-horizon-value {
+  font-family: var(--font-family-mono, var(--font-family));
+  font-size: 11px;
+  color: var(--text-dark);
+  white-space: nowrap;
+}
+
 /* ── Floating Build-mode tool palette ────────────────────────────────── */
 
 .tool-palette {
