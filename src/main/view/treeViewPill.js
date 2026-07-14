@@ -29,11 +29,6 @@ class TreeViewPill {
         document.body.appendChild(container);
         this.containerEl = container;
 
-        const label = document.createElement('span');
-        label.className = 'tree-view-pill-label';
-        label.textContent = 'view';
-        container.appendChild(label);
-
         const track = document.createElement('div');
         track.className = 'tree-view-pill-track';
         container.appendChild(track);

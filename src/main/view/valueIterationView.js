@@ -320,7 +320,7 @@ class ValueIterationView {
                 }
 
                 // Action-node marker, matching Build mode's real node size/shape exactly.
-                this._drawActionSquare(actionNode.x, actionNode.y, actionNode.name,
+                this._drawActionCircle(actionNode.x, actionNode.y, actionNode.name,
                     ColorUtils.applyAlpha(AppPalette.node.action, isPolicy ? 220 : 110),
                     isPolicy ? 230 : 130, actionNode.size);
             }
@@ -967,18 +967,18 @@ class ValueIterationView {
         pop();
     }
 
-    // Main-graph action-node marker - a rounded square at the node's REAL (resizable) size,
-    // matching Build mode's look exactly (mainView.js's own action-node rect). Deliberately
-    // distinct from _drawActionDiamond, which stays a small fixed-radius diamond for the
-    // backup/explanation fan-out schematic - that overlay is an intentionally simplified,
-    // synthetically-laid-out diagram, not a "second copy of the real graph."
-    _drawActionSquare(x, y, name, fillColor, alpha, size) {
+    // Main-graph action-node marker - a circle at the node's REAL (resizable) size, matching
+    // Build mode's look exactly (mainView.js's own action-node circle). Deliberately distinct from
+    // _drawActionDiamond, which stays a small fixed-radius diamond for the backup/explanation
+    // fan-out schematic - that overlay is an intentionally simplified, synthetically-laid-out
+    // diagram, not a "second copy of the real graph."
+    _drawActionCircle(x, y, name, fillColor, alpha, size) {
         push();
 
         fill(fillColor);
         stroke(ColorUtils.applyAlpha(AppPalette.text.medium, alpha));
         strokeWeight(1.5);
-        rect(x - size, y - size, size * 2, size * 2, 8);
+        circle(x, y, size * 2);
 
         fill(ColorUtils.applyAlpha(ColorUtils.contrastText(fillColor), alpha));
         noStroke();

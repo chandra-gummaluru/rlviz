@@ -425,14 +425,7 @@ class MainView {
                 drawingContext.setLineDash([MV_DASH_NODE_LINE, MV_DASH_NODE_GAP]);
             }
 
-            if (node.type === 'action') {
-                // Action nodes render as rounded squares (not circles) - side length matches the
-                // circle's footprint exactly (node.size * 2) so hit-testing/resize math elsewhere
-                // that treats node.size as a bounding radius stays correct.
-                rect(node.x - node.size, node.y - node.size, node.size * 2, node.size * 2, 8);
-            } else {
-                circle(node.x, node.y, node.size * 2);
-            }
+            circle(node.x, node.y, node.size * 2);
 
             if (useDashedStroke) {
                 drawingContext.setLineDash([]);

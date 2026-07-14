@@ -85,10 +85,10 @@ class LearningIterationView {
             }
         }
 
-        // Action nodes - rounded squares, matching Build mode / the Value Iteration view.
+        // Action nodes - circles, matching Build mode / the Value Iteration view.
         for (const node of graph.nodes) {
             if (node.type !== 'action') continue;
-            this._drawActionSquare(node.x, node.y, node.name, LI_ACTION_RADIUS,
+            this._drawActionCircle(node.x, node.y, node.name, LI_ACTION_RADIUS,
                 ColorUtils.applyAlpha(AppPalette.node.action, 220), 255);
         }
 
@@ -382,16 +382,16 @@ class LearningIterationView {
         pop();
     }
 
-    // Graph mode's action-node shape - a rounded square, matching Build mode
-    // (mainView.js's `rect(node.x - node.size, ..., 8)`) and the Value Iteration view's action
-    // node convention, so the flat MDP graph looks the same across Build/Policy/VI/Graph mode.
-    // Tree mode intentionally keeps the diamond above - do not reuse this for Tree mode.
-    _drawActionSquare(x, y, name, r, fillColor, strokeAlpha) {
+    // Graph mode's action-node shape - a circle, matching Build mode (mainView.js's own
+    // action-node circle) and the Value Iteration view's action node convention, so the flat MDP
+    // graph looks the same across Build/Policy/VI/Graph mode. Tree mode intentionally keeps the
+    // diamond above - do not reuse this for Tree mode.
+    _drawActionCircle(x, y, name, r, fillColor, strokeAlpha) {
         push();
         fill(fillColor);
         stroke(ColorUtils.applyAlpha(AppPalette.text.medium, strokeAlpha));
         strokeWeight(1.5);
-        rect(x - r, y - r, r * 2, r * 2, 4);
+        circle(x, y, r * 2);
 
         fill(ColorUtils.applyAlpha(ColorUtils.contrastText(fillColor), strokeAlpha));
         noStroke();

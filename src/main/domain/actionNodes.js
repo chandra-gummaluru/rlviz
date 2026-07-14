@@ -54,14 +54,6 @@ class ActionNode extends NodesObj {
         return targetNode && targetNode.type === "state";
     }
 
-    // Action nodes render as rounded squares (see mainView.js drawNodes()), not circles, so the
-    // base class's circle-distance contains() under-detects clicks near the square's corners
-    // (outside the inscribed circle but still inside the visible square). Axis-aligned box test
-    // instead - node.size is still a bounding radius (half the square's side length).
-    contains(x, y) {
-        return Math.abs(x - this.x) <= this.size && Math.abs(y - this.y) <= this.size;
-    }
-
     getTotalProbability() {
         return this.sas.reduce((sum, t) =>
             sum + Math.max(0, t.probability), 0);

@@ -73,11 +73,11 @@ class TreeView {
     // Tree-local (x, y) of a node's +/- expand badge - bottom-right corner for both shapes, scaled
     // to each shape's own size so the badge always sits just outside the node's own boundary.
     _badgeCenter(node) {
-        if (node.kind === 'state') {
-            const off = TREE_VIEW_STATE_RADIUS * 0.75;
-            return { x: node.x + off, y: node.y + off };
-        }
-        return { x: node.x + TREE_VIEW_ACTION_HALF, y: node.y + TREE_VIEW_ACTION_HALF };
+        // Both shapes are circles now - the same "off = radius * 0.75" corner-ish offset applies
+        // to either, just with each shape's own half-size as the radius.
+        const halfSize = node.kind === 'state' ? TREE_VIEW_STATE_RADIUS : TREE_VIEW_ACTION_HALF;
+        const off = halfSize * 0.75;
+        return { x: node.x + off, y: node.y + off };
     }
 
     // Returns the topmost TreeNode whose on-screen shape contains (screenX, screenY), or null.
@@ -90,11 +90,7 @@ class TreeView {
             const p = this._treeToScreen(node.x, node.y);
             const halfSize = (node.kind === 'state' ? TREE_VIEW_STATE_RADIUS : TREE_VIEW_ACTION_HALF) * zoom;
             const dx = screenX - p.x, dy = screenY - p.y;
-            if (node.kind === 'state') {
-                if (dx * dx + dy * dy <= halfSize * halfSize) hit = node;
-            } else {
-                if (Math.abs(dx) <= halfSize && Math.abs(dy) <= halfSize) hit = node;
-            }
+            if (dx * dx + dy * dy <= halfSize * halfSize) hit = node;
         });
         return hit;
     }
@@ -285,18 +281,10 @@ class TreeView {
         const halfSize = node.kind === 'state' ? TREE_VIEW_STATE_RADIUS : TREE_VIEW_ACTION_HALF;
 
         push();
-        if (node.kind === 'state') {
-            fill(ColorUtils.applyAlpha(AppPalette.node.state, 220));
-            stroke(AppPalette.text.medium);
-            strokeWeight(2);
-            circle(node.x, node.y, TREE_VIEW_STATE_RADIUS * 2);
-        } else {
-            fill(ColorUtils.applyAlpha(AppPalette.node.action, 220));
-            stroke(AppPalette.text.medium);
-            strokeWeight(2);
-            rect(node.x - TREE_VIEW_ACTION_HALF, node.y - TREE_VIEW_ACTION_HALF,
-                TREE_VIEW_ACTION_HALF * 2, TREE_VIEW_ACTION_HALF * 2, 6);
-        }
+        fill(ColorUtils.applyAlpha(node.kind === 'state' ? AppPalette.node.state : AppPalette.node.action, 220));
+        stroke(AppPalette.text.medium);
+        strokeWeight(2);
+        circle(node.x, node.y, halfSize * 2);
         pop();
 
         if (hasImage) {
@@ -306,9 +294,7 @@ class TreeView {
                 realNode._imageObj = loadImage(realNode.image);
             }
             if (realNode._imageObj && realNode._imageObj.width > 0) {
-                // Circular clip regardless of node shape (state circle or action square) - matches
-                // mainView.js's own Build-mode convention, which circle-clips images even inside a
-                // square action node.
+                // Circular clip, matching mainView.js's own Build-mode convention for imaged nodes.
                 drawingContext.save();
                 drawingContext.beginPath();
                 drawingContext.arc(node.x, node.y, halfSize * 0.8, 0, TWO_PI);
@@ -391,7 +377,7 @@ class TreeView {
         textAlign(LEFT, BOTTOM);
         textSize(10);
         textFont(Typography.mono());
-        text('the MDP unrolled from S₀ (initial state) · circles = states · squares = actions',
+        text('the MDP unrolled from S₀ (initial state) · larger circles = states · smaller circles = actions',
             16, height - 12);
         pop();
     }

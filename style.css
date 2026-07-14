@@ -1862,11 +1862,6 @@ input[type="range"]::-moz-range-thumb {
   gap: 6px;
 }
 
-.tree-view-pill-label {
-  font-size: 10px;
-  color: var(--text-lighter);
-}
-
 .tree-view-pill-track {
   display: flex;
   gap: 2px;
