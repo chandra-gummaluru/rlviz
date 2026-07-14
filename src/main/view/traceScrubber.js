@@ -76,6 +76,14 @@ class TraceScrubber {
         fadeRight.className = 'trace-scrubber-fade trace-scrubber-fade--right';
         track.appendChild(fadeRight);
 
+        // Both 'mousedown' and 'pointerdown' fire independently for the same physical click (they
+        // are parallel, not sequential, event streams) - every other interactive element in this
+        // component (arrows, horizon buttons) stops propagation on 'mousedown' specifically,
+        // matching whatever event type this app's p5.js sketch listens on for its own global
+        // mousePressed() dispatch. Stopping only 'pointerdown' (needed here for setPointerCapture,
+        // Pointer Events API-specific) left the separate 'mousedown' event free to bubble to
+        // document and leak into p5's canvas click handling underneath the scrubber.
+        track.addEventListener('mousedown', e => e.stopPropagation());
         track.addEventListener('pointerdown', e => this._onPointerDown(e));
 
         const rightArrow = document.createElement('button');
