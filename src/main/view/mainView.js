@@ -234,13 +234,23 @@ class MainView {
 
         pop();
 
-        // Continuous redraw during animated simulation phases
+        // Continuous redraw during animated simulation phases. Tree view's 'transition' phase is
+        // additionally included here (gated to Tree view only) because it now drives a real
+        // per-frame animation - the camera auto-follow lerp in treeView.js's _followCamera() (Task
+        // 7 of docs/superpowers/plans/2026-07-14-tree-view-simulation-animation.md). Without a
+        // continuous redraw loop during that phase, presentPhaseChange()'s one-shot redraw() at
+        // the phase's start is the ONLY frame rendered for the whole phase, so _followCamera's
+        // lerp only ever advances a single (~0) time-step and the camera never visibly pans - this
+        // was caught by live-testing in a headless browser, not by reading the code. Graph view's
+        // own 'transition' phase remains excluded (it's a timing pause only - nothing animates
+        // there, so a continuous redraw loop would be pure wasted work).
         const _simS = this.viewModel.simulationState;
         if (_simS && _simS.replayInitialized && !_simS.isPhaseComplete() &&
             (_simS.phase === 'reveal' ||
              _simS.phase === 'highlight' ||
              _simS.phase === 'spinning_arrow' ||
-             _simS.phase === 'state_spinning_arrow')) {
+             _simS.phase === 'state_spinning_arrow' ||
+             (_inTreeView && _simS.phase === 'transition'))) {
             requestAnimationFrame(() => { if (typeof redraw === 'function') redraw(); });
         }
 

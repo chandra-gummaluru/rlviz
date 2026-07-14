@@ -215,6 +215,8 @@ class TreeView {
             const nextNode = pathMap.get(pathIds[ci + 1]);
             if (nextNode) this._drawTreeTravelBall(current, nextNode, simState);
         }
+
+        this._followCamera(current, simState);
     }
 
     // Tree-positioned analogue of mainView.js's drawStateSpinningArrow() - same simState fields
@@ -317,6 +319,29 @@ class TreeView {
         strokeWeight(2);
         circle(ballX, ballY, r * 3);
         drawingContext.setLineDash([]);
+    }
+
+    // Auto-pans the viewport so the active node stays visible as the trace advances - the tree
+    // can grow far wider than the canvas (up to simulationState.maxSteps transitions). Lerped over
+    // the SAME 'transition' phase clock SimulationAnimator already drives (phaseStartTime/
+    // phaseDuration), reusing an already-ticking clock rather than adding new timing constants.
+    // This is new behavior specific to Tree view, not a mirror of an existing Graph view camera
+    // pan - Graph view's own 'transition' phase is a timing pause only, since its nodes are
+    // already pinned/user-arranged and never need to be followed.
+    _followCamera(current, simState) {
+        if (simState.phase !== 'transition' || !current) return;
+        const viewport = this.viewModel.viewport;
+        const targetScreenX = (this._usableWidth + TREE_VIEW_ANCHOR_X) * 0.4;
+        const targetScreenY = height / 2;
+        const activeWorldX = current.x + TREE_VIEW_ANCHOR_X;
+        const activeWorldY = current.y + TREE_VIEW_ANCHOR_Y;
+        const targetPanX = targetScreenX - activeWorldX * viewport.zoom;
+        const targetPanY = targetScreenY - activeWorldY * viewport.zoom;
+
+        const elapsed = Date.now() - simState.phaseStartTime;
+        const t = EasingUtils.easeInOut(Math.min(1, elapsed / simState.phaseDuration));
+        viewport.panX = lerp(viewport.panX, targetPanX, t);
+        viewport.panY = lerp(viewport.panY, targetPanY, t);
     }
 
     // Shared probability-label chip for both spinning-arrow variants above - a small rect behind
