@@ -26,13 +26,34 @@ class TreeView {
         this._usableWidth = 900; // corrected by the first real draw(usableWidth) call
     }
 
+    _isSimulating() {
+        const simState = this.viewModel.simulationState;
+        return !!(simState && simState.replayInitialized);
+    }
+
+    // During an active simulation, the tree must auto-expand past the user's manual treeExpanded
+    // set to cover however far the live trace has gone - the trace can run deeper (up to
+    // simulationState.maxSteps transitions) than the default depth-1 cap or anything the user
+    // happened to click open. Recomputed fresh each call (no cache), same convention every other
+    // TreeLayout consumer here already follows.
+    _expandedSetForCurrentDraw() {
+        if (!this._isSimulating()) return this.viewModel.treeExpanded;
+        const simState = this.viewModel.simulationState;
+        const pathIds = this._traceStepToPathId(simState.visited, this.viewModel.graph);
+        const bound = Math.min(simState.currentIndex, pathIds.length - 1);
+        const expanded = new Set(this.viewModel.treeExpanded);
+        for (let i = 0; i <= bound; i++) expanded.add(pathIds[i]);
+        return expanded;
+    }
+
     // Builds the current tree (recomputed every draw - same "no cache" convention already used
     // by ExpectationViewModel.computeLayout() elsewhere in this codebase; MDP graphs in this app
     // are small enough that this is cheap).
     _currentTree() {
         const startNode = this.viewModel.startNode;
         if (!startNode) return null;
-        return TreeLayout.build(this.viewModel.graph, startNode.id, this.viewModel.treeExpanded, 1, this._usableWidth);
+        const expandedSet = this._expandedSetForCurrentDraw();
+        return TreeLayout.build(this.viewModel.graph, startNode.id, expandedSet, 1, this._usableWidth);
     }
 
     // Maps each index of simulationState.visited to its exact pathId in the full unrolled tree,
@@ -82,6 +103,18 @@ class TreeView {
         push();
         translate(TREE_VIEW_ANCHOR_X, TREE_VIEW_ANCHOR_Y);
 
+        if (this._isSimulating()) {
+            this._drawTraceReveal(tree, this.viewModel.simulationState);
+        } else {
+            this._drawStaticTree(tree);
+        }
+
+        pop();
+    }
+
+    // Full unrolled tree, all branches, hover ring + badges - the existing v1/v2 Browse-mode
+    // behavior, extracted unchanged into its own method now that draw() also has a second mode.
+    _drawStaticTree(tree) {
         // Edges first (so nodes draw on top of their own incoming edge).
         TreeLayout.forEach(tree, node => {
             node.children.forEach(child => this._drawEdge(node, child));
@@ -89,8 +122,65 @@ class TreeView {
         // Nodes second.
         TreeLayout.forEach(tree, node => this._drawNode(node));
         this._drawHoverBadge(tree);
+    }
 
-        pop();
+    // Builds a pathId -> TreeNode lookup map for one tree (used by _drawTraceReveal to resolve
+    // trace-position pathIds back to the tree nodes/positions to render).
+    _buildPathIdMap(tree) {
+        const map = new Map();
+        TreeLayout.forEach(tree, node => map.set(node.pathId, node));
+        return map;
+    }
+
+    // Progressive reveal, tree-positioned: mirrors Graph view's own progressive-reveal convention
+    // (mainView.js's drawNodes()/drawEdges(), gated by simulationState.isNodeVisible/isEdgeVisible)
+    // but resolved against tree pathIds instead of real graph node world-positions. Committed trace
+    // steps (pathIds[0..currentIndex]) always draw; the "frontier fan" - the current tree node's
+    // full set of real children (all actions of a state, or all outcomes of an action) - draws
+    // only the subset simState still has revealed, exactly matching SimulationAnimator's
+    // reveal-then-narrow-to-chosen flow. No ambiguity from a real id recurring elsewhere in the
+    // general tree, since only the current frontier node's own direct children are ever checked -
+    // never a global id scan.
+    _drawTraceReveal(tree, simState) {
+        const pathIds = this._traceStepToPathId(simState.visited, this.viewModel.graph);
+        const pathMap = this._buildPathIdMap(tree);
+        const ci = Math.min(simState.currentIndex, pathIds.length - 1);
+        if (ci < 0) return;
+
+        // Committed edges: consecutive committed pathIds, drawn as plain traversed edges.
+        for (let i = 1; i <= ci; i++) {
+            const parent = pathMap.get(pathIds[i - 1]);
+            const child = pathMap.get(pathIds[i]);
+            if (parent && child) this._drawEdge(parent, child);
+        }
+
+        // Frontier fan edges: current node's real children still marked visible by simState.
+        const current = pathMap.get(pathIds[ci]);
+        if (current) {
+            current.children.forEach(child => {
+                const realChildId = child.kind === 'state' ? child.stateId : child.actionId;
+                const realParentId = current.kind === 'state' ? current.stateId : current.actionId;
+                if (simState.isEdgeVisible(realParentId, realChildId)) {
+                    this._drawEdge(current, child);
+                }
+            });
+        }
+
+        // Committed nodes (current one highlighted).
+        for (let i = 0; i <= ci; i++) {
+            const node = pathMap.get(pathIds[i]);
+            if (node) this._drawNode(node, { isCurrent: i === ci, showBadge: false });
+        }
+
+        // Frontier fan nodes.
+        if (current) {
+            current.children.forEach(child => {
+                const realChildId = child.kind === 'state' ? child.stateId : child.actionId;
+                if (simState.isNodeVisible(realChildId)) {
+                    this._drawNode(child, { isCurrent: false, showBadge: false });
+                }
+            });
+        }
     }
 
     // Converts a tree-local (x, y) point into current screen coordinates, applying the same
@@ -288,9 +378,10 @@ class TreeView {
         pop();
     }
 
-    _drawNode(node) {
-        const isHoveredState = node.kind === 'state' && this.hoveredStateId !== null &&
-            node.stateId === this.hoveredStateId;
+    _drawNode(node, opts = {}) {
+        const { isCurrent = false, showBadge = true } = opts;
+        const isHoveredState = !this._isSimulating() && node.kind === 'state' &&
+            this.hoveredStateId !== null && node.stateId === this.hoveredStateId;
 
         if (isHoveredState) {
             push();
@@ -313,7 +404,10 @@ class TreeView {
         const halfSize = node.kind === 'state' ? TREE_VIEW_STATE_RADIUS : TREE_VIEW_ACTION_HALF;
 
         push();
-        fill(ColorUtils.applyAlpha(node.kind === 'state' ? AppPalette.node.state : AppPalette.node.action, 220));
+        const baseFill = isCurrent
+            ? AppPalette.node.activeInitial
+            : (node.kind === 'state' ? AppPalette.node.state : AppPalette.node.action);
+        fill(ColorUtils.applyAlpha(baseFill, 220));
         stroke(AppPalette.text.medium);
         strokeWeight(2);
         circle(node.x, node.y, halfSize * 2);
@@ -358,7 +452,7 @@ class TreeView {
             pop();
         }
 
-        if (node.hasChildren) {
+        if (showBadge && node.hasChildren) {
             const center = this._badgeCenter(node);
             push();
             fill(AppPalette.accent.cyan);
