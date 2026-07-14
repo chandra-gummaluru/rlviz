@@ -23,6 +23,7 @@ class TraceScrubber {
         this._ticks = [];
         this._currentIndex = 0;
         this._maxSteps = 25;
+        this._x = 0;
         this._width = 0;
 
         this._dragging = false;
