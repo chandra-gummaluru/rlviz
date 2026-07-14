@@ -133,14 +133,18 @@ class TreeView {
     }
 
     // Progressive reveal, tree-positioned: mirrors Graph view's own progressive-reveal convention
-    // (mainView.js's drawNodes()/drawEdges(), gated by simulationState.isNodeVisible/isEdgeVisible)
-    // but resolved against tree pathIds instead of real graph node world-positions. Committed trace
-    // steps (pathIds[0..currentIndex]) always draw; the "frontier fan" - the current tree node's
-    // full set of real children (all actions of a state, or all outcomes of an action) - draws
-    // only the subset simState still has revealed, exactly matching SimulationAnimator's
-    // reveal-then-narrow-to-chosen flow. No ambiguity from a real id recurring elsewhere in the
-    // general tree, since only the current frontier node's own direct children are ever checked -
-    // never a global id scan.
+    // (mainView.js's drawNodes()/drawEdges(), which gates on simulationState.isNodeVisible/
+    // isEdgeVisible) but resolved against tree pathIds instead of real graph node world-positions.
+    // Committed trace steps (pathIds[0..currentIndex]) always draw; the "frontier fan" - the
+    // current tree node's full set of real children (all actions of a state, or all outcomes of
+    // an action) - draws either all of them (undecided phases, matching SimulationAnimator's
+    // reveal flash) or just the one chosen next pathId (decided phases). Unlike Graph view, this
+    // does NOT reuse simState.isNodeVisible/isEdgeVisible for the frontier: those are tracked
+    // globally per real node id and never cleared, which is unambiguous in Graph view (one real
+    // id = one canvas position) but not in Tree view, where the same real id can occupy multiple
+    // tree positions (cycles) - a cyclic destination already revealed earlier in the trace would
+    // incorrectly read as "visible" for a brand new tree-position occurrence. See
+    // `_drawTraceReveal`'s own frontier-fan comment below for the phase/pathId-based fix.
     _drawTraceReveal(tree, simState) {
         const pathIds = this._traceStepToPathId(simState.visited, this.viewModel.graph);
         const pathMap = this._buildPathIdMap(tree);
@@ -154,15 +158,27 @@ class TreeView {
             if (parent && child) this._drawEdge(parent, child);
         }
 
-        // Frontier fan edges: current node's real children still marked visible by simState.
+        // Frontier fan: during the "undecided" phases (reveal / state_spinning_arrow /
+        // spinning_arrow), show ALL of current's real children - matching Graph view's own
+        // reveal-then-narrow flow. Once decided (highlight / transition / idle), show ONLY the
+        // one child matching pathIds[ci+1] - the definitive "what was actually chosen," known
+        // directly from our own trace->pathId mapping (Task 3), not from simState's global
+        // per-real-id visibility flags. This deliberately does NOT use
+        // simState.isNodeVisible/isEdgeVisible for the frontier: those flags are sticky per real
+        // id and never cleared, so a cyclic destination whose real id was already revealed
+        // earlier in the trace (e.g. back to the start state) would read as "visible" for a brand
+        // new tree-position occurrence before this specific decision was actually revealed -
+        // producing a spurious one-sided preview. Keying off pathIds[ci+1] instead sidesteps that
+        // ambiguity completely, since it's derived straight from the real trace, not a shared flag.
         const current = pathMap.get(pathIds[ci]);
+        const DECIDED_PHASES = new Set(['highlight', 'transition', 'idle']);
+        const chosenNextPathId = (ci + 1 < pathIds.length) ? pathIds[ci + 1] : null;
+        const isDecided = DECIDED_PHASES.has(simState.phase);
+
         if (current) {
             current.children.forEach(child => {
-                const realChildId = child.kind === 'state' ? child.stateId : child.actionId;
-                const realParentId = current.kind === 'state' ? current.stateId : current.actionId;
-                if (simState.isEdgeVisible(realParentId, realChildId)) {
-                    this._drawEdge(current, child);
-                }
+                const showThisChild = isDecided ? (child.pathId === chosenNextPathId) : true;
+                if (showThisChild) this._drawEdge(current, child);
             });
         }
 
@@ -175,10 +191,8 @@ class TreeView {
         // Frontier fan nodes.
         if (current) {
             current.children.forEach(child => {
-                const realChildId = child.kind === 'state' ? child.stateId : child.actionId;
-                if (simState.isNodeVisible(realChildId)) {
-                    this._drawNode(child, { isCurrent: false, showBadge: false });
-                }
+                const showThisChild = isDecided ? (child.pathId === chosenNextPathId) : true;
+                if (showThisChild) this._drawNode(child, { isCurrent: false, showBadge: false });
             });
         }
     }
