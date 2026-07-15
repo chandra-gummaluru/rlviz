@@ -636,7 +636,7 @@ class TreeView {
         const baseFill = isCurrent
             ? AppPalette.node.activeInitial
             : (node.kind === 'state' ? AppPalette.node.state : AppPalette.node.action);
-        fill(ColorUtils.applyAlpha(baseFill, 220));
+        fill(ColorUtils.applyAlpha(baseFill, 255));
         stroke(AppPalette.text.medium);
         strokeWeight(2);
         circle(node.x, node.y, halfSize * 2);
