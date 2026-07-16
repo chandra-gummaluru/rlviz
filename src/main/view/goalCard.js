@@ -91,11 +91,15 @@ class GoalCard {
     }
 
     // Re-renders the equation (start-state name may have changed) and shows/hides the overlay
-    // based on canvasViewModel.goalCardVisible. Cheap enough to call on every draw tick like
-    // other floating chrome refreshes in this codebase (e.g. estimatorPill.refresh()) - call it
-    // from mainView.js's draw() loop, gated so it only actually touches the DOM when the visible
-    // state or start-node name has changed since the last call (avoid re-invoking KaTeX every
-    // frame for no reason).
+    // based on canvasViewModel.goalCardVisible. This codebase's other floating chrome
+    // (estimatorPill.refresh(), treeViewPill.refresh(), ...) is refreshed on-demand from specific
+    // action call sites rather than every draw tick (there is no per-frame refresh loop - draw()
+    // only runs on explicit redraw() calls, see mainView.js's noLoop()), so main.js calls this
+    // on-demand too, from every place that can change goalCardVisible/goalCardMuted
+    // (enterValuesScene, dismissGoalCard, muteGoalCard, showGoalCardIfNotMuted call sites) rather
+    // than from a draw loop. Still gated so it only actually touches the DOM when the visible
+    // state or start-node name has changed since the last call (avoid re-invoking KaTeX
+    // needlessly on repeated calls).
     refresh() {
         if (!this.overlayEl) return;
 

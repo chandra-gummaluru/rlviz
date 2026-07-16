@@ -281,8 +281,20 @@ class TopBar {
 
     // Public entry point for both new buttons - always shown via callback (not a direct
     // controller call), matching every other top-bar action in this file.
+    //
+    // Bug found during Task 4's real-browser end-to-end verification: this used to just set
+    // `this.currentMode = 'values'` directly instead of calling `this.setMode('values')`. That
+    // skipped setMode()'s hide() calls on Build/Policy's playPauseBtn/stepBtn/rerunBtn/
+    // renormalizeBtn, so those stayed visible (and clickable) stacked on top of the Monte
+    // Carlo/VI action buttons after entering Values mode via these two toolbar segments -
+    // e.g. two overlapping "Reset" buttons, with the stale Build one winning hit-testing since
+    // it was created first. setMode('values') itself derives the button set from
+    // this.viewModel.valuesSubView, which may still hold the *previous* sub-view for a moment
+    // here (canvasController.enterValuesScene(subView) hasn't run yet) - harmless, since the
+    // onEnterValuesScene/onSelectScene callback below always follows up with an explicit
+    // topBar.refreshValuesSubView(subView) call using the real target subView, correcting it.
     enterValuesScene(subView) {
-        this.currentMode = 'values';
+        this.setMode('values');
         if (this.callbacks.onEnterValuesScene) {
             this.callbacks.onEnterValuesScene(subView);
         }

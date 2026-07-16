@@ -229,6 +229,7 @@ const onOpenRecent = (entry) => {
 const onModelKnownToggle = (known) => {
     canvasController.setModelKnown(known);
     if (topBar) topBar.refreshParameters();
+    if (topBar) topBar.refreshModeToggle();
     if (rightPanel) rightPanel.updateContent();
     if (mainView && mainView.chartDock) mainView.chartDock.refresh();
     if (estimatorPill) estimatorPill.refresh();
@@ -697,11 +698,15 @@ const onVIReset = () => {
         canvasController.resetQLearning();
         ensureQLRoot();                      // re-seed root so Tree shows its placeholder again
         _afterQLChange();
+        canvasController.showGoalCardIfNotMuted();
+        if (mainView && mainView.goalCard) mainView.goalCard.refresh();
         return;
     }
     if (!viResetInteractor) return;
     viResetInteractor.execute(new VIResetInputData());
     refreshVIButtons();
+    canvasController.showGoalCardIfNotMuted();
+    if (mainView && mainView.goalCard) mainView.goalCard.refresh();
 };
 
 const onPlay = () => {
@@ -833,6 +838,13 @@ function setup() {
         },
         onExpectationPause: () => {
             if (mainView && mainView.expectationView) mainView.expectationView.stopPlay();
+        },
+        onEnterValuesScene: (subView) => {
+            canvasController.enterValuesScene(subView);
+            if (topBar) topBar.refreshValuesSubView(subView);
+            if (estimatorPill) estimatorPill.refresh();
+            if (mainView && mainView.goalCard) mainView.goalCard.refresh();
+            redraw();
         }
     }, canvasViewModel);
     topBar.setup();
@@ -949,6 +961,32 @@ function setup() {
     // initial .hide() here would leave the pill stuck hidden until the user leaves and re-enters
     // Build/Policy at least once.
     treeViewPill.show();
+
+    // Full-canvas Values-mode goal card - a highest-z-index DOM overlay (not a positioned pill),
+    // so unlike the pills above it needs no updateBounds()/TOP_BARS_HEIGHT wiring. This codebase's
+    // floating chrome refreshes on-demand from specific call sites (see estimatorPill.refresh()'s
+    // many call sites above/below) rather than every draw tick, so goalCard.refresh() is likewise
+    // called explicitly from every place that can change goalCardVisible/goalCardMuted, instead of
+    // from mainView.js's draw() loop.
+    mainView.goalCard = new GoalCard({
+        onSelectScene: (subView) => {
+            canvasController.enterValuesScene(subView);
+            // enterValuesScene may re-show the card (goalCardMuted still false) - but the user
+            // just explicitly chose a scene from the card itself, so dismiss it regardless of the
+            // mute flag; only an actual future re-entry (toolbar click, Reset) should re-trigger it.
+            canvasController.dismissGoalCard();
+            if (topBar) topBar.refreshValuesSubView(subView);
+            if (estimatorPill) estimatorPill.refresh();
+            mainView.goalCard.refresh();
+            redraw();
+        },
+        onMuted: () => {
+            canvasController.muteGoalCard();
+            mainView.goalCard.refresh();
+            redraw();
+        }
+    }, canvasViewModel);
+    mainView.goalCard.setup();
 
     AppPalette._onThemeChange = () => {
         mainView.invalidateDotGrid();
@@ -1209,6 +1247,8 @@ function setup() {
             _runExpectationBatch();
             if (mainView && mainView.chartDock) mainView.chartDock.refresh();
             rightPanel.updateContent();
+            canvasController.showGoalCardIfNotMuted();
+            if (mainView && mainView.goalCard) mainView.goalCard.refresh();
             redraw();
         };
     }
