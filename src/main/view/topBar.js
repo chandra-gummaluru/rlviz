@@ -559,6 +559,16 @@ class TopBar {
     _createActionButtons() {
         this.renormalizeBtn = this._createBtn('⟳ Renormalize', () => this.callbacks.onRenormalize(), 'toolbar-btn--renormalize');
 
+        // Evaluate pi: unlike every other button in this cluster, this one is ALWAYS visible in
+        // all four modes (Build/Policy/Monte Carlo/Iteration) - it's never hidden by setMode()'s
+        // per-mode show/hide dance the way playPauseBtn/renormalizeBtn etc. are, only ever
+        // enabled/disabled via setEvaluatePolicyEnabled() (see main.js's onModelKnownToggle
+        // wiring). Shown once here at creation time and never hidden again.
+        this.evaluatePiBtn = this._createBtn('Evaluate π', () => {
+            if (this.callbacks.onEvaluatePolicy) this.callbacks.onEvaluatePolicy();
+        }, 'toolbar-btn--evaluate-pi');
+        this.evaluatePiBtn.show();
+
         this.playPauseBtn = this._createBtn('▶ Run', () => this.handlePlayPauseClick(), 'toolbar-btn--play');
         this.playPauseBtn.elt.dataset.mode = 'play';
         this.stepBtn = this._createBtn('Step', () => this.callbacks.onStep(), 'toolbar-btn--step');
@@ -792,6 +802,13 @@ class TopBar {
         if (this.stepBtn) {
             if (enabled) this.stepBtn.removeAttribute('disabled');
             else this.stepBtn.attribute('disabled', '');
+        }
+    }
+
+    setEvaluatePolicyEnabled(enabled) {
+        if (this.evaluatePiBtn) {
+            if (enabled) this.evaluatePiBtn.removeAttribute('disabled');
+            else this.evaluatePiBtn.attribute('disabled', '');
         }
     }
 
