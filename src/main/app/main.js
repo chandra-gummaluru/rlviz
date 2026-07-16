@@ -131,6 +131,10 @@ let viStepInteractor;
 let viResetInteractor;
 let viSkipInteractor;
 
+// Evaluate Policy (created in setup)
+let policyEvaluationState;
+let evaluatePolicyInteractor;
+
 // Callbacks
 const onStateClick = () => {
     canvasController.startNodePlacement('state');
@@ -229,6 +233,7 @@ const onOpenRecent = (entry) => {
 const onModelKnownToggle = (known) => {
     canvasController.setModelKnown(known);
     if (topBar) topBar.refreshParameters();
+    if (topBar) topBar.setEvaluatePolicyEnabled(canvasViewModel.modelKnown);
     if (topBar) topBar.refreshModeToggle();
     if (rightPanel) rightPanel.updateContent();
     if (mainView && mainView.chartDock) mainView.chartDock.refresh();
@@ -556,6 +561,12 @@ const onRenormalize = () => {
     redraw();
 };
 
+const onEvaluatePolicy = () => {
+    if (!evaluatePolicyInteractor) return;
+    const gamma = rightPanel ? rightPanel.discountFactor : 0.9;
+    evaluatePolicyInteractor.execute(new EvaluatePolicyInputData(gamma));
+};
+
 const onResetZoom = () => {
     canvasViewModel.viewport.reset();
     redraw();
@@ -832,6 +843,7 @@ function setup() {
         onModelKnownToggle: onModelKnownToggle,
         onObservabilityToggle: onObservabilityToggle,
         onRenormalize: onRenormalize,
+        onEvaluatePolicy: onEvaluatePolicy,
         onPlay: onPlay,
         onPause: onPause,
         onStep: onStep,
@@ -1044,6 +1056,19 @@ function setup() {
     viStepInteractor = new VIStepInteractor(valueIterationState, viPresenter, graph, viAnimOptions);
     viResetInteractor = new VIResetInteractor(valueIterationState, viPresenter);
     viSkipInteractor = new VISkipInteractor(valueIterationState, viPresenter, graph, viAnimOptions);
+
+    // Create Evaluate Policy presenter and interactor (Policy log - shared across all four modes)
+    policyEvaluationState = new PolicyEvaluationState();
+    canvasViewModel.policyEvaluationState = policyEvaluationState;
+
+    const evaluatePolicyPresenter = new EvaluatePolicyPresenter(canvasViewModel);
+    evaluatePolicyPresenter.setRightPanel(rightPanel);
+
+    evaluatePolicyInteractor = new EvaluatePolicyInteractor(
+        graph, simulationState, policyEvaluationState, evaluatePolicyPresenter,
+        () => canvasViewModel.startNode
+    );
+    topBar.setEvaluatePolicyEnabled(canvasViewModel.modelKnown);
 
     // Create Value Iteration view
     const valueIterationView = new ValueIterationView(canvasViewModel, {
