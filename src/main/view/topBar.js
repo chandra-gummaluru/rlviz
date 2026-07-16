@@ -677,6 +677,12 @@ class TopBar {
         this.viTLabel.hide();
         this.viTInput.hide();
 
+        // Monte Carlo/Iteration toolbar segments only show their tint while actually the current
+        // sub-view (matching Build/Policy's own .toolbar-toggle--active convention) - clear both
+        // unconditionally, then re-apply below for whichever one matches.
+        if (this.monteCarloToggleBtn) this.monteCarloToggleBtn.removeClass('toolbar-toggle--active');
+        if (this.iterationToggleBtn) this.iterationToggleBtn.removeClass('toolbar-toggle--active');
+
         if (!subView) return;
 
         if (subView === 'mc') {
@@ -684,6 +690,7 @@ class TopBar {
             this.expectationStepBtn.show();
             this.expectationResetBtn.show();
             this.setExpectationPlayMode('play');
+            if (this.monteCarloToggleBtn) this.monteCarloToggleBtn.addClass('toolbar-toggle--active');
         }
         if (subView === 'vi') {
             this.viPlayPauseBtn.show();
@@ -693,6 +700,7 @@ class TopBar {
             this.viTLabel.show();
             this.viTInput.show();
             this.setVIPlayPauseMode('play');
+            if (this.iterationToggleBtn) this.iterationToggleBtn.addClass('toolbar-toggle--active');
         }
     }
 
@@ -727,9 +735,8 @@ class TopBar {
                 this.policyToggleBtn.addClass('toolbar-toggle--active');
             }
         } else if (mode === 'values') {
-            // Monte Carlo/Iteration buttons don't carry .toolbar-toggle--active - they're
-            // rendered in their own tinted "available scene" color at all times (see
-            // _createModeToggle()'s comment), not toggled as the currently-active segment.
+            // Monte Carlo/Iteration's own .toolbar-toggle--active is applied inside
+            // _applyValuesSubViewButtons() based on subView, same as Build/Policy above.
             const subView = (this.viewModel && this.viewModel.valuesSubView) || 'mc';
             this._applyValuesSubViewButtons(subView);
         }

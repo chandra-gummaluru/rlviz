@@ -548,22 +548,23 @@ input[type="range"].menubar-speed-slider::-moz-range-thumb {
    visually-separate scenes. Monte Carlo keeps the prior Values orange; Iteration uses VI's own
    existing teal (ValuesMethodMatrix's known:full accent), turning purpleT (Learning Iteration's
    accent) when P is unknown - matching the handoff's "Iteration ... becomes Learning Iteration,
-   purple, when P unknown." Neither button carries .toolbar-toggle--active today (that class is
-   reserved for whichever of Build/Policy is the CURRENT top-level mode) - these two are always
-   rendered in their "available scene" color regardless of whether Values mode is presently
-   active, since (per the design) they're entry points into a goal-card-gated flow, not a
-   continuously-updated currently-selected-tab indicator the way Build/Policy's own active state is. */
-.toolbar-toggle--mc {
+   purple, when P unknown." Tint only shows when the segment is the CURRENT sub-view
+   (.toolbar-toggle--active, toggled by _applyValuesSubViewButtons() same as Build/Policy's own
+   active state) - not permanently, matching Build/Policy's own active-only convention. The
+   .toolbar-toggle--iteration-unknown label swap still applies regardless of active state (it
+   tracks modelKnown, not which sub-view is current), but its purple tint is likewise gated on
+   .toolbar-toggle--active. */
+.toolbar-toggle--mc.toolbar-toggle--active {
   background-color: color-mix(in srgb, var(--accent-orange) 16%, transparent);
   color: var(--accent-orange);
 }
 
-.toolbar-toggle--iteration {
+.toolbar-toggle--iteration.toolbar-toggle--active {
   background-color: color-mix(in srgb, var(--accent-teal) 16%, transparent);
   color: var(--accent-teal);
 }
 
-.toolbar-toggle--iteration-unknown {
+.toolbar-toggle--iteration-unknown.toolbar-toggle--active {
   background-color: color-mix(in srgb, var(--accent-purpleT) 16%, transparent);
   color: var(--accent-purpleT);
 }
