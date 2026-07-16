@@ -673,6 +673,31 @@ class CanvasController {
         this.viewModel.simulationState.setPolicyWeight(stateId, actionId, value);
     }
 
+    // Policy log hover-preview (Evaluate pi Phase 2) - sets/clears the preview pair
+    // EdgeViewModel.policyEdgeProbability reads, WITHOUT touching the real simulationState.policy.
+    setPolicyPreview(policySnapshot, policyWeightsSnapshot) {
+        this.viewModel.interaction.previewPolicy = policySnapshot;
+        this.viewModel.interaction.previewPolicyWeights = policyWeightsSnapshot;
+    }
+
+    clearPolicyPreview() {
+        this.viewModel.interaction.previewPolicy = null;
+        this.viewModel.interaction.previewPolicyWeights = null;
+    }
+
+    // Restores a Policy log entry's snapshotted policy for REAL - overwrites the live
+    // simulationState.policy/.policyWeights (shallow-copying the snapshot again so later edits to
+    // the live policy don't retroactively mutate the log entry itself, mirroring
+    // EvaluatePolicyInteractor's own snapshot-on-log discipline).
+    restorePolicyFromLog(entry) {
+        this.viewModel.simulationState.policy = { ...entry.policySnapshot };
+        const weights = {};
+        Object.entries(entry.policyWeightsSnapshot).forEach(([stateId, w]) => {
+            weights[stateId] = { ...w };
+        });
+        this.viewModel.simulationState.policyWeights = weights;
+    }
+
     /**
      * Check for unnormalized action nodes. Returns array of names, or empty if all OK.
      */

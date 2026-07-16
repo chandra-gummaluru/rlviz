@@ -66,6 +66,13 @@ class InteractionViewModel {
         this.hoveredNode = null;
         this.hoveredEdge = null;
 
+        // Policy log hover-preview (Evaluate pi Phase 2): when hovering a Policy log row, this
+        // holds that row's SNAPSHOTTED policy/policyWeights so EdgeViewModel.policyEdgeProbability
+        // can render it on the graph WITHOUT touching the real, live simulationState.policy -
+        // only clicking a row (CanvasController.restorePolicyFromLog) mutates the real policy.
+        this.previewPolicy = null;
+        this.previewPolicyWeights = null;
+
         // Editor neighborhood focus state
         this.editorFocusNode = null;
         this.editorFocusNodeIds = new Set();
@@ -87,6 +94,8 @@ class InteractionViewModel {
         this.textLabelRequested = false;
         this.hoveredNode = null;
         this.hoveredEdge = null;
+        this.previewPolicy = null;
+        this.previewPolicyWeights = null;
         this.clearEditorFocus();
     }
 

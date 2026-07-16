@@ -50,6 +50,25 @@ class EdgeViewModel {
         const to = this.edge.getToNode();
         if (from.type !== 'state' || to.type !== 'action') return null;
 
+        // Policy log hover-preview takes priority over the live policy - reads the same
+        // getPolicyMode()-shaped logic but against the SNAPSHOT, not simulationState itself.
+        const previewPolicy = this.interactionViewModel.previewPolicy;
+        if (previewPolicy) {
+            const previewWeights = this.interactionViewModel.previewPolicyWeights || {};
+            const deterministicAction = previewPolicy[from.id];
+            if (deterministicAction !== undefined && deterministicAction !== null) {
+                return Number(deterministicAction) === Number(to.id) ? 1.0 : null;
+            }
+            const weights = previewWeights[from.id];
+            if (weights) {
+                const actions = from.actions || [];
+                const sum = actions.reduce((s, a) => s + (weights[a] ?? 0), 0);
+                if (sum <= 0) return null;
+                return (weights[to.id] ?? 0) / sum;
+            }
+            return null; // previewed state has no explicit policy entry - uniform, nothing to highlight
+        }
+
         const policyMode = this.simulationState.getPolicyMode(from.id);
         if (policyMode === 'deterministic') {
             return this.simulationState.getPolicyAction(from.id) === to.id ? 1.0 : null;
