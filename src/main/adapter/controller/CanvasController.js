@@ -523,6 +523,35 @@ class CanvasController {
         }
     }
 
+    // Evaluate redesign Phase 1 entry point: the top bar's Monte Carlo/Iteration toolbar segments
+    // (and the goal card's own scene buttons) both call this instead of setMode+setValuesSubView
+    // directly, so the goal-card gate is applied uniformly in one place. Always composes the
+    // existing setMode/setValuesSubView calls (both already no-op internally when there's no real
+    // transition), then shows the goal card unless the user already muted it this session -
+    // re-clicking the same already-active segment still re-shows the card, matching the handoff's
+    // "picking either scene opens the goal card first" (an explicit re-entry action, not merely
+    // "ensure this sub-view is active").
+    enterValuesScene(subView) {
+        this.setMode('values');
+        this.setValuesSubView(subView);
+        this.showGoalCardIfNotMuted();
+    }
+
+    showGoalCardIfNotMuted() {
+        if (!this.viewModel.goalCardMuted) {
+            this.viewModel.goalCardVisible = true;
+        }
+    }
+
+    dismissGoalCard() {
+        this.viewModel.goalCardVisible = false;
+    }
+
+    muteGoalCard() {
+        this.viewModel.goalCardMuted = true;
+        this.viewModel.goalCardVisible = false;
+    }
+
     // Toggles the VI pane between "Value Iteration" (P known) and "Learning Iteration"
     // (P unknown) presentation. No domain/algorithm change - see setManualQOverride for the
     // accompanying editable-Q-table affordance.

@@ -67,6 +67,16 @@ class CanvasViewModel {
         // Real episodic Q-learning state for the Learning Iteration quadrant. Attached in main.js;
         // presentation/session-only, excluded from graph import/export (see QLearningState).
         this.qLearningState = null;
+
+        // Evaluate redesign Phase 1: the full-canvas "goal card" shown on entering Values mode
+        // (V^pi(S0) = E[G | S=S0]), gating direct entry into the Monte Carlo/Iteration sub-views.
+        // Both fields are presentation-tier only, session-scoped (goalCardMuted is NOT persisted
+        // to localStorage, unlike theme preference) - excluded from graph import/export, same
+        // convention as buildCanvasView/treeExpanded above.
+        this.goalCardVisible = false;
+        // "don't ask again" for this session - once true, entering Values mode or clicking Reset
+        // in Monte Carlo/Iteration no longer shows the card until the page reloads.
+        this.goalCardMuted = false;
     }
 
     // Factory methods for creating presentation view models
