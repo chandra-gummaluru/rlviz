@@ -24,7 +24,8 @@ class TopBar {
         // Mode toggle
         this.buildToggleBtn = null;
         this.policyToggleBtn = null;
-        this.valuesSlot = null;
+        this.monteCarloToggleBtn = null;
+        this.iterationToggleBtn = null;
         this.currentMode = 'build';
 
         // Theme toggle
@@ -235,13 +236,56 @@ class TopBar {
         this.policyToggleBtn.addClass('toolbar-toggle--policy');
         this.policyToggleBtn.mousePressed(() => this.switchMode('policy'));
 
-        // Values toggle: top-level mode entry point only, symmetric with Build/Policy. Sub-view
-        // selection (MC | Method) lives in the floating estimator pill, not here.
-        this.valuesSlot = createButton('Values');
-        this.valuesSlot.parent(track);
-        this.valuesSlot.addClass('toolbar-toggle');
-        this.valuesSlot.addClass('toolbar-toggle--values');
-        this.valuesSlot.mousePressed(() => this.switchMode('values'));
+        // Monte Carlo / Iteration: Evaluate redesign Phase 1 replaces the single Values segment
+        // with two visually-separate scene entry points. Both still drive the SAME internal
+        // mode='values' + valuesSubView state as before (see CanvasController.enterValuesScene) -
+        // this is a rendering-only split, not a new top-level mode. Sub-view switching WHILE
+        // already in Values mode still lives in the floating estimator pill, unchanged; these
+        // buttons are the "enter Values mode at this sub-view, with the goal-card gate" path.
+        this.monteCarloToggleBtn = createButton('Monte Carlo');
+        this.monteCarloToggleBtn.parent(track);
+        this.monteCarloToggleBtn.addClass('toolbar-toggle');
+        this.monteCarloToggleBtn.addClass('toolbar-toggle--mc');
+        this.monteCarloToggleBtn.mousePressed(() => this.enterValuesScene('mc'));
+
+        // Iteration's label/active-color relabel to "Learning Iteration" (purpleT) when P is
+        // unknown, mirroring ValuesMethodMatrix's known:full/unknown:full split - see
+        // refreshModeToggle() below. Only the modelKnown axis affects this button; observability
+        // (Belief/PO Q-Learning) stays handled entirely inside the Iteration sub-view, as today.
+        this.iterationToggleBtn = createButton('Iteration');
+        this.iterationToggleBtn.parent(track);
+        this.iterationToggleBtn.addClass('toolbar-toggle');
+        this.iterationToggleBtn.addClass('toolbar-toggle--iteration');
+        this.iterationToggleBtn.mousePressed(() => this.enterValuesScene('vi'));
+
+        this.refreshModeToggle();
+    }
+
+    // Re-applies the Iteration button's label ("Iteration" / "Learning Iteration") and active-
+    // state color class based on the current modelKnown flag. Called on setup and whenever
+    // modelKnown toggles (main.js's onModelKnownToggle) so the button never goes stale.
+    refreshModeToggle() {
+        if (!this.iterationToggleBtn || !this.viewModel) return;
+        const known = this.viewModel.modelKnown;
+        this.iterationToggleBtn.html(known ? 'Iteration' : 'Learning Iteration');
+        // NOTE: this codebase's vendored p5.js Element.toggleClass(cls) takes only ONE argument
+        // and always flips unconditionally - it silently ignores a second "force" boolean (unlike
+        // native classList.toggle(cls, force)). Using addClass/removeClass explicitly instead,
+        // matching _refreshParamsPopover()'s pattern elsewhere in this file.
+        if (known) {
+            this.iterationToggleBtn.removeClass('toolbar-toggle--iteration-unknown');
+        } else {
+            this.iterationToggleBtn.addClass('toolbar-toggle--iteration-unknown');
+        }
+    }
+
+    // Public entry point for both new buttons - always shown via callback (not a direct
+    // controller call), matching every other top-bar action in this file.
+    enterValuesScene(subView) {
+        this.currentMode = 'values';
+        if (this.callbacks.onEnterValuesScene) {
+            this.callbacks.onEnterValuesScene(subView);
+        }
     }
 
     switchMode(newMode) {
@@ -654,7 +698,6 @@ class TopBar {
 
         this.buildToggleBtn.removeClass('toolbar-toggle--active');
         this.policyToggleBtn.removeClass('toolbar-toggle--active');
-        this.valuesSlot.removeClass('toolbar-toggle--active');
 
         if (mode === 'build' || mode === 'policy') {
             this.playPauseBtn.show();
@@ -672,9 +715,11 @@ class TopBar {
                 this.policyToggleBtn.addClass('toolbar-toggle--active');
             }
         } else if (mode === 'values') {
+            // Monte Carlo/Iteration buttons don't carry .toolbar-toggle--active - they're
+            // rendered in their own tinted "available scene" color at all times (see
+            // _createModeToggle()'s comment), not toggled as the currently-active segment.
             const subView = (this.viewModel && this.viewModel.valuesSubView) || 'mc';
             this._applyValuesSubViewButtons(subView);
-            this.valuesSlot.addClass('toolbar-toggle--active');
         }
     }
 

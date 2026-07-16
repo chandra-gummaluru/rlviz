@@ -544,11 +544,28 @@ input[type="range"].menubar-speed-slider::-moz-range-thumb {
   color: var(--color-primary-contrast);
 }
 
-/* Values toggle: plain segment, symmetric with Build/Policy. Sub-view selection (MC | Method)
-   lives in the floating estimator pill, not here. */
-.toolbar-toggle--values.toolbar-toggle--active {
-  background-color: var(--accent-orange);
-  color: var(--color-primary-contrast);
+/* Monte Carlo / Iteration: Evaluate redesign Phase 1 replaces the single Values segment with two
+   visually-separate scenes. Monte Carlo keeps the prior Values orange; Iteration uses VI's own
+   existing teal (ValuesMethodMatrix's known:full accent), turning purpleT (Learning Iteration's
+   accent) when P is unknown - matching the handoff's "Iteration ... becomes Learning Iteration,
+   purple, when P unknown." Neither button carries .toolbar-toggle--active today (that class is
+   reserved for whichever of Build/Policy is the CURRENT top-level mode) - these two are always
+   rendered in their "available scene" color regardless of whether Values mode is presently
+   active, since (per the design) they're entry points into a goal-card-gated flow, not a
+   continuously-updated currently-selected-tab indicator the way Build/Policy's own active state is. */
+.toolbar-toggle--mc {
+  background-color: color-mix(in srgb, var(--accent-orange) 16%, transparent);
+  color: var(--accent-orange);
+}
+
+.toolbar-toggle--iteration {
+  background-color: color-mix(in srgb, var(--accent-teal) 16%, transparent);
+  color: var(--accent-teal);
+}
+
+.toolbar-toggle--iteration-unknown {
+  background-color: color-mix(in srgb, var(--accent-purpleT) 16%, transparent);
+  color: var(--accent-purpleT);
 }
 
 /* Value Iteration T input */
