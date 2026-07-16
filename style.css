@@ -1931,6 +1931,121 @@ input[type="range"]::-moz-range-thumb {
   color: var(--color-primary-contrast, var(--text-white));
 }
 
+/* ── Goal card (Evaluate redesign Phase 1) ───────────────────────────────── */
+
+.goal-card-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(6px);
+}
+
+.goal-card {
+  width: 420px;
+  max-width: 90vw;
+  box-sizing: border-box;
+  background: var(--surface-card2, var(--bg-card));
+  border: 1px solid var(--border-hairline, var(--border-light));
+  border-radius: 14px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  padding: 28px 32px;
+  text-align: center;
+  font-family: var(--font-family);
+}
+
+.goal-card-eyebrow {
+  font-size: 10px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--text-lighter);
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+.goal-card-equation {
+  font-size: 20px;
+  color: var(--text-dark);
+  line-height: 1.6;
+  margin-bottom: 22px;
+}
+
+.goal-card-scenes {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.goal-card-scene {
+  flex: 1;
+  padding: 14px 10px;
+  border-radius: 9px;
+  border: 1px solid var(--border-hairline, var(--border-light));
+  background: var(--surface-btn);
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.goal-card-scene--mc:hover {
+  border-color: var(--accent-orange);
+}
+
+.goal-card-scene--iteration:hover {
+  border-color: var(--accent-teal);
+}
+
+.goal-card-scene-label {
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 3px;
+}
+
+.goal-card-scene--mc .goal-card-scene-label {
+  color: var(--accent-orange);
+}
+
+.goal-card-scene--iteration .goal-card-scene-label {
+  color: var(--accent-teal);
+}
+
+.goal-card-scene-sublabel {
+  font-size: 10.5px;
+  color: var(--text-lighter);
+}
+
+.goal-card-compare {
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 14px;
+  padding: 9px;
+  border-radius: 9px;
+  background: transparent;
+  border: 1px dashed var(--border-hairline, var(--border-light));
+  color: var(--text-lighter);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: not-allowed;
+}
+
+.goal-card-footer {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.goal-card-mute {
+  font-size: 11px;
+  color: var(--text-lighter);
+  cursor: pointer;
+}
+
+.goal-card-mute:hover {
+  color: var(--text-dark);
+}
+
 /* ── Q-learning Algorithm subsection (Learning Iteration right panel) ─────── */
 
 .ql-algo-toggle {
