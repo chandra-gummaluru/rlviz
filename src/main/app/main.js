@@ -507,6 +507,15 @@ canvasController.registerModeLifecycle({
 
 const onModeChange = (mode) => {
     canvasController.setMode(mode);
+    // Leaving Values mode via Build/Policy while the goal card was still showing (i.e. the user
+    // clicked Monte Carlo/Iteration but then navigated away without picking a scene) must not
+    // strand the overlay - it's a full-viewport fixed-position element that would otherwise float
+    // uselessly over the Build/Policy canvas with no way to dismiss it short of muting the card
+    // for the whole session. onModeChange is only ever called for 'build'/'policy' (Monte Carlo/
+    // Iteration route through the separate onEnterValuesScene callback instead), so this is safe
+    // to run unconditionally here.
+    canvasController.dismissGoalCard();
+    if (mainView && mainView.goalCard) mainView.goalCard.refresh();
     redraw();
 };
 
