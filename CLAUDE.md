@@ -45,6 +45,7 @@ The codebase follows **Clean Architecture** with clear separation of concerns.
    - Simulation (trace replay): `simulation/` — `play`, `pause`, `step`, `skip`, `reset` interactors + `simulationAnimator.js`
    - Value Iteration: `valueIteration/` — `runVI`, `viPlay`, `viPause`, `viStep`, `viSkip`, `viReset` + `viAnimator.js`
    - Monte Carlo: `expectation/` — `runExpectation`, `updateExpectationGamma`
+   - Policy evaluation: `evaluatePolicy` — computes the exact value of whatever policy is currently configured (see "Evaluate π / Policy log" below)
    - `shared/AnimationUtils.js`: helpers shared across animator classes
 
 3. **Adapter Layer** (`src/main/adapter/`): Connects domain to view.
@@ -55,14 +56,14 @@ The codebase follows **Clean Architecture** with clear separation of concerns.
 
 4. **View Layer** (`src/main/view/`): p5.js canvas rendering plus DOM chrome (top bar/panels/floating pills are real HTML elements layered over the canvas, not drawn on it).
    - `mainView.js`: Main canvas draw loop and low-level input handling; dispatches into `expectationView`/`valueIterationView` for the Values mode sub-views. `mouseWheel()` only zooms the canvas when the wheel event's actual target is the canvas element itself — wheel events over DOM chrome (right panel, chart dock, toolbar, pills) fall through to native browser scrolling instead. `_isEditableMode()` (`mode === 'build' || mode === 'policy'`) gates every Build-only rendering/interaction branch (simulation-visibility filtering, start-node ring, editor-focus fade, right-click set-start-node) — Policy's canvas is intentionally identical to Build's, see "Mode System" below.
-   - `topBar.js`: Single merged ~40px top bar (replaces the old two-row menuBar.js/toolBar.js split) — logo, filename chip (New/Open/Save/Export PNG + MRU recent files, backed by `helpers/RecentFiles.js`; Import/Export JSON were removed as redundant with Open/Save), undo/redo icon buttons, **Build | Policy | Monte Carlo | Iteration** mode toggle, theme toggle, a **Parameters popover** (continuous animation-speed slider, Spinning Arrow toggle, P known/unknown, Full/Partial observability — all full-width segmented controls/sliders), and mode-dependent action buttons (Run/Step/Reset, +Renormalize in Build/Policy; Play/Step/Reset in Monte Carlo; Play/Step/Skip/Reset + T-input/checkboxes in VI). Build, Policy, and Monte Carlo all show the same Play/Step/Reset button set with matching ▶/⏸ icons — only Build/Policy's Run label and Renormalize differ from Monte Carlo's per-mode specifics. Monte Carlo/Iteration are rendering-only entry points onto the same `mode === 'values'` state Build/Policy's own mode toggle already uses (Evaluate redesign Phase 1 — see `CanvasController.enterValuesScene()`), each landing on the matching `valuesSubView` (`'mc'` / `'vi'`) and gating the full-canvas `goalCard.js` overlay; the Iteration segment itself relabels to "Learning Iteration" (purple) when P is unknown, mirroring `iterationToggleBtn`'s own quadrant styling. The Values-mode Monte Carlo/Method sub-view switch itself lives in the floating `estimatorPill.js`, not here.
+   - `topBar.js`: Single merged ~40px top bar (replaces the old two-row menuBar.js/toolBar.js split) — logo, filename chip (New/Open/Save/Export PNG + MRU recent files, backed by `helpers/RecentFiles.js`; Import/Export JSON were removed as redundant with Open/Save), undo/redo icon buttons, **Build | Policy | Monte Carlo | Iteration** mode toggle, theme toggle, a **Parameters popover** (continuous animation-speed slider, Spinning Arrow toggle, P known/unknown, Full/Partial observability — all full-width segmented controls/sliders), and mode-dependent action buttons (Run/Step/Reset, +Renormalize in Build/Policy; Play/Step/Reset in Monte Carlo; Play/Step/Skip/Reset + T-input/checkboxes in VI). Build, Policy, and Monte Carlo all show the same Play/Step/Reset button set with matching ▶/⏸ icons — only Build/Policy's Run label and Renormalize differ from Monte Carlo's per-mode specifics. An **Evaluate π** button sits immediately after Renormalize and, unlike every other action button in this cluster, is always visible in all four modes (Build/Policy/Monte Carlo/Iteration) rather than being shown/hidden per-mode — it's only ever enabled/disabled, via `setEvaluatePolicyEnabled()`, gated on `modelKnown` (disabled whenever P is unknown, in both partial- and full-observability quadrants). See "Evaluate π / Policy log" below. Monte Carlo/Iteration are rendering-only entry points onto the same `mode === 'values'` state Build/Policy's own mode toggle already uses (Evaluate redesign Phase 1 — see `CanvasController.enterValuesScene()`), each landing on the matching `valuesSubView` (`'mc'` / `'vi'`) and gating the full-canvas `goalCard.js` overlay; the Iteration segment itself relabels to "Learning Iteration" (purple) when P is unknown, mirroring `iterationToggleBtn`'s own quadrant styling. The Values-mode Monte Carlo/Method sub-view switch itself lives in the floating `estimatorPill.js`, not here.
    - `toolPalette.js`: Floating top-left tool palette shown in **both** Build and Policy mode (Policy's canvas is fully editable, identical to Build's) — icon+label rows (select / add-state / add-action / add-text-label), each tinted with its tool's own accent color (state=cyan, action=purple, text=neutral gray) and a soft active-pill highlight.
    - `treeViewPill.js` + `treeView.js`: Floating top-right `[Graph | Tree]` pill in Build/Policy mode, plus the full-canvas view it toggles — unrolls the MDP into a left-to-right search tree rooted at the start node (s₀), with click-to-expand/collapse (depth-capped by default) and hover-highlight of repeated states. Presentation-only (`buildCanvasView`, `treeExpanded` on `CanvasViewModel`), unrelated to Learning Iteration's own algorithmic Graph|Tree toggle in Values mode. While a Build/Policy simulation is actively playing (`simulationState.replayInitialized`), Tree view switches from the static full unroll to a progressive reveal of the trace-so-far (`TreeView._drawTraceReveal()`) — mirroring Graph view's own reveal/highlight/spinning-arrow phases but resolved against tree pathIds instead of real graph positions (auto-expanding and auto-panning to follow the active node, via the shared `SpinningArrowGlyph` helper) — with badge/hover interaction disabled until Reset returns it to the static tree.
    - `estimatorPill.js`: Floating top-center pill in Values mode — `[Monte Carlo | <method>]` segmented switch (method label/accent resolved via `helpers/valuesMethodMatrix.js`) plus a small top-left badge chip that tracks whichever pane is currently active: "Monte Carlo" (orange) while on the MC pane, the resolved method title/accent while on the Method pane.
    - `goalCard.js`: Full-canvas overlay shown on entering Values mode via the top bar's Monte Carlo/Iteration segments (or via Reset, in either sub-view) unless muted for the session — states `V^π(S₀) = E[G | S=S₀]` before the user picks a scene. Presentation-only (`goalCardVisible`, `goalCardMuted` on `CanvasViewModel`); does not change the underlying `mode`/`valuesSubView` model, only gates a new entry path onto it (`CanvasController.enterValuesScene`). The Compare link is a disabled stub (a later phase).
    - `mcRunsPill.js`: Floating top-right pill in Values → Monte Carlo only — `runs` label + a `[16][32][64]` segmented switch for `expectationState.displayRuns`, replacing the right panel's old "Display Runs" dropdown. Hidden outside the MC sub-view.
    - `zoomPill.js`: Floating bottom-right `[−] [zoom%] [+]` control; kept in sync by every zoom entry point (wheel, pinch, keyboard shortcuts, this pill's own buttons).
-   - `rightPanel.js` + `RightPanelBuilder.js`: Context-sensitive side panel (node/edge inspector, Build panel, Policy-mode panel, MC/Method panels, VI/MC controls); `RightPanelBuilder` holds small reusable DOM-factory helpers (badges, slider rows). The panel element itself is natively scrollable (`overflow-y: auto`) once content exceeds the viewport. This is the **one place Build and Policy mode intentionally differ** — everything else (canvas, top bar) is shared.
+   - `rightPanel.js` + `RightPanelBuilder.js`: Context-sensitive side panel (node/edge inspector, Build panel, Policy-mode panel, MC/Method panels, VI/MC controls); `RightPanelBuilder` holds small reusable DOM-factory helpers (badges, slider rows). The panel element itself is natively scrollable (`overflow-y: auto`) once content exceeds the viewport. This is the **one place Build and Policy mode intentionally differ** — everything else (canvas, top bar) is shared. Every mode's default (nothing-selected) panel also renders a shared **Policy log** section (`_renderPolicyLog()`) — see "Evaluate π / Policy log" below.
    - `expectationView.js` + `expectationScrubber.js`: Monte Carlo mini-panel grid and its custom shifting-timeline scrubber. `ExpectationView.step()` advances `currentT` by one tick without starting continuous playback (backs the MC Step button); `startPlay()`/`stopPlay()` back Play/Pause.
    - `valueIterationView.js`: Value Iteration / Learning Iteration / Belief Iteration / PO Q-Learning canvas rendering (V*/Q*/belief labels, Bellman backup animation, editable Q-table cells, dashed node stroke in partial-observability quadrants)
    - `chartDock.js`: Resizable bottom dock in Values mode with two chart slots (Convergence, Histogram, Q-table, MC-tree — see `helpers/chartDataBuilders.js` for the pure data-shaping functions)
@@ -135,6 +136,40 @@ The two partial-observability quadrants are **illustrative, not real POMDP algor
 
 `ExpectationState` generates and stores multiple rollouts from the start state. `ExpectationViewModel.computeLayout()` lays rollouts into a grid (16/32/64 panels) and computes one shared fit-transform for rendering each rollout's graph into its mini-panel; `expectationScrubber.js` drives a shared `currentT` across all panels. `ExpectationState.getPerStateMeans()` aggregates already-collected rollout data per visited state, feeding the MC column of the "Estimate vs exact" table.
 
+### Evaluate π / Policy log (Build, Policy, Monte Carlo, Iteration — all four modes)
+
+`PolicyEvaluationState` (`src/main/domain/policyEvaluationState.js`) is a third, deliberately
+separate way to get a "value" out of the current MDP, alongside Value Iteration and Monte Carlo —
+easy to conflate with either if you haven't read its own doc comment first:
+
+- **Value Iteration's V\*** — the *optimal* value, via the Bellman *optimality* equation (`max_a`
+  over actions in every backup). Policy-agnostic: it solves for the best possible policy, so it
+  never looks at whatever π is currently configured.
+- **Monte Carlo's E[G] estimate** — an *approximate*, current-policy-specific value, obtained by
+  sampling rollouts under whichever policy π is currently configured and averaging the discounted
+  return.
+- **Evaluate π's V^π** — an *exact*, current-policy-specific value, obtained via the Bellman
+  *expectation* equation (`sum_a pi(a|s) * ...` — no `max_a` anywhere) iterated to convergence for
+  the SAME fixed π Monte Carlo is sampling, just computed exactly instead of sampled.
+
+`PolicyEvaluationState.evaluate(graph, simulationState, startStateId, gamma, epsilon)` reuses
+`SimulationState.getPolicyMode()` / `.getPolicyAction()` / `._normalizedProbsForState()` verbatim —
+the same weighting logic `EdgeViewModel.policyEdgeProbability` and Build/Policy's own simulation
+already use — so the evaluator and the canvas rendering can never disagree about what "the current
+policy" means. It also owns `entries` (the **Policy log** — one shared list across all four modes,
+not per-mode) via `addEntry()`/`clear()`. `topBar.js`'s always-visible, `modelKnown`-gated
+**Evaluate π** button calls the `evaluatePolicy` use case, which appends a new log entry every
+click; `rightPanel.js`'s **Policy log** section (rendered from all four modes' default panels)
+lists every past entry (labeled `\pi_1`, `\pi_2`, ...), star-marking whichever is currently best.
+Hovering a row previews that entry's policy on the canvas via `CanvasController.setPolicyPreview()`
+/`clearPolicyPreview()` (a `previewPolicy`/`previewPolicyWeights` pair on `InteractionViewModel`,
+never touching the real, live `simulationState.policy`); clicking a row calls
+`restorePolicyFromLog()`, which does overwrite the real policy for good. Both
+`policyEvaluationState.entries` and the preview pair are presentation-only and excluded from graph
+import/export, same as `manualOverrides`/`modelKnown`/`observability`. Reset (in any mode) never
+clears the log — only `rightPanel.js`'s "clear" link does (`CanvasController.clearPolicyLog()`);
+the log is a cross-run record, not tied to any one simulation's/VI-run's lifecycle.
+
 ### Estimate vs exact (Values mode, both sub-views)
 
 `RightPanel._renderEstimateVsExact()` renders a per-state comparison table (`MC | <method short label>`) after whichever panel (MC or Method) already rendered above it — this is where cross-method comparison lives now that the split canvas view is gone. In the two partial-observability quadrants a hint line clarifies that the "exact" column is really VI's real numbers under an illustrative belief label, not a true POMDP solution.
@@ -159,7 +194,7 @@ Two export modes:
 - Use cases follow strict naming: `{action}{Entity}*` (e.g. `createNode`, `deleteNode`, `moveNode`); each is self-contained in its own directory
 - View models expose read-only presentation state to views
 - Controllers never directly modify domain objects — always go through interactors
-- Presentation-only state that doesn't belong to the domain (mode, sub-view, `modelKnown`, `observability`, manual Q overrides, dock state, Policy π's derived Deterministic/Random toggle) lives on the viewmodel/domain-state layer, clearly commented as presentation-tier, and is excluded from serialization unless explicitly decided otherwise
+- Presentation-only state that doesn't belong to the domain (mode, sub-view, `modelKnown`, `observability`, manual Q overrides, dock state, Policy π's derived Deterministic/Random toggle, the Policy log's entries/preview pair) lives on the viewmodel/domain-state layer, clearly commented as presentation-tier, and is excluded from serialization unless explicitly decided otherwise
 
 ## Common Workflows
 
