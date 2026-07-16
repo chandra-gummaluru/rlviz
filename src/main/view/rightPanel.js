@@ -179,6 +179,7 @@ class RightPanel {
 
         this.renderInitialStateSection();
         this._renderStepsAndUtility();
+        this._renderPolicyLog();
     }
 
     renderInitialStateSection() {
@@ -268,6 +269,7 @@ class RightPanel {
 
         this.renderInitialStateSection();
         this._renderPolicyModeSection();
+        this._renderPolicyLog();
     }
 
     // Policy π section (Policy mode only): per-state Deterministic|Random toggle, where Random
@@ -788,6 +790,7 @@ class RightPanel {
         const liKey = ValuesMethodMatrix.key(modelKnown, this.viewModel.observability);
         if (liKey === 'unknown:full') {
             this._renderLearningIterationPanel();
+            this._renderPolicyLog();
             return;
         }
 
@@ -805,6 +808,7 @@ class RightPanel {
                 qTableContainer.addClass('q-table-scroll');
                 this._renderQTable(qTableContainer, viState, viViewModel, modelKnown);
             }
+            this._renderPolicyLog();
             return;
         }
 
@@ -916,6 +920,7 @@ class RightPanel {
             hint.style('margin-top', '10px');
         }
 
+        this._renderPolicyLog();
     }
 
     // ===== Learning Iteration (unknown:full): real episodic Q-learning =====
@@ -1335,6 +1340,89 @@ class RightPanel {
     _toSubscript(n) {
         const map = { '0': '₀', '1': '₁', '2': '₂', '3': '₃', '4': '₄', '5': '₅', '6': '₆', '7': '₇', '8': '₈', '9': '₉' };
         return String(n).split('').map(c => map[c] || c).join('');
+    }
+
+    // Shared "Policy log" section, appended in all four modes' panels (Build/Policy/Monte Carlo/
+    // Iteration) - the log is mode-independent, so this renders identically everywhere it's
+    // called from. Hovering a row previews that entry's policy on the graph (via
+    // CanvasController.setPolicyPreview - does NOT touch the real, live policy); clicking a row
+    // restores it for real (CanvasController.restorePolicyFromLog).
+    //
+    // policyEvaluationState is read via this.viewModel.policyEvaluationState - NOT a constructor
+    // param or a direct rightPanel property. This mirrors valueIterationState's existing wiring
+    // (canvasViewModel.valueIterationState = valueIterationState, set post-construction by
+    // main.js; consumed here as this.viewModel.valueIterationState) rather than
+    // expectationState/expectationViewModel's OTHER existing pattern (set directly as properties
+    // on the rightPanel instance itself, e.g. rightPanel.expectationState = expectationState).
+    // Both patterns coexist in this file already - policyEvaluationState follows the
+    // viewModel-held one since the log is mode-independent, same as valueIterationState's own
+    // access path.
+    _renderPolicyLog() {
+        this.createSection('Policy log', () => {
+            const container = createDiv();
+            container.parent(this.contentContainer);
+            container.addClass('panel-section-content');
+
+            const header = createDiv();
+            header.parent(container);
+            header.style('display', 'flex');
+            header.style('justify-content', 'space-between');
+            header.style('align-items', 'baseline');
+            header.style('margin-bottom', '6px');
+
+            const clearLink = createSpan('clear');
+            clearLink.parent(header);
+            clearLink.addClass('panel-link-muted');
+            clearLink.mousePressed(() => {
+                this.controller.clearPolicyLog();
+                this.updateContent();
+            });
+
+            const entries = this.viewModel.policyEvaluationState
+                ? this.viewModel.policyEvaluationState.entries
+                : [];
+
+            if (entries.length === 0) {
+                const empty = createDiv('Click Evaluate π to log the current policy\'s exact value.');
+                empty.parent(container);
+                empty.addClass('panel-hint');
+                return;
+            }
+
+            entries.forEach(entry => {
+                const row = createDiv();
+                row.parent(container);
+                row.addClass('policy-log-row');
+
+                const label = createDiv();
+                label.parent(row);
+                label.addClass('policy-log-row-label');
+                label.elt.innerHTML = renderKatex(entry.label);
+
+                const tCol = createDiv('—');
+                tCol.parent(row);
+                tCol.addClass('policy-log-row-t');
+
+                const valueCol = createDiv(entry.valueAtStart.toFixed(2) + (entry.isBest ? ' ★' : ''));
+                valueCol.parent(row);
+                valueCol.addClass('policy-log-row-value');
+                if (entry.isBest) valueCol.addClass('policy-log-row-value--best');
+
+                row.mouseOver(() => {
+                    this.controller.setPolicyPreview(entry.policySnapshot, entry.policyWeightsSnapshot);
+                    if (typeof redraw === 'function') redraw();
+                });
+                row.mouseOut(() => {
+                    this.controller.clearPolicyPreview();
+                    if (typeof redraw === 'function') redraw();
+                });
+                row.mousePressed(() => {
+                    this.controller.restorePolicyFromLog(entry);
+                    this.updateContent();
+                    if (typeof redraw === 'function') redraw();
+                });
+            });
+        });
     }
 
     // "Estimate vs exact" comparison table: MC's per-state estimate alongside the active
@@ -1972,6 +2060,7 @@ class RightPanel {
             msg.parent(this.contentContainer);
             msg.addClass('panel-hint');
             msg.style('margin-top', '8px');
+            this._renderPolicyLog();
             return;
         }
 
@@ -2013,6 +2102,8 @@ class RightPanel {
         this._mcStatsContainer = createDiv();
         this._mcStatsContainer.parent(this.contentContainer);
         this._renderMcStatsSections();
+
+        this._renderPolicyLog();
     }
 
     // Small createSection()-equivalent that parents into an explicit container rather than

@@ -798,6 +798,50 @@ input[type="range"].menubar-speed-slider::-moz-range-thumb {
   text-align: left;
 }
 
+/* Policy log (Evaluate pi Phase 2) */
+
+.panel-link-muted {
+  font-size: 11px;
+  color: var(--text-placeholder);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.panel-link-muted:hover {
+  color: var(--text-medium);
+}
+
+.policy-log-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0 12px;
+  align-items: baseline;
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  padding: 5px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.policy-log-row:hover {
+  background: var(--surface-hover, var(--bg-dark-hover));
+}
+
+.policy-log-row-t {
+  color: var(--text-lighter);
+  text-align: center;
+}
+
+.policy-log-row-value {
+  text-align: right;
+  font-weight: 600;
+  color: var(--text-dark);
+}
+
+.policy-log-row-value--best {
+  color: var(--accent-yellow);
+}
+
 .panel-top-row {
   display: flex;
   align-items: flex-start;

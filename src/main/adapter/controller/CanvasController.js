@@ -698,6 +698,11 @@ class CanvasController {
         this.viewModel.simulationState.policyWeights = weights;
     }
 
+    // Empties the Policy log (rightPanel.js's "clear" link).
+    clearPolicyLog() {
+        this.viewModel.policyEvaluationState.clear();
+    }
+
     /**
      * Check for unnormalized action nodes. Returns array of names, or empty if all OK.
      */
