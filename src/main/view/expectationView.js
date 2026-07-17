@@ -105,7 +105,7 @@ class ExpectationView {
             return;
         }
 
-        const { panels, fitTransform } = vm.panelLayout;
+        const { panels, fitTransform, topOffset } = vm.panelLayout;
         if (!fitTransform) {
             this._drawEmptyPrompt(leftW, canvasH);
             return;
@@ -114,6 +114,17 @@ class ExpectationView {
         const { offsetX, offsetY, fitScale } = fitTransform;
         const currentT = state.currentT;
         const runColors = AppPalette.expectation.runColors;
+        const scrollY = vm.gridScrollY;
+        const viewportTop = topOffset;
+        const viewportBottom = canvasH;
+
+        // Outer clip for the whole scrollable viewport - without this, a panel scrolled
+        // partially above viewportTop would still paint over the floating pill/badge chrome
+        // anchored there.
+        drawingContext.save();
+        drawingContext.beginPath();
+        drawingContext.rect(0, viewportTop, leftW, viewportBottom - viewportTop);
+        drawingContext.clip();
 
         const displaySlice = state.getDisplaySlice();
         const hoveredRun = vm.hoveredRun;
@@ -121,6 +132,16 @@ class ExpectationView {
         for (let i = 0; i < displaySlice.length; i++) {
             const panel = panels[i];
             if (!panel) continue;
+
+            // Screen-space position: content-space panel.x/y, shifted down past the reserved
+            // top clearance and up by however far the user has scrolled.
+            const sx = panel.x;
+            const sy = viewportTop + panel.y - scrollY;
+
+            // Cull panels fully outside the visible viewport - cheap, and keeps a 64-panel grid
+            // from doing full mini-graph render work for rows that aren't on screen.
+            if (sy + panel.h < viewportTop || sy > viewportBottom) continue;
+
             const rollout = displaySlice[i];
             const runColor = runColors[i % runColors.length];
             const isHovered = hoveredRun === i;
@@ -128,16 +149,16 @@ class ExpectationView {
 
             drawingContext.save();
             drawingContext.beginPath();
-            drawingContext.rect(panel.x, panel.y, panel.w, panel.h);
+            drawingContext.rect(sx, sy, panel.w, panel.h);
             drawingContext.clip();
 
             // Draw panel background
             fill(isHovered ? AppPalette.surface.hoverCard : AppPalette.surface.card);
             noStroke();
-            rect(panel.x, panel.y, panel.w, panel.h, 9);
+            rect(sx, sy, panel.w, panel.h, 9);
 
             push();
-            translate(panel.x + offsetX, panel.y + offsetY);
+            translate(sx + offsetX, sy + offsetY);
             scale(fitScale);
 
             // Draw all edges dim
@@ -190,34 +211,21 @@ class ExpectationView {
 
             textAlign(LEFT, TOP);
             fill(AppPalette.text.placeholder);
-            text(`#${String(i + 1).padStart(2, '0')}`, panel.x + 4, panel.y + 3);
+            text(`#${String(i + 1).padStart(2, '0')}`, sx + 4, sy + 3);
 
             textAlign(RIGHT, TOP);
             fill(utility >= 0 ? AppPalette.reward.positive : AppPalette.reward.negative);
-            text(`G = ${utility.toFixed(2)}`, panel.x + panel.w - 4, panel.y + 3);
-
-            // Third line: trajectory-so-far readout (e.g. "S0 →Hun→ S1 (+5.00)"), a supplementary
-            // readout below the #NN/G= row - skipped on short panels so it doesn't crowd the
-            // mini-graph render underneath.
-            if (panel.h > 90) {
-                const trajectory = RolloutFormatter.formatTrajectory(this.graph, rollout, currentT);
-                if (trajectory) {
-                    textSize(9);
-                    textFont(Typography.mono());
-                    textAlign(LEFT, TOP);
-                    fill(AppPalette.text.secondary);
-                    const maxWidthPx = panel.w - 8;
-                    text(this._truncateToWidth(trajectory, maxWidthPx), panel.x + 4, panel.y + 15);
-                }
-            }
+            text(`G = ${utility.toFixed(2)}`, sx + panel.w - 4, sy + 3);
 
             // Panel border - color reflects hover OR selection; stroke weight never changes so
             // the border doesn't visually "jump" in thickness.
             noFill();
             stroke((isHovered || isSelected) ? AppPalette.accent.orange : AppPalette.border.medium);
             strokeWeight(1);
-            rect(panel.x, panel.y, panel.w, panel.h, 9);
+            rect(sx, sy, panel.w, panel.h, 9);
         }
+
+        drawingContext.restore();
     }
 
     // Shared right-pane graph panel (48% of canvasW, always visible regardless of leftView).
@@ -348,19 +356,6 @@ class ExpectationView {
                 text(`Run ${String(vm.selectedRunIndex + 1).padStart(2, '0')} · G = ${utility.toFixed(2)}`, leftW + 12, EXPECTATION_TOP_CLEARANCE + 10);
             }
         }
-    }
-
-    // Truncates str character-by-character (appending '…') until it fits within maxWidthPx,
-    // measured with p5's textWidth() under whatever font/size is currently active on the
-    // drawing context (caller must set textSize/textFont beforehand).
-    _truncateToWidth(str, maxWidthPx) {
-        if (maxWidthPx <= 0) return '';
-        if (textWidth(str) <= maxWidthPx) return str;
-        let truncated = str;
-        while (truncated.length > 0 && textWidth(truncated + '…') > maxWidthPx) {
-            truncated = truncated.slice(0, -1);
-        }
-        return truncated.length > 0 ? truncated + '…' : '';
     }
 
     _ensureImagesLoaded() {
@@ -639,18 +634,35 @@ class ExpectationView {
     handleClick(mx, my) {
         const vm = this.expectationViewModel;
         const state = this.expectationState;
-        if (!state.computed || vm.leftView !== 'grid') return;
+        if (!state.computed || vm.leftView !== 'grid' || !vm.panelLayout) return;
 
-        const { panels } = vm.panelLayout || { panels: [] };
+        // Panels are stored in content space (scroll/topOffset-independent) - convert the
+        // incoming screen-space click the same way _drawGrid() converts the other direction.
+        const cy = my - vm.panelLayout.topOffset + vm.gridScrollY;
+        const { panels } = vm.panelLayout;
         for (let i = 0; i < panels.length; i++) {
             const p = panels[i];
-            if (mx >= p.x && mx <= p.x + p.w && my >= p.y && my <= p.y + p.h) {
+            if (mx >= p.x && mx <= p.x + p.w && cy >= p.y && cy <= p.y + p.h) {
                 // Clicking an already-selected panel deselects it (toggle), matching this
                 // codebase's other click-to-select-or-clear conventions.
                 this.selectRun(vm.selectedRunIndex === i ? null : i);
                 return;
             }
         }
+    }
+
+    // Scrolls the Grid view's fixed-size panel layout vertically. deltaY follows the native
+    // WheelEvent convention (positive = scroll down). Returns true if the event was consumed
+    // (there's something to scroll and the Grid view is showing), so the caller (mainView.js's
+    // mouseWheel()) knows whether to suppress the page's own default scroll.
+    handleWheel(deltaY) {
+        const vm = this.expectationViewModel;
+        if (vm.leftView !== 'grid' || !vm.panelLayout) return false;
+        const maxScrollY = vm.panelLayout.maxScrollY || 0;
+        if (maxScrollY <= 0) return false;
+        vm.gridScrollY = Math.min(Math.max(0, vm.gridScrollY + deltaY), maxScrollY);
+        if (typeof redraw === 'function') redraw();
+        return true;
     }
 
     // Sets which rollout's path the shared right-pane graph panel highlights. index === null
@@ -674,16 +686,17 @@ class ExpectationView {
         const state = this.expectationState;
         const prevHovered = vm.hoveredRun;
 
-        if (!state.computed || vm.leftView !== 'grid') {
+        if (!state.computed || vm.leftView !== 'grid' || !vm.panelLayout) {
             vm.hoveredRun = null;
             return prevHovered !== null;
         }
 
-        const { panels } = vm.panelLayout || { panels: [] };
+        const cy = my - vm.panelLayout.topOffset + vm.gridScrollY;
+        const { panels } = vm.panelLayout;
         let hovered = null;
         for (let i = 0; i < panels.length; i++) {
             const p = panels[i];
-            if (mx >= p.x && mx <= p.x + p.w && my >= p.y && my <= p.y + p.h) {
+            if (mx >= p.x && mx <= p.x + p.w && cy >= p.y && cy <= p.y + p.h) {
                 hovered = i;
                 break;
             }

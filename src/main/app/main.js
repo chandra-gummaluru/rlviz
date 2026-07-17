@@ -1324,6 +1324,9 @@ function setup() {
         if (expectationViewModel.selectedRunIndex !== null && expectationViewModel.selectedRunIndex >= displayRuns) {
             expectationViewModel.selectedRunIndex = null;
         }
+        // A different run count reshapes the grid entirely - a scroll position carried over from
+        // the old layout wouldn't line up with anything meaningful in the new one.
+        expectationViewModel.gridScrollY = 0;
         expectationViewModel.invalidateLayout();
         rightPanel.updateContent();
         if (mainView && mainView.mcRunsPill) mainView.mcRunsPill.refresh();

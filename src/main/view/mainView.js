@@ -1222,8 +1222,17 @@ class MainView {
             return;
         }
 
-        // MC's mini-panel grid doesn't use pan/zoom; VI (including its pane in split view) does.
-        if (this.viewModel.interaction.mode === 'values' && this.viewModel.valuesSubView === 'mc') return;
+        // MC's mini-panel grid doesn't pan/zoom, but it can scroll vertically (Grid view, over
+        // the left pane specifically) once there are more rows than fit the viewport.
+        if (this.viewModel.interaction.mode === 'values' && this.viewModel.valuesSubView === 'mc') {
+            if (this.expectationView) {
+                const { leftW } = this.expectationView.expectationViewModel.splitWidths(width);
+                if (mouseX < leftW && this.expectationView.handleWheel(event.delta)) {
+                    return false;
+                }
+            }
+            return;
+        }
 
         // Zoom towards mouse position
         const zoomFactor = -event.delta * 0.001;

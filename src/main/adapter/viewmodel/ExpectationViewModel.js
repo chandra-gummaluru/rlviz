@@ -17,29 +17,45 @@ class ExpectationViewModel {
         // Index (within the displayed slice) of the currently hovered mini-panel / chart-dock
         // element; drives live-linking highlights across the grid and (in a later phase) charts.
         this.hoveredRun = null;
+        // Vertical scroll offset (px, content space) for the Grid view - panels use a fixed
+        // aspect-ratio size regardless of row count instead of shrinking to fit everything into
+        // the viewport, so 32/64-run layouts scroll instead of squeezing into illegibly small
+        // cards. Clamped to [0, panelLayout.maxScrollY] at the end of every computeLayout() call.
+        this.gridScrollY = 0;
     }
 
-    // topOffset (default 0): pixels to push every panel down by, e.g. to clear a floating pill
-    // overlapping the top of the canvas. Baked directly into each panel's stored y so drawing
-    // and mouse hit-testing (handleClick/handleMouseMove in expectationView.js, which compare
-    // raw mouse coordinates against panel.x/panel.y) stay consistent with a single source of
-    // truth, rather than applying a separate draw-time transform hit-testing would need to
-    // duplicate.
+    // topOffset (default 0): pixels to push the grid's own viewport down by, e.g. to clear a
+    // floating pill overlapping the top of the canvas - kept OUT of each panel's stored x/y
+    // (which are pure content-space, scroll-independent) and surfaced instead as
+    // panelLayout.topOffset, since drawing and mouse hit-testing (handleClick/handleMouseMove in
+    // expectationView.js) both need to add topOffset and subtract gridScrollY the same way to
+    // convert between screen space and content space - this is their one shared source of truth.
     computeLayout(canvasW, canvasH, displayRuns, graph, topOffset = 0) {
         const GRID = { 16: [4,4], 32: [8,4], 64: [8,8] };
         const [cols, rows] = GRID[displayRuns] || [4, 4];
-        const panelW = Math.floor(canvasW / cols);
-        const panelH = Math.floor(canvasH / rows);
+        const GAP = 8;
+        const panelW = Math.floor((canvasW - GAP * (cols + 1)) / cols);
+        // Fixed aspect ratio (not canvasH/rows) - panel size no longer shrinks as displayRuns
+        // grows; the grid scrolls instead once rows * panelH exceeds the viewport.
+        const panelH = Math.round(panelW * 0.8);
 
         const panels = [];
         for (let r = 0; r < rows; r++) {
             for (let c = 0; c < cols; c++) {
-                panels.push({ x: c * panelW, y: topOffset + r * panelH, w: panelW, h: panelH });
+                panels.push({
+                    x: GAP + c * (panelW + GAP),
+                    y: GAP + r * (panelH + GAP),
+                    w: panelW, h: panelH
+                });
             }
         }
 
+        const contentH = rows * panelH + GAP * (rows + 1);
+        const maxScrollY = Math.max(0, contentH - canvasH);
+        this.gridScrollY = Math.min(Math.max(0, this.gridScrollY), maxScrollY);
+
         const fitTransform = this._computeFitTransform(graph, panelW, panelH);
-        this.panelLayout = { cols, rows, panels, fitTransform };
+        this.panelLayout = { cols, rows, panels, fitTransform, contentH, viewportH: canvasH, maxScrollY, topOffset };
         this.layoutStale = false;
     }
 
