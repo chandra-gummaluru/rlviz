@@ -2096,8 +2096,8 @@ class RightPanel {
         });
 
         // Estimate/Episodes/Selected Run all depend on expectationState.currentT and
-        // expectationViewModel.focusedRunIndex, both of which change on every scrubber tick/play
-        // frame/focus toggle - isolated into their own container so updateExpectationData() can
+        // expectationViewModel.selectedRunIndex, both of which change on every scrubber tick/play
+        // frame/selection toggle - isolated into their own container so updateExpectationData() can
         // rebuild just this subtree (see below) instead of the whole panel.
         this._mcStatsContainer = createDiv();
         this._mcStatsContainer.parent(this.contentContainer);
@@ -2192,14 +2192,15 @@ class RightPanel {
         });
     }
 
-    // Only rendered while a mini-panel card is focused (expectationViewModel.focusedRunIndex !==
-    // null) - disappears entirely (no section title, no empty placeholder) once the user exits
-    // focus mode back to the full grid.
+    // Rendered whenever a mini-panel card is selected (expectationViewModel.selectedRunIndex !==
+    // null) - selection now persists alongside the always-visible grid (Phase 3a's screen split
+    // removed the old full-canvas "focused mode"; selecting a run just highlights it on the
+    // shared right-pane graph panel instead).
     _renderSelectedRunSection(parent, state, t) {
         const vm = this.expectationViewModel;
-        if (!vm || vm.focusedRunIndex === null || vm.focusedRunIndex === undefined) return;
+        if (!vm || vm.selectedRunIndex === null || vm.selectedRunIndex === undefined) return;
 
-        const focusedIdx = vm.focusedRunIndex;
+        const focusedIdx = vm.selectedRunIndex;
         const rollout = state.getDisplaySlice()[focusedIdx];
         if (!rollout) return;
 

@@ -5,8 +5,8 @@ class ExpectationViewModel {
         this.isPlaying = false;
         // Which mini-panel/rollout is pinned as "selected" - highlights its path on the shared
         // right-pane graph panel (expectationView.js's _drawGraphPanel). Renamed from the old
-        // focusedRunIndex: selecting a run no longer triggers a full-canvas takeover (that
-        // "focused mode" concept was removed - see the MC screen split plan), it just drives
+        // "focused run index" field: selecting a run no longer triggers a full-canvas takeover
+        // (that "focused mode" concept was removed - see the MC screen split plan), it just drives
         // which run's path the always-visible right pane highlights.
         this.selectedRunIndex = null;
         // 'grid' (default) or 'chart' - which view the LEFT 52% pane currently shows. Presentation
