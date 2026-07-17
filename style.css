@@ -2405,6 +2405,41 @@ input[type="range"]::-moz-range-thumb {
   overflow-y: auto;
 }
 
+/* ── Iteration right-pane Equation view (2026-07-17 redesign) ────────────── */
+
+.vi-equation-view {
+  position: fixed;
+  z-index: 8;
+  background: var(--surface-canvas);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 8px;
+}
+
+.vi-equation-view-header {
+  flex: 0 0 auto;
+  padding: 8px;
+  font-size: 15px;
+  text-align: center;
+}
+
+.vi-equation-view-canvas {
+  display: block;
+  width: 100%;
+  max-width: 420px;
+  height: 220px;
+  margin: 0 auto;
+}
+
+.vi-equation-view-qtable {
+  flex: 1;
+  min-height: 0;
+  padding: 4px 8px;
+}
+
 /* ── Iteration left-pane States view (Phase 3b) ──────────────────────────── */
 
 .vi-states-view-chip {
