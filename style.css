@@ -2274,6 +2274,45 @@ input[type="range"]::-moz-range-thumb {
   padding: 8px;
 }
 
+/* ── MC left-pane inline Chart view (Phase 3a) ───────────────────────────── */
+
+.expectation-chart-view {
+  position: fixed;
+  z-index: 8;
+  background: var(--surface-canvas);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.expectation-chart-view-slot {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border-hairline, var(--border-light));
+}
+
+.expectation-chart-view-slot:first-child {
+  border-top: none;
+}
+
+.expectation-chart-view-caption {
+  font-family: var(--font-family-mono, var(--font-family));
+  font-size: 10px;
+  color: var(--text-muted);
+  padding: 6px 8px 2px;
+  flex-shrink: 0;
+}
+
+.expectation-chart-view-body {
+  flex: 1;
+  min-height: 0;
+  padding: 0 8px 8px;
+  position: relative;
+}
+
 .chart-dock-qtable {
   font-family: var(--font-family-mono, var(--font-family));
   font-size: 10px;
