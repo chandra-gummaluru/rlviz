@@ -91,7 +91,7 @@ class ValueIterationView {
         // Accessors for the real right-panel width / top-bar height, so placeholder/status-strip
         // layout stays correct even if those dimensions change (panel resize, spec dimension
         // updates) instead of duplicating magic numbers here.
-        this.layout = layout || { getPanelWidth: () => 272, getTopOffset: () => 40, getBottomOffset: () => 40 };
+        this.layout = layout || { getPanelWidth: () => 272, getTopOffset: () => 40, getBottomOffset: () => 40, getLeftInset: () => 0 };
     }
 
     get viState() {
@@ -133,10 +133,17 @@ class ValueIterationView {
             return;
         }
 
-        const sweep = this.viState.currentSweepIndex;
+        const liveSweep = this.viState.currentSweepIndex;
 
-        // Pulse all nodes when the sweep index advances (the per-sweep "beat").
-        this._detectSweepPulse(sweep, stateNodes);
+        // Pulse all nodes when the REAL sweep advances - keyed on the live sweep specifically
+        // (not the previewed one below), so hovering an old generation in the States view never
+        // re-triggers this pulse; it's a "new computation happened" signal, not a "you're looking
+        // at a different sweep now" one.
+        this._detectSweepPulse(liveSweep, stateNodes);
+
+        // Which sweep's V/Q/policy actually gets rendered - the States view's hovered/pinned
+        // sweep if one is set (Phase 3b), otherwise the real live sweep, exactly as before.
+        const sweep = this.viViewModel.previewedSweepIndex ?? liveSweep;
 
         // Edges (policy-highlighted state->action->state chains) behind the nodes.
         this._drawPolicyGraph(stateNodes, sweep, graph);
@@ -177,8 +184,10 @@ class ValueIterationView {
         textAlign(CENTER, CENTER);
         textSize(18);
         textFont(Typography.sans());
+        const leftInset = this.layout.getLeftInset();
+        const usableW = windowWidth - this.layout.getPanelWidth() - leftInset;
         text('Set max sweeps (T) and click Run to start Value Iteration',
-            (windowWidth - this.layout.getPanelWidth()) / 2, (windowHeight - this.layout.getTopOffset()) / 2);
+            leftInset + usableW / 2, (windowHeight - this.layout.getTopOffset()) / 2);
         pop();
     }
 
@@ -473,8 +482,9 @@ class ValueIterationView {
         const text = this._getStatusText(detail);
         if (!text) return;
 
-        const canvasW = windowWidth - this.layout.getPanelWidth();
-        const x = 16;
+        const leftInset = this.layout.getLeftInset();
+        const canvasW = windowWidth - this.layout.getPanelWidth() - leftInset;
+        const x = 16 + leftInset;
         const y = windowHeight - this.layout.getBottomOffset();
         const w = Math.min(canvasW - 32, 620);
         const h = 34;
