@@ -132,6 +132,22 @@ Mode and sub-view transitions run through `CanvasController`'s mode-lifecycle ho
 
 The two partial-observability quadrants are **illustrative, not real POMDP algorithms** — they reuse Value Iteration's real backward-induction numbers under a relabeled belief scalar (`ValuesMethodMatrix.beliefFor()`, a deterministic presentation-only heuristic derived from each column's V-value spread), not a real belief-state update. When P is unknown, displayed Q-values become directly editable regardless of the observability axis: `ValueIterationState.manualOverrides[`${stateId}:${actionId}`]` takes precedence over the computed value wherever a Q/V value is rendered (right-panel table and in-canvas labels). Overrides are presentation-layer only and are not included in graph import/export.
 
+Values → Iteration's canvas is a persistent **52% left / 48% right split** (Phase 3b of the
+Evaluate redesign roadmap — see `docs/superpowers/specs/2026-07-17-vi-screen-split-design.md`),
+for the three quadrants that run `ValueIterationView`'s real Bellman-sweep computation (Value
+Iteration, Belief Iteration, PO Q-Learning) — `unknown:full` (Learning Iteration) is unaffected
+and keeps its own full-canvas Graph/Tree view. The left pane hosts a new **States** view
+(`viStatesView.js`) — one section per computed sweep (`t = k`), each holding one per-state
+backup card sourced directly from `ValueIterationState.getBackupDetail()`; hovering a section
+previews that sweep's V/Q/policy on the shared right pane (`ValueIterationViewModel.hoveredSweepIndex`),
+clicking pins it (`.pinnedSweepIndex`, click again to unpin) — the same hover/pin convention
+`ExpectationViewModel.hoveredRun`/`selectedRunIndex` established for Monte Carlo's grid. The
+right pane is the exact same `ValueIterationView.draw()` rendering as before this phase, just
+translated and clipped into 48% of the canvas by `mainView.js`'s draw dispatch — no fit-transform
+or internal rendering change, since VI already draws at real graph coordinates under the shared
+pan/zoom viewport. Play/Step/Skip always advance the real live sweep regardless of what's pinned
+for preview.
+
 ### Monte Carlo (Values → mc)
 
 `ExpectationState` generates and stores multiple rollouts from the start state. Values → Monte Carlo's canvas is a persistent **52% left / 48% right split** (Phase 3a of the Evaluate redesign roadmap — see `docs/superpowers/specs/2026-07-16-mc-screen-split-design.md`), not the old mutually-exclusive grid/focused-run modes: the left pane toggles between **Grid** (today's mini-panel grid — `ExpectationViewModel.computeLayout()` lays rollouts into a grid of 16/32/64 panels and computes one shared fit-transform for rendering each rollout's graph into its mini-panel) and **Chart** (`expectationChartView.js` — Convergence + Histogram rendered inline via the same `chartDataBuilders.js` pure functions the bottom `ChartDock` uses, replacing that dock for Monte Carlo specifically; `ChartDock` itself still serves Values → Iteration unchanged) via the floating `[Grid | Chart]` pill (`mcLeftViewPill.js`). The right pane (`ExpectationView._drawGraphPanel()`) is a single always-visible rendering of the MDP graph — bare when nothing is selected, or with the selected run's visited-so-far path highlighted (`ExpectationViewModel.selectedRunIndex`, set by clicking a mini-panel; clicking the same panel again deselects). `expectationScrubber.js` drives a shared `currentT` across both panes. `ExpectationState.getPerStateMeans()` aggregates already-collected rollout data per visited state, feeding the MC column of the "Estimate vs exact" table.
