@@ -2320,6 +2320,91 @@ input[type="range"]::-moz-range-thumb {
   position: relative;
 }
 
+/* ── Iteration left-pane States view (Phase 3b) ──────────────────────────── */
+
+.vi-states-view-chip {
+  position: fixed;
+  z-index: 10;
+  font-family: var(--font-family-mono, var(--font-family));
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border: 1px solid var(--accent-teal);
+  border-radius: var(--radius-btn, 6px);
+  background: var(--surface-card2, var(--bg-card));
+  color: var(--accent-teal);
+  display: none;
+}
+
+.vi-states-view {
+  position: fixed;
+  z-index: 8;
+  background: var(--surface-canvas);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.vi-states-view-sections {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.vi-states-view-section {
+  border: 1px solid var(--border-hairline, var(--border-light));
+  border-radius: 8px;
+  padding: 8px;
+  margin-bottom: 8px;
+  cursor: pointer;
+}
+
+.vi-states-view-section:last-child {
+  margin-bottom: 0;
+}
+
+.vi-states-view-section--active {
+  border-color: var(--accent-teal);
+  background: color-mix(in srgb, var(--accent-teal) 10%, transparent);
+}
+
+.vi-states-view-section-header {
+  font-family: var(--font-family-mono, var(--font-family));
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.vi-states-view-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.vi-states-view-card {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: var(--surface-btn);
+  font-family: var(--font-family-mono, var(--font-family));
+  font-size: 11px;
+}
+
+.vi-states-view-card-name {
+  color: var(--text-muted);
+}
+
+.vi-states-view-card-value {
+  color: var(--text-dark);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
 .chart-dock-qtable {
   font-family: var(--font-family-mono, var(--font-family));
   font-size: 10px;
