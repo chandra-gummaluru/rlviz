@@ -12,6 +12,10 @@ class ValueIterationViewModel {
         // a VI Reset/Initialize (which calls reset()) doesn't silently flip the left pane back to
         // States while the DOM/pill are still showing Chart.
         this.leftView = 'states';
+        // 'equation' (default) or 'graph' - which view the RIGHT pane currently shows, for the
+        // same 3 split quadrants (2026-07-17 redesign). Same constructor-not-reset() placement as
+        // leftView, for the identical reset-desync reason.
+        this.rightView = 'equation';
         this.reset();
     }
 

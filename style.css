@@ -2066,6 +2066,51 @@ input[type="range"]::-moz-range-thumb {
   background: var(--accent-teal);
 }
 
+/* ── Iteration [Equation | Graph] pill (2026-07-17 redesign) ─────────────── */
+
+.vi-right-view-pill {
+  position: absolute;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.vi-right-view-pill-track {
+  display: flex;
+  gap: 2px;
+  background: var(--surface-card2, var(--bg-card));
+  border: 1px solid var(--border-hairline, var(--border-light));
+  border-radius: 8px;
+  padding: 2px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.vi-right-view-pill-btn {
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-family);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+
+.vi-right-view-pill-btn:hover {
+  background: var(--surface-hover, var(--bg-dark-hover));
+}
+
+.vi-right-view-pill-btn--active {
+  background: var(--accent-teal);
+  color: var(--color-primary-contrast, var(--text-white));
+}
+
+.vi-right-view-pill-btn--active:hover {
+  background: var(--accent-teal);
+}
+
 /* ── Goal card (Evaluate redesign Phase 1) ───────────────────────────────── */
 
 .goal-card-overlay {
