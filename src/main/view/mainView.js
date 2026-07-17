@@ -191,20 +191,38 @@ class MainView {
             if (subView === 'mc' && this.expectationView) {
                 this.expectationView.draw(usableW, usableH);
             } else if (subView === 'vi' && this.valueIterationView) {
+                const quadrant = ValuesMethodMatrix.key(this.viewModel.modelKnown, this.viewModel.observability);
+                const viSplit = this._viSplitWidths(usableW);
+                const isSplit = viSplit !== null;
+                const leftW = isSplit ? viSplit.leftW : 0;
+
                 push();
+                if (isSplit) {
+                    drawingContext.save();
+                    drawingContext.beginPath();
+                    drawingContext.rect(leftW, 0, usableW - leftW, usableH);
+                    drawingContext.clip();
+                }
                 // Fixed screen-space shift (applied before pan/zoom, so it isn't affected by
-                // zoom scale) to clear the floating estimator pill.
-                translate(0, MV_VALUES_PILL_CLEARANCE);
+                // zoom scale) to clear the floating estimator pill, plus the left pane's width
+                // when the split applies (Phase 3b) - shifts the whole pan/zoom'd graph into the
+                // right 48% instead of the full canvas. Pan/zoom itself is untouched: it's pure
+                // incremental drag/wheel-delta accumulation with no absolute-recentering call
+                // active in VI mode (keyboard shortcuts, including 'r' reset-zoom, are already
+                // fully disabled while mode === 'values'), so it composes correctly with this
+                // constant shift with no special-casing needed.
+                translate(leftW, MV_VALUES_PILL_CLEARANCE);
                 translate(this.viewModel.viewport.panX, this.viewModel.viewport.panY);
                 scale(this.viewModel.viewport.zoom);
                 // The unknown:full quadrant (Learning Iteration) is a genuinely separate
-                // subsystem (real episodic Q-learning + search tree), not VI's rendering.
-                const quadrant = ValuesMethodMatrix.key(this.viewModel.modelKnown, this.viewModel.observability);
+                // subsystem (real episodic Q-learning + search tree), not VI's rendering - never
+                // split, drawn full-width exactly as today (isSplit is false there, leftW is 0).
                 if (quadrant === 'unknown:full' && this.learningIterationView) {
                     this.learningIterationView.draw();
                 } else {
                     this.valueIterationView.draw();
                 }
+                if (isSplit) drawingContext.restore();
                 pop();
             }
             return;
@@ -304,6 +322,16 @@ class MainView {
     // owning the whole canvas (canvas comparison lives in the charts, not a split canvas view).
     _valuesPaneWidths(canvasWidth) {
         return { mc: canvasWidth, vi: canvasWidth };
+    }
+
+    // Returns { leftW, rightW } for Values -> Iteration's split (Phase 3b), or null if the
+    // current quadrant doesn't split (Learning Iteration). Shared by the draw dispatch above and
+    // the resize handlers below so they can never disagree about the split geometry.
+    _viSplitWidths(usableW) {
+        if (!this.expectationView) return null;
+        const quadrant = ValuesMethodMatrix.key(this.viewModel.modelKnown, this.viewModel.observability);
+        if (quadrant === 'unknown:full') return null;
+        return this.expectationView.expectationViewModel.splitWidths(usableW);
     }
 
     drawMessages() {
@@ -1327,6 +1355,16 @@ class MainView {
                 this.mcLeftViewPill.updateBounds(leftW, rightW);
             }
         }
+        if (this.viStatesView && this.viewModel.interaction.mode === 'values'
+            && this.viewModel.valuesSubView === 'vi') {
+            const viSplit = this._viSplitWidths(paneWidths.vi);
+            if (viSplit) {
+                this.viStatesView.updateBounds(0, this.TOP_BARS_HEIGHT, viSplit.leftW, valuesHeight);
+                this.viStatesView.show();
+            } else {
+                this.viStatesView.hide();
+            }
+        }
 
         // Update top bar width
         if (this.topBar) {
@@ -1364,6 +1402,16 @@ class MainView {
             if (this.mcLeftViewPill) {
                 const { leftW, rightW } = this.expectationView.expectationViewModel.splitWidths(paneWidths.mc);
                 this.mcLeftViewPill.updateBounds(leftW, rightW);
+            }
+        }
+        if (this.viStatesView && this.viewModel.interaction.mode === 'values'
+            && this.viewModel.valuesSubView === 'vi') {
+            const viSplit = this._viSplitWidths(paneWidths.vi);
+            if (viSplit) {
+                this.viStatesView.updateBounds(0, this.TOP_BARS_HEIGHT, viSplit.leftW, valuesHeight);
+                this.viStatesView.show();
+            } else {
+                this.viStatesView.hide();
             }
         }
         redraw();
