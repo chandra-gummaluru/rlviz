@@ -1126,6 +1126,11 @@ function setup() {
         rightPanel.updateContent();
         if (topBar) topBar._updateThemeIcon();
         if (mainView.expectationChartView) mainView.expectationChartView.refresh();
+        // ViStatesView's known:full diagram cards bake AppPalette colors into raster pixels at
+        // build time - a plain refresh() only appends NEW sections, so already-rendered diagram
+        // canvases would otherwise keep showing the old theme's colors. rebuildAll() forces every
+        // section to redraw with the current palette.
+        if (mainView.viStatesView) mainView.viStatesView.rebuildAll();
     };
 
     canvasViewModel._onUndoRedoChange = (canUndo, canRedo) => {

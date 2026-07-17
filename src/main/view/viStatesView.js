@@ -89,6 +89,24 @@ class ViStatesView {
         }
     }
 
+    // Forces every already-built section to be rebuilt from scratch, so known:full's diagram
+    // canvases (whose colors are baked into raster pixels at build time via ViBackupDiagram,
+    // unlike the flat cards' live CSS custom properties) pick up a new theme's palette - refresh()
+    // itself only ever APPENDS sections for sweeps it hasn't seen yet, so a plain refresh() call
+    // after a theme change would leave every already-rendered diagram canvas showing the old
+    // theme's colors until the next sweep or a Reset. Preserves scroll position across the
+    // rebuild (a theme toggle shouldn't feel like a navigation event) since resetting
+    // _renderedSweepCount to 0 makes refresh() treat every sweep as newly-added, which would
+    // otherwise trigger its own scroll-to-bottom behavior.
+    rebuildAll() {
+        if (!this.containerEl) return;
+        const scrollTop = this._sectionsEl.scrollTop;
+        this._sectionsEl.innerHTML = '';
+        this._renderedSweepCount = 0;
+        this.refresh();
+        this._sectionsEl.scrollTop = scrollTop;
+    }
+
     _buildSection(sweepIndex) {
         const section = document.createElement('div');
         section.className = 'vi-states-view-section';
