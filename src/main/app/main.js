@@ -1179,6 +1179,10 @@ function setup() {
         // canvases would otherwise keep showing the old theme's colors. rebuildAll() forces every
         // section to redraw with the current palette.
         if (mainView.viStatesView) mainView.viStatesView.rebuildAll();
+        // ViChartView's Convergence Chart.js instance also bakes AppPalette colors at render time
+        // (line/grid/V* colors) - refresh() rebuilds the chart from scratch, same as
+        // expectationChartView above.
+        if (mainView.viChartView) mainView.viChartView.refresh();
     };
 
     canvasViewModel._onUndoRedoChange = (canUndo, canRedo) => {
@@ -1273,6 +1277,11 @@ function setup() {
     // Wires the real per-sweep-advance refresh hook (Play tick / Step / Skip / Reset all funnel
     // through VIPresenter's own lifecycle methods - see viPresenter.js's _refreshStatesView()).
     viPresenter.setStatesView(viStatesView);
+    // Same hook for the Chart left-pane view - without this, ViChartView only ever rendered
+    // inside show(), so the Q-table/Convergence chart stayed frozen/empty through an entire
+    // Play/Step/Skip/Reset cycle whenever Chart was the active pane (see viPresenter.js's
+    // _refreshChartView()).
+    viPresenter.setChartView(viChartView);
 
     // ===== Learning Iteration (unknown:full) real Q-learning wiring =====
     const qlPresenter = new QLPresenter(canvasViewModel);

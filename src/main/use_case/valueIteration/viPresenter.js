@@ -21,6 +21,7 @@ class VIPresenter extends VIOutputBoundary {
         this.chartDock = null;
         this.sweepChip = null;
         this.statesView = null;
+        this.chartView = null;
     }
 
     get viViewModel() {
@@ -36,6 +37,7 @@ class VIPresenter extends VIOutputBoundary {
     setChartDock(chartDock) { this.chartDock = chartDock; }
     setSweepChip(sweepChip) { this.sweepChip = sweepChip; }
     setStatesView(statesView) { this.statesView = statesView; }
+    setChartView(chartView) { this.chartView = chartView; }
 
     // --- Lifecycle events ---
 
@@ -43,6 +45,7 @@ class VIPresenter extends VIOutputBoundary {
         if (this.viViewModel) this.viViewModel.reset();
         this._refreshSweepChip();
         this._refreshStatesView();
+        this._refreshChartView();
         this._updateButtonStates();
         this._redraw();
         this._updateRightPanel();
@@ -56,6 +59,7 @@ class VIPresenter extends VIOutputBoundary {
     presentSweepComplete(sweepIndex) {
         this._refreshSweepChip();
         this._refreshStatesView();
+        this._refreshChartView();
         this._updateButtonStates();
         this._redraw();
         this._updateRightPanel();
@@ -65,6 +69,7 @@ class VIPresenter extends VIOutputBoundary {
         if (this.viState) this.viState.isPlaying = false;
         this._refreshSweepChip();
         this._refreshStatesView();
+        this._refreshChartView();
         this._updateButtonStates();
         this._redraw();
         this._updateRightPanel();
@@ -80,6 +85,7 @@ class VIPresenter extends VIOutputBoundary {
         if (this.viViewModel) this.viViewModel.reset();
         this._refreshSweepChip();
         this._refreshStatesView();
+        this._refreshChartView();
         this._updateButtonStates();
         this._redraw();
         this._updateRightPanel();
@@ -268,6 +274,13 @@ class VIPresenter extends VIOutputBoundary {
     // (including once per beat during continuous Play) without special-casing.
     _refreshStatesView() {
         if (this.statesView) this.statesView.refresh();
+    }
+
+    // The Chart left-pane view (Q-table + Convergence) - refresh() itself is a no-op while hidden
+    // (leftView === 'states', or a non-split quadrant/mode), so this is safe to call on every
+    // lifecycle event the same way _refreshStatesView() already is.
+    _refreshChartView() {
+        if (this.chartView) this.chartView.refresh();
     }
 
     _updateRightPanel() {
