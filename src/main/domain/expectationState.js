@@ -69,12 +69,18 @@ class ExpectationState {
         return vals.reduce((a, b) => a + b, 0) / vals.length;
     }
 
-    getSigmaAtT(t) {
+    // Population variance of the discounted return G at time t, across the FULL rollout
+    // population (this.rollouts, same population getMeanAtT/getSigmaAtT/getSEAtT use).
+    getVarianceAtT(t) {
         if (!this.computed || this.rollouts.length === 0) return null;
         const vals = this.getAllUtilitiesAtT(t);
         const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
-        const variance = vals.reduce((a, b) => a + (b - mean) ** 2, 0) / vals.length;
-        return Math.sqrt(variance);
+        return vals.reduce((a, b) => a + (b - mean) ** 2, 0) / vals.length;
+    }
+
+    getSigmaAtT(t) {
+        const variance = this.getVarianceAtT(t);
+        return variance === null ? null : Math.sqrt(variance);
     }
 
     // Standard error of the mean at time t. Deliberately uses the FULL rollout population

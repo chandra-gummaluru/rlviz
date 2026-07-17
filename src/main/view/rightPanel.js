@@ -2143,6 +2143,7 @@ class RightPanel {
 
             const mean = state.getMeanAtT(t);
             const se = state.getSEAtT(t);
+            const variance = state.getVarianceAtT(t);
 
             const valueDiv = createDiv(`V̂(S₀) = ${mean !== null ? mean.toFixed(2) : '—'}`);
             valueDiv.parent(container);
@@ -2153,6 +2154,11 @@ class RightPanel {
             subtitle.parent(container);
             subtitle.addClass('panel-hint');
             subtitle.style('margin-top', '2px');
+
+            const varianceSubtitle = createDiv(`Var(G) = ${variance !== null ? variance.toFixed(2) : '—'}`);
+            varianceSubtitle.parent(container);
+            varianceSubtitle.addClass('panel-hint');
+            varianceSubtitle.style('margin-top', '1px');
         });
     }
 
