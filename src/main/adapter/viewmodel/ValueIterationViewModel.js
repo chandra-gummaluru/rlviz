@@ -17,6 +17,22 @@ class ValueIterationViewModel {
         this.explanationDetail = null;
         this.explanationStepIndex = 0;
         this.explanationTweenKey = null;
+
+        // Which sweep the new States view (Phase 3b) is hovering/pinning for preview on the
+        // shared right-pane graph - same hover-transient/click-pinned convention as
+        // ExpectationViewModel.hoveredRun/selectedRunIndex. null = nothing previewed, the graph
+        // shows the real live sweep (valueIterationState.currentSweepIndex).
+        this.hoveredSweepIndex = null;
+        this.pinnedSweepIndex = null;
+    }
+
+    // Pinned wins over hovered, for the States view's own card-highlighting and for
+    // valueIterationView.js's rendering (see Task 2) - mirrors
+    // ExpectationViewModel.highlightedRun exactly. null means nothing is being previewed; the
+    // caller falls back to the real live sweep itself (this getter deliberately does not know
+    // about currentSweepIndex - ValueIterationViewModel has no reference to ValueIterationState).
+    get previewedSweepIndex() {
+        return this.pinnedSweepIndex !== null ? this.pinnedSweepIndex : this.hoveredSweepIndex;
     }
 
     /** Set the backup detail for the state being explained */
