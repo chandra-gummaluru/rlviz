@@ -13,7 +13,6 @@ class ViStatesView {
         this.viViewModel = valueIterationViewModel;
 
         this.containerEl = null;
-        this._labelChipEl = null;
         this._sectionsEl = null;
         this._bounds = null;
         this._renderedSweepCount = 0;
@@ -21,12 +20,6 @@ class ViStatesView {
 
     setup() {
         if (this.containerEl) return;
-
-        const chip = document.createElement('div');
-        chip.className = 'vi-states-view-chip';
-        chip.textContent = 'States';
-        document.body.appendChild(chip);
-        this._labelChipEl = chip;
 
         const container = document.createElement('div');
         container.className = 'vi-states-view';
@@ -42,10 +35,9 @@ class ViStatesView {
     }
 
     // x, y, width, height: the left pane's full box, same convention as
-    // expectationChartView.js's updateBounds(). The label chip is positioned independently,
-    // right-edge-anchored within the same x/width (matching mcLeftViewPill.js's own
-    // right-edge-anchor convention), dropped a full row below the pane's top to clear
-    // estimatorPill's own row (see _applyLayout()'s own comment for why).
+    // expectationChartView.js's updateBounds(). No independent chip to position anymore - the
+    // [States|Chart] toggle is now a real pill (viLeftViewPill.js) anchored to the RIGHT pane
+    // instead, positioned by main.js directly.
     updateBounds(x, y, width, height) {
         this._bounds = { x, y, width, height };
         this._applyLayout();
@@ -58,18 +50,6 @@ class ViStatesView {
         this.containerEl.style.top = y + 'px';
         this.containerEl.style.width = width + 'px';
         this.containerEl.style.height = height + 'px';
-        if (this._labelChipEl) {
-            this._labelChipEl.style.left = (x + width - 12) + 'px';
-            // +64 (not +12) - `y` is the pane's own top edge (mainView.TOP_BARS_HEIGHT), flush
-            // against the topbar's bottom edge, so a small +12 inset still lands within
-            // estimatorPill's own row (topOffset+24, ~35px tall) - the LEFT pane's right edge
-            // (this chip's anchor) sits close enough to estimatorPill's centered position that
-            // sharing a row visibly overlaps both, the same collision mcLeftViewPill.js hit
-            // against estimatorPill in Phase 3a (fixed there the same way: drop to a second row
-            // that clears it regardless of window width).
-            this._labelChipEl.style.top = (y + 64) + 'px';
-            this._labelChipEl.style.transform = 'translateX(-100%)';
-        }
     }
 
     // Rebuilds only the sections that don't exist yet (new sweeps since the last refresh), and
@@ -182,12 +162,10 @@ class ViStatesView {
     show() {
         if (!this.containerEl) return;
         this.containerEl.style.display = '';
-        if (this._labelChipEl) this._labelChipEl.style.display = '';
         this.refresh();
     }
 
     hide() {
         if (this.containerEl) this.containerEl.style.display = 'none';
-        if (this._labelChipEl) this._labelChipEl.style.display = 'none';
     }
 }
