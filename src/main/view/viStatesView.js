@@ -73,16 +73,30 @@ class ViStatesView {
     refresh() {
         if (!this.containerEl || this.containerEl.style.display === 'none') return;
         if (!this.viState || !this.viState.initialized) {
+            // Reset (ValueIterationState.reset() sets initialized = false) lands here, not in the
+            // totalSweeps-shrank branch below - a Reset always makes initialized false, so this is
+            // the actual Reset detection point. Clear the already-animated tracking (mirroring
+            // rebuildAll()'s own cleanup) so replaying a run after Reset stages the diagrams in
+            // again instead of silently rendering every sweep instantly just because its index
+            // happens to have been seen in a prior run.
             this._sectionsEl.innerHTML = '';
             this._renderedSweepCount = 0;
+            this._revealCancels.forEach(cancel => cancel());
+            this._revealCancels = [];
+            this._animatedSweeps.clear();
             return;
         }
 
         const totalSweeps = this.viState.totalSweeps;
         if (totalSweeps < this._renderedSweepCount) {
-            // A Reset happened (history shrank) - rebuild from scratch.
+            // Defensive - not currently reachable (a shrinking totalSweeps while still
+            // initialized doesn't happen in this codebase today), but rebuild from scratch the
+            // same way, for the same reason, if it ever does.
             this._sectionsEl.innerHTML = '';
             this._renderedSweepCount = 0;
+            this._revealCancels.forEach(cancel => cancel());
+            this._revealCancels = [];
+            this._animatedSweeps.clear();
         }
 
         let addedNew = false;
@@ -94,7 +108,13 @@ class ViStatesView {
         // Every sweep strictly before the live one has now had its cards built at least once (the
         // loop above only builds NEW sections, so any sweep reached here already went through
         // _buildDiagramCard() previously) - mark them as "already animated" so a later pill
-        // re-expand renders instantly rather than replaying the stage-in.
+        // re-expand renders instantly rather than replaying the stage-in. This assumes callers
+        // never advance more than one sweep between refresh() calls (true today: Play/Step/Skip
+        // all complete exactly one sweep per presentSweepComplete()/refresh() call) - if a future
+        // change ever appends 2+ brand-new sections in one refresh() call, every one of them would
+        // incorrectly animate here instead of just the truly-live one, since this loop can't tell
+        // "newly built this call" apart from "already animated in an earlier call" without that
+        // assumption.
         for (let k = 0; k < totalSweeps - 1; k++) this._animatedSweeps.add(k);
 
         this._applyHighlight();
