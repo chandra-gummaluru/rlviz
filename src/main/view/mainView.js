@@ -1363,9 +1363,28 @@ class MainView {
                 // setUpVISplitChrome() for the same inset applied on initial setup/mode-entry.
                 const topInset = 56;
                 this.viStatesView.updateBounds(0, this.TOP_BARS_HEIGHT + topInset, viSplit.leftW, valuesHeight - topInset);
-                this.viStatesView.show();
+                if (this.viChartView) this.viChartView.updateBounds(0, this.TOP_BARS_HEIGHT + topInset, viSplit.leftW, valuesHeight - topInset);
+                // Respect whichever of States/Chart is currently selected (viLeftViewPill's
+                // [States|Chart] toggle) rather than unconditionally showing States - this branch
+                // predates that toggle (Phase 3b) and would otherwise force States back on top of
+                // an active Chart view on every resize.
+                const showChart = this.viewModel.valueIterationViewModel
+                    && this.viewModel.valueIterationViewModel.leftView === 'chart';
+                if (showChart) {
+                    this.viStatesView.hide();
+                    if (this.viChartView) this.viChartView.show();
+                } else {
+                    if (this.viChartView) this.viChartView.hide();
+                    this.viStatesView.show();
+                }
+                if (this.viLeftViewPill) {
+                    this.viLeftViewPill.updateBounds(viSplit.leftW, viSplit.rightW);
+                    this.viLeftViewPill.show();
+                }
             } else {
                 this.viStatesView.hide();
+                if (this.viChartView) this.viChartView.hide();
+                if (this.viLeftViewPill) this.viLeftViewPill.hide();
             }
         }
 
@@ -1415,9 +1434,26 @@ class MainView {
                 // setUpVISplitChrome() for the same inset applied on initial setup/mode-entry.
                 const topInset = 56;
                 this.viStatesView.updateBounds(0, this.TOP_BARS_HEIGHT + topInset, viSplit.leftW, valuesHeight - topInset);
-                this.viStatesView.show();
+                if (this.viChartView) this.viChartView.updateBounds(0, this.TOP_BARS_HEIGHT + topInset, viSplit.leftW, valuesHeight - topInset);
+                // Respect whichever of States/Chart is currently selected - see the identical
+                // comment in windowResized() above.
+                const showChart = this.viewModel.valueIterationViewModel
+                    && this.viewModel.valueIterationViewModel.leftView === 'chart';
+                if (showChart) {
+                    this.viStatesView.hide();
+                    if (this.viChartView) this.viChartView.show();
+                } else {
+                    if (this.viChartView) this.viChartView.hide();
+                    this.viStatesView.show();
+                }
+                if (this.viLeftViewPill) {
+                    this.viLeftViewPill.updateBounds(viSplit.leftW, viSplit.rightW);
+                    this.viLeftViewPill.show();
+                }
             } else {
                 this.viStatesView.hide();
+                if (this.viChartView) this.viChartView.hide();
+                if (this.viLeftViewPill) this.viLeftViewPill.hide();
             }
         }
         redraw();
