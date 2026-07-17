@@ -3,7 +3,15 @@ class ExpectationViewModel {
         this.panelLayout = null;
         this.layoutStale = true;
         this.isPlaying = false;
-        this.focusedRunIndex = null;
+        // Which mini-panel/rollout is pinned as "selected" - highlights its path on the shared
+        // right-pane graph panel (expectationView.js's _drawGraphPanel). Renamed from the old
+        // focusedRunIndex: selecting a run no longer triggers a full-canvas takeover (that
+        // "focused mode" concept was removed - see the MC screen split plan), it just drives
+        // which run's path the always-visible right pane highlights.
+        this.selectedRunIndex = null;
+        // 'grid' (default) or 'chart' - which view the LEFT 52% pane currently shows. Presentation
+        // only, mirrors buildCanvasView/valuesSubView's own presentation-state convention.
+        this.leftView = 'grid';
         this.lastResponse = null;
         this.lastError = null;
         // Index (within the displayed slice) of the currently hovered mini-panel / chart-dock
@@ -33,6 +41,15 @@ class ExpectationViewModel {
         const fitTransform = this._computeFitTransform(graph, panelW, panelH);
         this.panelLayout = { cols, rows, panels, fitTransform };
         this.layoutStale = false;
+    }
+
+    // Fixed 52%/48% left/right split of whatever full canvas width ExpectationView already
+    // receives (mainView.js's _valuesPaneWidths() keeps handing MC the FULL usable width - this
+    // is where the actual split happens, internally, per the Phase 3a design). Not user-resizable
+    // in this phase - no drag handle.
+    splitWidths(canvasW) {
+        const leftW = Math.floor(canvasW * 0.52);
+        return { leftW, rightW: canvasW - leftW };
     }
 
     _computeFitTransform(graph, panelW, panelH) {
@@ -78,9 +95,9 @@ class ExpectationViewModel {
     }
 
     // Combined getter: pinned run wins over hovered, for chart-dock highlighting.
-    // When a run is pinned (focusedRunIndex !== null), that takes precedence;
+    // When a run is pinned (selectedRunIndex !== null), that takes precedence;
     // otherwise use the hovered run for live-linking highlights.
     get highlightedRun() {
-        return this.focusedRunIndex !== null ? this.focusedRunIndex : this.hoveredRun;
+        return this.selectedRunIndex !== null ? this.selectedRunIndex : this.hoveredRun;
     }
 }
