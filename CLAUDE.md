@@ -148,6 +148,14 @@ or internal rendering change, since VI already draws at real graph coordinates u
 pan/zoom viewport. Play/Step/Skip always advance the real live sweep regardless of what's pinned
 for preview.
 
+**Known follow-up (not yet fixed):** in the two partial-observability quadrants, the States
+view's per-state cards show the raw Bellman `V` (via `getBackupDetail().value`, same as the node
+heat fill), while the shared right pane's node labels show the illustrative belief-relabeled
+scalar (`ValuesMethodMatrix.beliefFor()`, see above) for that same state/sweep. These are
+deliberately two different numbers for the same cell today — worth a deliberate decision (relabel
+the card, or accept the split) before a student compares the two panes side by side in Belief
+Iteration / PO Q-Learning specifically.
+
 ### Monte Carlo (Values → mc)
 
 `ExpectationState` generates and stores multiple rollouts from the start state. Values → Monte Carlo's canvas is a persistent **52% left / 48% right split** (Phase 3a of the Evaluate redesign roadmap — see `docs/superpowers/specs/2026-07-16-mc-screen-split-design.md`), not the old mutually-exclusive grid/focused-run modes: the left pane toggles between **Grid** (today's mini-panel grid — `ExpectationViewModel.computeLayout()` lays rollouts into a grid of 16/32/64 panels and computes one shared fit-transform for rendering each rollout's graph into its mini-panel) and **Chart** (`expectationChartView.js` — Convergence + Histogram rendered inline via the same `chartDataBuilders.js` pure functions the bottom `ChartDock` uses, replacing that dock for Monte Carlo specifically; `ChartDock` itself still serves Values → Iteration unchanged) via the floating `[Grid | Chart]` pill (`mcLeftViewPill.js`). The right pane (`ExpectationView._drawGraphPanel()`) is a single always-visible rendering of the MDP graph — bare when nothing is selected, or with the selected run's visited-so-far path highlighted (`ExpectationViewModel.selectedRunIndex`, set by clicking a mini-panel; clicking the same panel again deselects). `expectationScrubber.js` drives a shared `currentT` across both panes. `ExpectationState.getPerStateMeans()` aggregates already-collected rollout data per visited state, feeding the MC column of the "Estimate vs exact" table.
