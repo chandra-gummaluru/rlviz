@@ -116,6 +116,14 @@ class ExpectationState {
         return Array.from({ length: this.maxT + 1 }, (_, t) => this.getMeanAtT(t));
     }
 
+    // Standard error of the mean at each t, same shape/indexing as getMeansOverTime() - the two
+    // are zipped together by ChartDataBuilders.buildConvergenceData() to draw a +-SE band around
+    // the MC estimate line.
+    getSEsOverTime() {
+        if (!this.computed) return [];
+        return Array.from({ length: this.maxT + 1 }, (_, t) => this.getSEAtT(t));
+    }
+
     // Per-state Monte Carlo value estimate: for every visit to a state across all rollouts, the
     // discounted return-to-go from that visit onward, averaged. Aggregates already-collected
     // per-step rewards (no new sampling). For the start state, this is equivalent to (and

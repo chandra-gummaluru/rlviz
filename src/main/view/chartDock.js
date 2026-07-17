@@ -257,7 +257,7 @@ class ChartDock {
     _renderConvergence(body, caption) {
         caption.textContent = 'V̂(S₀) vs V*';
         if (typeof Chart === 'undefined') return;
-        const { mcMeans, mcLabels, viValues, viLabels, vStar } = ChartDataBuilders.buildConvergenceData(
+        const { mcMeans, mcSEs, mcLabels, viValues, viLabels, vStar } = ChartDataBuilders.buildConvergenceData(
             this.expectationState, this.valueIterationState);
 
         const canvas = document.createElement('canvas');
@@ -267,6 +267,26 @@ class ChartDock {
         // All datasets use explicit {x,y} points on a shared linear x-axis (rather than a
         // category axis) so the hover marker below can place a vertical line at an arbitrary x.
         const datasets = [];
+
+        // +-SE shaded band around the MC line, drawn first so the solid mean line (pushed below)
+        // renders on top of it. Chart.js fills the area between consecutive datasets via the
+        // "-1" relative fill target, so the lower bound (no visible line) must be pushed
+        // immediately before the upper bound (fill: '-1').
+        if (mcMeans.length > 0 && mcSEs.length === mcMeans.length) {
+            datasets.push({
+                label: 'E[G] − SE',
+                data: mcMeans.map((y, x) => ({ x, y: y - (mcSEs[x] || 0) })),
+                borderColor: 'transparent',
+                pointRadius: 0, fill: false
+            });
+            datasets.push({
+                label: 'E[G] ± SE',
+                data: mcMeans.map((y, x) => ({ x, y: y + (mcSEs[x] || 0) })),
+                borderColor: 'transparent',
+                pointRadius: 0, fill: '-1',
+                backgroundColor: ColorUtils.applyAlpha(AppPalette.accent.orange, 35)
+            });
+        }
         if (viValues.length > 0) {
             const methodEntry = ValuesMethodMatrix.resolve(this.viewModel.modelKnown, this.viewModel.observability);
             datasets.push({

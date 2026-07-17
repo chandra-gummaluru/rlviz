@@ -9,6 +9,9 @@ const ChartDataBuilders = {
         const mcMeans = expectationState && expectationState.computed
             ? expectationState.getMeansOverTime().slice(0, expectationState.currentT + 1)
             : [];
+        const mcSEs = expectationState && expectationState.computed
+            ? expectationState.getSEsOverTime().slice(0, expectationState.currentT + 1)
+            : [];
         const mcLabels = mcMeans.map((_, i) => i);
 
         let viValues = [];
@@ -21,7 +24,7 @@ const ChartDataBuilders = {
         }
         const viLabels = viValues.map((_, i) => i);
 
-        return { mcMeans, mcLabels, viValues, viLabels, vStar };
+        return { mcMeans, mcSEs, mcLabels, viValues, viLabels, vStar };
     },
 
     // Bins the current scrubber-t utilities into binCount equal-width bins spanning the actual

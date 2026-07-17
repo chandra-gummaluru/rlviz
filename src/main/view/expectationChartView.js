@@ -80,7 +80,7 @@ class ExpectationChartView {
         body.innerHTML = '';
         if (typeof Chart === 'undefined') return;
 
-        const { mcMeans, viValues, vStar } = ChartDataBuilders.buildConvergenceData(
+        const { mcMeans, mcSEs, viValues, vStar } = ChartDataBuilders.buildConvergenceData(
             this.expectationState, this.valueIterationState);
 
         const canvas = document.createElement('canvas');
@@ -88,6 +88,25 @@ class ExpectationChartView {
         const maxLen = Math.max(mcMeans.length, viValues.length, 1);
 
         const datasets = [];
+
+        // +-SE shaded band around the MC line - see chartDock.js's _renderConvergence for the
+        // fill-target rationale (lower bound first with fill:false, upper bound right after with
+        // fill:'-1' so Chart.js fills the area between the two).
+        if (mcMeans.length > 0 && mcSEs.length === mcMeans.length) {
+            datasets.push({
+                label: 'E[G] − SE',
+                data: mcMeans.map((y, x) => ({ x, y: y - (mcSEs[x] || 0) })),
+                borderColor: 'transparent',
+                pointRadius: 0, fill: false
+            });
+            datasets.push({
+                label: 'E[G] ± SE',
+                data: mcMeans.map((y, x) => ({ x, y: y + (mcSEs[x] || 0) })),
+                borderColor: 'transparent',
+                pointRadius: 0, fill: '-1',
+                backgroundColor: ColorUtils.applyAlpha(AppPalette.accent.orange, 35)
+            });
+        }
         if (viValues.length > 0) {
             const methodEntry = ValuesMethodMatrix.resolve(this.viewModel.modelKnown, this.viewModel.observability);
             datasets.push({
