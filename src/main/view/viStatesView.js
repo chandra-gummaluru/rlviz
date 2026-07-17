@@ -59,7 +59,15 @@ class ViStatesView {
         this.containerEl.style.height = height + 'px';
         if (this._labelChipEl) {
             this._labelChipEl.style.left = (x + width - 12) + 'px';
-            this._labelChipEl.style.top = (y - 32) + 'px';
+            // +12 (not -32) - `y` is the pane's own top edge (mainView.TOP_BARS_HEIGHT), which
+            // sits flush against the topbar's bottom edge. The topbar itself is a solid,
+            // z-index:1000 fixed bar (`.topbar`) - `y - 32` landed this chip's 8-32px range
+            // entirely INSIDE the topbar's own 0-40px vertical span, so it rendered but was
+            // always fully covered and invisible (only caught via headless-browser bounding-rect
+            // inspection, not visually obvious from the code alone). +12 places it just inside
+            // the pane's own top-right corner instead, matching this method's own doc comment
+            // above ("12px inset from the pane's top").
+            this._labelChipEl.style.top = (y + 12) + 'px';
             this._labelChipEl.style.transform = 'translateX(-100%)';
         }
     }

@@ -243,9 +243,13 @@ const onModelKnownToggle = (known) => {
     refreshLearningTreePill();
     // The shared VI Play/Step/Skip buttons' label and enabled-state are quadrant-dependent
     // (Learning Iteration vs. the other three) - re-resolve immediately rather than waiting for
-    // the next mode/subview entry, or they go stale (see refreshVIButtons()).
+    // the next mode/subview entry, or they go stale (see refreshVIButtons()). The 52/48 split's
+    // own chrome (Phase 3b) is quadrant-dependent too - entering/leaving Learning Iteration must
+    // show/hide the States view immediately, the same way it already does for the sweep chip via
+    // refreshLearningTreePill() above - not just on the next mode/subview transition.
     if (canvasViewModel.mode === 'values' && canvasViewModel.valuesSubView === 'vi') {
         refreshVIButtons();
+        setUpVISplitChrome();
     }
     redraw();
 };
@@ -259,6 +263,7 @@ const onObservabilityToggle = (value) => {
     refreshLearningTreePill();
     if (canvasViewModel.mode === 'values' && canvasViewModel.valuesSubView === 'vi') {
         refreshVIButtons();
+        setUpVISplitChrome();
     }
     redraw();
 };
@@ -392,6 +397,25 @@ function setUpMCSplitChrome() {
     }
 }
 
+// Positions/shows Phase 3b's own chrome (the States view + its label chip) - called from both
+// the cold-entry values() hook and onEnterSubView.vi, mirroring setUpMCSplitChrome()'s own
+// two-call-site pattern. No-ops (and hides the States view) for Learning Iteration, which never
+// splits.
+function setUpVISplitChrome() {
+    if (!mainView || !mainView.viStatesView) return;
+    const panelW = rightPanel ? rightPanel.getWidth() : 272;
+    const canvasW = windowWidth - panelW;
+    const canvasH = windowHeight - mainView.TOP_BARS_HEIGHT - mainView.getDockHeight();
+    const viSplit = mainView._viSplitWidths(canvasW);
+
+    if (viSplit) {
+        mainView.viStatesView.updateBounds(0, mainView.TOP_BARS_HEIGHT, viSplit.leftW, canvasH);
+        mainView.viStatesView.show();
+    } else {
+        mainView.viStatesView.hide();
+    }
+}
+
 function leaveVISubView() {
     mathRenderer.clear();
     valueIterationViewModel?.clearExplanationDetail();
@@ -432,6 +456,7 @@ canvasController.registerModeLifecycle({
             if (mainView && mainView.mcLeftViewPill) mainView.mcLeftViewPill.hide();
             if (mainView && mainView.expectationChartView) mainView.expectationChartView.hide();
             if (mainView && mainView.viSweepChip) mainView.viSweepChip.hide();
+            if (mainView && mainView.viStatesView) mainView.viStatesView.hide();
             if (learningTreePill) learningTreePill.hide();
         },
         // Policy's canvas is now identical to Build's (fully editable - only the right panel
@@ -525,6 +550,7 @@ canvasController.registerModeLifecycle({
                     mainView.viSweepChip.refresh();
                 }
                 refreshLearningTreePill();
+                setUpVISplitChrome();
             }
         }
     },
@@ -535,6 +561,7 @@ canvasController.registerModeLifecycle({
             if (mainView && mainView.estimatorPill) mainView.estimatorPill.refresh();
             if (mainView && mainView.viSweepChip) mainView.viSweepChip.hide();
             if (learningTreePill) learningTreePill.hide();
+            if (mainView && mainView.viStatesView) mainView.viStatesView.hide();
             if (mainView && mainView.chartDock) mainView.chartDock.hide();
             if (mainView && mainView.mcRunsPill) {
                 mainView.mcRunsPill.updateBounds(0, windowWidth - mainView.RIGHT_PANEL_WIDTH);
@@ -560,6 +587,7 @@ canvasController.registerModeLifecycle({
                 mainView.viSweepChip.refresh();
             }
             refreshLearningTreePill();
+            setUpVISplitChrome();
         }
     },
     onLeaveSubView: {
@@ -735,6 +763,10 @@ const onVIPlay = () => {
     ensureVIInitialized();
     viPlayInteractor.execute(new VIPlayInputData());
     refreshVIButtons();
+    // The real per-tick refresh during continuous Play happens via VIPresenter's own
+    // presentSweepComplete()/presentComplete() (see viPresenter.js's _refreshStatesView()) - this
+    // call just covers the very first frame, before the first beat completes.
+    if (mainView && mainView.viStatesView) mainView.viStatesView.refresh();
 };
 
 const onVIPause = () => {
@@ -755,6 +787,7 @@ const onVIStep = () => {
     ensureVIInitialized();
     viStepInteractor.execute(new VIStepInputData());
     refreshVIButtons();
+    if (mainView && mainView.viStatesView) mainView.viStatesView.refresh();
 };
 
 const onVISkip = () => {
@@ -769,6 +802,7 @@ const onVISkip = () => {
     ensureVIInitialized();
     viSkipInteractor.execute(new VISkipInputData());
     refreshVIButtons();
+    if (mainView && mainView.viStatesView) mainView.viStatesView.refresh();
 };
 
 const onVIReset = () => {
@@ -783,6 +817,7 @@ const onVIReset = () => {
     if (!viResetInteractor) return;
     viResetInteractor.execute(new VIResetInputData());
     refreshVIButtons();
+    if (mainView && mainView.viStatesView) mainView.viStatesView.refresh();
     canvasController.showGoalCardIfNotMuted();
     if (mainView && mainView.goalCard) mainView.goalCard.refresh();
 };
@@ -1148,9 +1183,25 @@ function setup() {
     const valueIterationView = new ValueIterationView(canvasViewModel, {
         getPanelWidth: () => rightPanel.getWidth(),
         getTopOffset: () => mainView.TOP_BARS_HEIGHT,
-        getBottomOffset: () => topBar.getHeight()
+        getBottomOffset: () => topBar.getHeight(),
+        getLeftInset: () => {
+            const canvasW = windowWidth - rightPanel.getWidth();
+            const viSplit = mainView._viSplitWidths(canvasW);
+            return viSplit ? viSplit.leftW : 0;
+        }
     });
     mainView.valueIterationView = valueIterationView;
+
+    const viStatesView = new ViStatesView(canvasViewModel, valueIterationState, valueIterationViewModel);
+    mainView.viStatesView = viStatesView;
+    // Called here (immediately after construction), not at the viSweepChip.setup() call site the
+    // brief's Step 2 pointed at - that call site runs earlier in setup()'s synchronous execution
+    // than this const's own declaration, which would throw a TDZ ReferenceError. Still satisfies
+    // "call .setup() during app bootstrap"; see the Task 5 report for the full explanation.
+    viStatesView.setup();
+    // Wires the real per-sweep-advance refresh hook (Play tick / Step / Skip / Reset all funnel
+    // through VIPresenter's own lifecycle methods - see viPresenter.js's _refreshStatesView()).
+    viPresenter.setStatesView(viStatesView);
 
     // ===== Learning Iteration (unknown:full) real Q-learning wiring =====
     const qlPresenter = new QLPresenter(canvasViewModel);

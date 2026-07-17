@@ -2333,7 +2333,12 @@ input[type="range"]::-moz-range-thumb {
   border-radius: var(--radius-btn, 6px);
   background: var(--surface-card2, var(--bg-card));
   color: var(--accent-teal);
-  display: none;
+  /* No `display: none` here (unlike a plain default) - ViStatesView.hide()/show() toggle this
+     element's OWN inline style.display between 'none' and '' (see viStatesView.js), the same
+     convention vi-sweep-chip's CSS already uses. Baking `display: none` into this rule would make
+     show()'s `style.display = ''` a no-op (clearing an inline override just falls back to this
+     rule's own value), leaving the chip permanently invisible even while "shown" - caught live in
+     a headless-browser check, not by reading the code. */
 }
 
 .vi-states-view {

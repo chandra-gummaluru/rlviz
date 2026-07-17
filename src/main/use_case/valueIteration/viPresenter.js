@@ -20,6 +20,7 @@ class VIPresenter extends VIOutputBoundary {
         this.rightPanel = null;
         this.chartDock = null;
         this.sweepChip = null;
+        this.statesView = null;
     }
 
     get viViewModel() {
@@ -34,19 +35,27 @@ class VIPresenter extends VIOutputBoundary {
     setRightPanel(rightPanel) { this.rightPanel = rightPanel; }
     setChartDock(chartDock) { this.chartDock = chartDock; }
     setSweepChip(sweepChip) { this.sweepChip = sweepChip; }
+    setStatesView(statesView) { this.statesView = statesView; }
 
     // --- Lifecycle events ---
 
     presentInitialized() {
         if (this.viViewModel) this.viViewModel.reset();
         this._refreshSweepChip();
+        this._refreshStatesView();
         this._updateButtonStates();
         this._redraw();
         this._updateRightPanel();
     }
 
+    // The real per-sweep advance event - fires once per beat during continuous Play (via
+    // VIAnimator.continuousPlay()'s while-loop) and once for Step/Skip. This is the ONLY place a
+    // new t=k section actually needs to appear in the States view mid-Play; main.js's own
+    // onVIPlay/onVIStep/onVISkip click handlers only run once per click; the loop itself never
+    // returns control to main.js between beats.
     presentSweepComplete(sweepIndex) {
         this._refreshSweepChip();
+        this._refreshStatesView();
         this._updateButtonStates();
         this._redraw();
         this._updateRightPanel();
@@ -55,6 +64,7 @@ class VIPresenter extends VIOutputBoundary {
     presentComplete() {
         if (this.viState) this.viState.isPlaying = false;
         this._refreshSweepChip();
+        this._refreshStatesView();
         this._updateButtonStates();
         this._redraw();
         this._updateRightPanel();
@@ -69,6 +79,7 @@ class VIPresenter extends VIOutputBoundary {
     presentReset() {
         if (this.viViewModel) this.viViewModel.reset();
         this._refreshSweepChip();
+        this._refreshStatesView();
         this._updateButtonStates();
         this._redraw();
         this._updateRightPanel();
@@ -250,6 +261,13 @@ class VIPresenter extends VIOutputBoundary {
 
     _refreshSweepChip() {
         if (this.sweepChip) this.sweepChip.refresh();
+    }
+
+    // Phase 3b's States view (left pane, Values -> Iteration split). refresh() itself is a cheap
+    // no-op when no new sweep has been added, so this is safe to call on every lifecycle event
+    // (including once per beat during continuous Play) without special-casing.
+    _refreshStatesView() {
+        if (this.statesView) this.statesView.refresh();
     }
 
     _updateRightPanel() {
