@@ -168,9 +168,11 @@ class ExpectationView {
                 this._drawEdge(from, to, AppPalette.node.state, EXPECTATION_DIM_ALPHA);
             }
 
-            // Draw all nodes dim
+            // Draw all nodes dim - no name labels in the grid's mini-panels (too small to be
+            // legible at this scale, and the shared right-pane graph panel is where node names
+            // are meant to be read now).
             for (const node of this.graph.nodes) {
-                this._drawNode(node, AppPalette.node.state, EXPECTATION_DIM_ALPHA, fitScale);
+                this._drawNode(node, AppPalette.node.state, EXPECTATION_DIM_ALPHA, fitScale, false);
             }
 
             // Draw text labels
@@ -195,7 +197,7 @@ class ExpectationView {
             for (const entry of visitedSlice) {
                 const node = this.graph.getNodeById(entry.id);
                 if (node) {
-                    this._drawNode(node, runColor, 255, fitScale);
+                    this._drawNode(node, runColor, 255, fitScale, false);
                 }
             }
 
@@ -401,7 +403,7 @@ class ExpectationView {
         }
     }
 
-    _drawNode(node, color, alpha, fitScale) {
+    _drawNode(node, color, alpha, fitScale, showLabel = true) {
         const col = ColorUtils.applyAlpha(color, alpha);
         push();
         noStroke();
@@ -433,7 +435,7 @@ class ExpectationView {
             const img = this._imageCache.get(key);
             return img && img !== 'failed' && img.complete && img.naturalWidth > 0;
         })();
-        if (!hasVisibleImage) {
+        if (!hasVisibleImage && showLabel) {
             const label = node.name && node.name.length > 4 ? node.name.slice(0, 3) + '…' : (node.name || '');
             const screenFontSize = Math.max(6, node.size * 0.55);
             const worldFontSize = screenFontSize / (fitScale || 1);
