@@ -250,6 +250,14 @@ const onModelKnownToggle = (known) => {
     if (canvasViewModel.mode === 'values' && canvasViewModel.valuesSubView === 'vi') {
         refreshVIButtons();
         setUpVISplitChrome();
+        if (mainView && mainView.chartDock) {
+            if (_isLearningIterationActive()) {
+                mainView.chartDock.updateBounds(0, windowWidth - mainView.RIGHT_PANEL_WIDTH);
+                mainView.chartDock.show();
+            } else {
+                mainView.chartDock.hide();
+            }
+        }
     }
     redraw();
 };
@@ -264,6 +272,14 @@ const onObservabilityToggle = (value) => {
     if (canvasViewModel.mode === 'values' && canvasViewModel.valuesSubView === 'vi') {
         refreshVIButtons();
         setUpVISplitChrome();
+        if (mainView && mainView.chartDock) {
+            if (_isLearningIterationActive()) {
+                mainView.chartDock.updateBounds(0, windowWidth - mainView.RIGHT_PANEL_WIDTH);
+                mainView.chartDock.show();
+            } else {
+                mainView.chartDock.hide();
+            }
+        }
     }
     redraw();
 };
@@ -407,16 +423,31 @@ function setUpVISplitChrome() {
     const canvasW = windowWidth - panelW;
     const canvasH = windowHeight - mainView.TOP_BARS_HEIGHT - mainView.getDockHeight();
     const viSplit = mainView._viSplitWidths(canvasW);
+    // +56 clears estimatorPill's top-left "Value Iteration"/"Monte Carlo" method badge
+    // (values-method-badge, topOffset+24, ~24px tall) - same inset Phase 3a's
+    // ExpectationChartView already applies for MC's identical badge-overlap case.
+    const topInset = 56;
 
     if (viSplit) {
-        // +56 clears estimatorPill's top-left "Value Iteration"/"Monte Carlo" method badge
-        // (values-method-badge, topOffset+24, ~24px tall) - same inset Phase 3a's
-        // ExpectationChartView already applies for MC's identical badge-overlap case.
-        const topInset = 56;
+        const showChart = valueIterationViewModel.leftView === 'chart';
         mainView.viStatesView.updateBounds(0, mainView.TOP_BARS_HEIGHT + topInset, viSplit.leftW, canvasH - topInset);
-        mainView.viStatesView.show();
+        mainView.viChartView.updateBounds(0, mainView.TOP_BARS_HEIGHT + topInset, viSplit.leftW, canvasH - topInset);
+        if (showChart) {
+            mainView.viStatesView.hide();
+            mainView.viChartView.show();
+        } else {
+            mainView.viChartView.hide();
+            mainView.viStatesView.show();
+        }
+        if (mainView.viLeftViewPill) {
+            mainView.viLeftViewPill.updateBounds(viSplit.leftW, viSplit.rightW);
+            mainView.viLeftViewPill.show();
+            mainView.viLeftViewPill.refresh();
+        }
     } else {
         mainView.viStatesView.hide();
+        mainView.viChartView.hide();
+        if (mainView.viLeftViewPill) mainView.viLeftViewPill.hide();
     }
 }
 
@@ -461,6 +492,8 @@ canvasController.registerModeLifecycle({
             if (mainView && mainView.expectationChartView) mainView.expectationChartView.hide();
             if (mainView && mainView.viSweepChip) mainView.viSweepChip.hide();
             if (mainView && mainView.viStatesView) mainView.viStatesView.hide();
+            if (mainView && mainView.viLeftViewPill) mainView.viLeftViewPill.hide();
+            if (mainView && mainView.viChartView) mainView.viChartView.hide();
             if (learningTreePill) learningTreePill.hide();
         },
         // Policy's canvas is now identical to Build's (fully editable - only the right panel
@@ -543,9 +576,16 @@ canvasController.registerModeLifecycle({
                 }
                 setUpMCSplitChrome();
             } else if (sv === 'vi') {
+                // ChartDock now only shows for Learning Iteration (the 3 split quadrants get
+                // their own inline ViChartView instead) - mirrors exactly how Phase 3a already
+                // stopped routing Monte Carlo through ChartDock.
                 if (mainView && mainView.chartDock) {
-                    mainView.chartDock.updateBounds(0, windowWidth - mainView.RIGHT_PANEL_WIDTH);
-                    mainView.chartDock.show();
+                    if (_isLearningIterationActive()) {
+                        mainView.chartDock.updateBounds(0, windowWidth - mainView.RIGHT_PANEL_WIDTH);
+                        mainView.chartDock.show();
+                    } else {
+                        mainView.chartDock.hide();
+                    }
                 }
                 if (mainView && mainView.zoomPill) mainView.zoomPill.show();
                 if (mainView && mainView.viSweepChip) {
@@ -566,6 +606,8 @@ canvasController.registerModeLifecycle({
             if (mainView && mainView.viSweepChip) mainView.viSweepChip.hide();
             if (learningTreePill) learningTreePill.hide();
             if (mainView && mainView.viStatesView) mainView.viStatesView.hide();
+            if (mainView && mainView.viLeftViewPill) mainView.viLeftViewPill.hide();
+            if (mainView && mainView.viChartView) mainView.viChartView.hide();
             if (mainView && mainView.chartDock) mainView.chartDock.hide();
             if (mainView && mainView.mcRunsPill) {
                 mainView.mcRunsPill.updateBounds(0, windowWidth - mainView.RIGHT_PANEL_WIDTH);
@@ -581,9 +623,15 @@ canvasController.registerModeLifecycle({
             if (mainView && mainView.mcRunsPill) mainView.mcRunsPill.hide();
             if (mainView && mainView.mcLeftViewPill) mainView.mcLeftViewPill.hide();
             if (mainView && mainView.expectationChartView) mainView.expectationChartView.hide();
+            // ChartDock now only shows for Learning Iteration - see the identical comment in the
+            // cold-entry values() hook's vi branch above.
             if (mainView && mainView.chartDock) {
-                mainView.chartDock.updateBounds(0, windowWidth - mainView.RIGHT_PANEL_WIDTH);
-                mainView.chartDock.show();
+                if (_isLearningIterationActive()) {
+                    mainView.chartDock.updateBounds(0, windowWidth - mainView.RIGHT_PANEL_WIDTH);
+                    mainView.chartDock.show();
+                } else {
+                    mainView.chartDock.hide();
+                }
             }
             if (mainView && mainView.viSweepChip) {
                 mainView.viSweepChip.updateBounds(0, windowWidth - mainView.RIGHT_PANEL_WIDTH);
@@ -1203,11 +1251,25 @@ function setup() {
 
     const viStatesView = new ViStatesView(canvasViewModel, valueIterationState, valueIterationViewModel);
     mainView.viStatesView = viStatesView;
+    const viLeftViewPill = new ViLeftViewPill({
+        onSelectLeftView: (key) => {
+            valueIterationViewModel.leftView = key;
+            viLeftViewPill.refresh();
+            setUpVISplitChrome();
+            if (typeof redraw === 'function') redraw();
+        }
+    }, canvasViewModel);
+    mainView.viLeftViewPill = viLeftViewPill;
+
+    const viChartView = new ViChartView(canvasViewModel, valueIterationState, expectationState);
+    mainView.viChartView = viChartView;
     // Called here (immediately after construction), not at the viSweepChip.setup() call site the
     // brief's Step 2 pointed at - that call site runs earlier in setup()'s synchronous execution
     // than this const's own declaration, which would throw a TDZ ReferenceError. Still satisfies
     // "call .setup() during app bootstrap"; see the Task 5 report for the full explanation.
     viStatesView.setup();
+    viLeftViewPill.setup(mainView.TOP_BARS_HEIGHT);
+    viChartView.setup();
     // Wires the real per-sweep-advance refresh hook (Play tick / Step / Skip / Reset all funnel
     // through VIPresenter's own lifecycle methods - see viPresenter.js's _refreshStatesView()).
     viPresenter.setStatesView(viStatesView);
