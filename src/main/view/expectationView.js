@@ -29,6 +29,10 @@ class ExpectationView {
         this.onPlaybackStateChange = null;
         this._topOffset = 40; // corrected immediately by resize(), matches the top bar's height
         this._imageCache = new Map();
+        // Fade-in state for the shared right-pane graph panel's newest revealed step (Play/Step
+        // only - dragging the scrubber directly always jumps instantly, see onScrub below).
+        // null = nothing animating, render the selected run's path at full opacity.
+        this._graphPanelReveal = null;
     }
 
     setRightPanel(rightPanel) {
@@ -221,6 +225,39 @@ class ExpectationView {
     // shared scrubber's currentT) is highlighted otherwise. Replaces the old full-canvas
     // "focused mode" (_drawFocusedPanel) - same rendering approach, just always-on and pane-
     // scoped instead of a modal takeover.
+    // Number of trace entries visible at time t for a given rollout - the same 2*effectiveT+1
+    // sizing _drawGraphPanel's highlight loop already used, extracted so the reveal-fade trigger
+    // (step()/_scheduleNextTick()) and the render itself agree on exactly what "one step" means.
+    _revealedCountForRolloutAtT(rollout, t) {
+        const effectiveT = Math.min(t, rollout.numSteps);
+        return 2 * effectiveT + 1;
+    }
+
+    // Starts (or restarts) a fade-in of the trace entries between fromCount and toCount - the
+    // chunk newly revealed by a single Play/Step advance. No-ops if there's nothing new to
+    // reveal (toCount <= fromCount, e.g. stepping past the rollout's own end).
+    _startGraphPanelReveal(fromCount, toCount) {
+        if (toCount <= fromCount) return;
+        this._graphPanelReveal = { fromCount, toCount, startTime: performance.now() };
+        this._runGraphPanelRevealLoop();
+    }
+
+    _runGraphPanelRevealLoop() {
+        const DURATION_MS = 280;
+        const tick = () => {
+            if (!this._graphPanelReveal) return;
+            const elapsed = performance.now() - this._graphPanelReveal.startTime;
+            if (typeof redraw === 'function') redraw();
+            if (elapsed < DURATION_MS) {
+                requestAnimationFrame(tick);
+            } else {
+                this._graphPanelReveal = null;
+                if (typeof redraw === 'function') redraw();
+            }
+        };
+        requestAnimationFrame(tick);
+    }
+
     _drawGraphPanel(leftW, rightW, canvasH) {
         const state = this.expectationState;
         const vm = this.expectationViewModel;
@@ -256,17 +293,36 @@ class ExpectationView {
             if (rollout) {
                 const runColor = AppPalette.expectation.runColors[vm.selectedRunIndex % AppPalette.expectation.runColors.length];
                 const currentT = state.currentT;
-                const effectiveT = Math.min(currentT, rollout.numSteps);
-                const visitedSlice = rollout.trace.slice(0, 2 * effectiveT + 1);
+                const visitedSlice = rollout.trace.slice(0, this._revealedCountForRolloutAtT(rollout, currentT));
+
+                // Per-index alpha: entries already visible before the current reveal (or all of
+                // them, if nothing is animating - a scrub-drag jump or a fresh run selection)
+                // render at full opacity; only the newest Play/Step chunk eases in.
+                const reveal = this._graphPanelReveal;
+                const animating = reveal && reveal.toCount === visitedSlice.length;
+                const fadeFromIndex = animating ? reveal.fromCount : visitedSlice.length;
+                const fadeAlpha = animating
+                    ? Math.round(255 * EasingUtils.easeOut(Math.min(1, (performance.now() - reveal.startTime) / 280)))
+                    : 255;
+                const alphaForIndex = (idx) => idx < fadeFromIndex ? 255 : fadeAlpha;
+
                 for (let k = 0; k + 1 < visitedSlice.length; k++) {
                     const fromNode = this.graph.getNodeById(visitedSlice[k].id);
                     const toNode = this.graph.getNodeById(visitedSlice[k + 1].id);
-                    if (fromNode && toNode) this._drawEdge(fromNode, toNode, runColor, 255);
+                    if (fromNode && toNode) this._drawEdge(fromNode, toNode, runColor, alphaForIndex(k + 1));
                 }
-                for (const entry of visitedSlice) {
+                // The current node (always the last, and always a state entry - the trace
+                // alternates state/action/state/...) is filled with the same accent Build/Policy
+                // mode uses for "where the simulation currently is" (NodeViewModel.color),
+                // instead of the run's own color, so it reads as a distinct "you are here" marker
+                // rather than just another visited step.
+                const lastIdx = visitedSlice.length - 1;
+                visitedSlice.forEach((entry, idx) => {
                     const node = this.graph.getNodeById(entry.id);
-                    if (node) this._drawNode(node, runColor, 255, fitScale);
-                }
+                    if (!node) return;
+                    const color = idx === lastIdx ? AppPalette.node.activeInitial : runColor;
+                    this._drawNode(node, color, alphaForIndex(idx), fitScale);
+                });
             }
         }
 
@@ -443,7 +499,9 @@ class ExpectationView {
         const state = this.expectationState;
         this._playTimer = setTimeout(() => {
             if (!vm.isPlaying) return;
+            const oldT = state.currentT;
             state.currentT++;
+            this._maybeAnimateReveal(oldT, state.currentT);
             this._syncScrubber();
             if (typeof redraw === 'function') redraw();
             this._notifyDataChanged();
@@ -453,6 +511,20 @@ class ExpectationView {
                 this._scheduleNextTick();
             }
         }, this.getTickMs());
+    }
+
+    // Triggers the right-pane graph panel's fade-in for the step just taken (Play tick or the
+    // Step button - see step() below), if a run is currently selected. No-op otherwise; scrubber
+    // drags never call this (see onScrub in setupScrubber()), so dragging always jumps instantly.
+    _maybeAnimateReveal(oldT, newT) {
+        const vm = this.expectationViewModel;
+        if (vm.selectedRunIndex === null) return;
+        const rollout = this.expectationState.getDisplaySlice()[vm.selectedRunIndex];
+        if (!rollout) return;
+        this._startGraphPanelReveal(
+            this._revealedCountForRolloutAtT(rollout, oldT),
+            this._revealedCountForRolloutAtT(rollout, newT)
+        );
     }
 
     stopPlay() {
@@ -474,7 +546,9 @@ class ExpectationView {
         if (!state.computed) return;
         this.stopPlay();
         if (state.currentT >= state.maxT) return;
+        const oldT = state.currentT;
         state.currentT++;
+        this._maybeAnimateReveal(oldT, state.currentT);
         this._syncScrubber();
         if (typeof redraw === 'function') redraw();
         this._notifyDataChanged();
@@ -515,6 +589,10 @@ class ExpectationView {
             onScrub: (index, isFinal) => {
                 this.stopPlay();
                 this.expectationState.currentT = index;
+                // Dragging the scrubber always jumps instantly - cancel any in-progress
+                // Play/Step reveal fade so it doesn't keep animating toward a position the drag
+                // has already moved past.
+                this._graphPanelReveal = null;
                 if (typeof redraw === 'function') redraw();
                 this._notifyDataChanged();
             },
@@ -581,6 +659,9 @@ class ExpectationView {
     selectRun(index) {
         const vm = this.expectationViewModel;
         vm.selectedRunIndex = index;
+        // A new selection renders instantly (it's a jump to a different run, not a step forward
+        // in the current one) - cancel any reveal fade left over from the previous selection.
+        this._graphPanelReveal = null;
         this._notifyDataChanged();
         if (typeof redraw === 'function') redraw();
     }
@@ -620,6 +701,9 @@ class ExpectationView {
         this.stopPlay();
         this._removeScrubber();
         this._imageCache.clear();
+        // Its rAF loop checks `if (!this._graphPanelReveal) return;` every frame, so clearing
+        // this is enough to stop it - no separate cancelAnimationFrame handle to track.
+        this._graphPanelReveal = null;
     }
 
     // Hides the shared scrubber and clears this view's local reference/callbacks - does NOT
