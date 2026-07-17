@@ -25,10 +25,10 @@ class ExpectationView {
         this._playTimer = null;
         this._rightPanel = null;
         this._chartDock = null;
+        this._expectationChartView = null;
         this.onPlaybackStateChange = null;
         this._topOffset = 40; // corrected immediately by resize(), matches the top bar's height
         this._imageCache = new Map();
-        this._backBtn = null;
     }
 
     setRightPanel(rightPanel) {
@@ -39,9 +39,17 @@ class ExpectationView {
         this._chartDock = chartDock;
     }
 
+    // The new inline Chart view for the left pane (Phase 3a) - a sibling DOM component, not a
+    // p5-canvas overlay, so it needs its own bounds kept in sync on resize() (see below) and its
+    // own refresh() call alongside rightPanel/chartDock whenever the underlying data changes.
+    setExpectationChartView(view) {
+        this._expectationChartView = view;
+    }
+
     _notifyDataChanged() {
         if (this._rightPanel) this._rightPanel.updateExpectationData();
         if (this._chartDock) this._chartDock.refresh();
+        if (this._expectationChartView) this._expectationChartView.refresh();
     }
 
     draw(canvasW, canvasH) {
@@ -57,22 +65,45 @@ class ExpectationView {
 
         this._ensureImagesLoaded();
 
-        if (vm.focusedRunIndex !== null) {
-            this._drawFocusedPanel(canvasW, canvasH);
-            return;
+        const { leftW, rightW } = vm.splitWidths(canvasW);
+
+        if (vm.leftView === 'grid') {
+            this._drawGrid(leftW, canvasH);
+        } else {
+            // Chart view (ExpectationChartView, a DOM component) renders over this region
+            // instead - just clear the canvas-space behind it so nothing from a previous
+            // grid-mode frame lingers visible at the pane's edges.
+            noStroke();
+            fill(AppPalette.surface.canvas);
+            rect(0, 0, leftW, canvasH);
         }
 
+        push();
+        stroke(AppPalette.border.medium);
+        strokeWeight(1);
+        line(leftW, EXPECTATION_TOP_CLEARANCE, leftW, canvasH);
+        pop();
+
+        this._drawGraphPanel(leftW, rightW, canvasH);
+    }
+
+    // Episode mini-panel grid, budgeted to the left pane's width (leftW) instead of the full
+    // canvas - this is exactly today's pre-split grid-mode rendering, just parameterized.
+    _drawGrid(leftW, canvasH) {
+        const state = this.expectationState;
+        const vm = this.expectationViewModel;
+
         if (vm.layoutStale) {
-            vm.computeLayout(canvasW, canvasH - EXPECTATION_TOP_CLEARANCE, state.displayRuns, this.graph, EXPECTATION_TOP_CLEARANCE);
+            vm.computeLayout(leftW, canvasH - EXPECTATION_TOP_CLEARANCE, state.displayRuns, this.graph, EXPECTATION_TOP_CLEARANCE);
         }
         if (!vm.panelLayout) {
-            this._drawEmptyPrompt(canvasW, canvasH);
+            this._drawEmptyPrompt(leftW, canvasH);
             return;
         }
 
         const { panels, fitTransform } = vm.panelLayout;
         if (!fitTransform) {
-            this._drawEmptyPrompt(canvasW, canvasH);
+            this._drawEmptyPrompt(leftW, canvasH);
             return;
         }
 
@@ -82,12 +113,14 @@ class ExpectationView {
 
         const displaySlice = state.getDisplaySlice();
         const hoveredRun = vm.hoveredRun;
+        const selectedRun = vm.selectedRunIndex;
         for (let i = 0; i < displaySlice.length; i++) {
             const panel = panels[i];
             if (!panel) continue;
             const rollout = displaySlice[i];
             const runColor = runColors[i % runColors.length];
             const isHovered = hoveredRun === i;
+            const isSelected = selectedRun === i;
 
             drawingContext.save();
             drawingContext.beginPath();
@@ -174,12 +207,90 @@ class ExpectationView {
                 }
             }
 
-            // Panel border - only the color changes on hover, not the stroke weight, so the
-            // border doesn't visually "jump" in thickness as the mouse moves across the grid.
+            // Panel border - color reflects hover OR selection; stroke weight never changes so
+            // the border doesn't visually "jump" in thickness.
             noFill();
-            stroke(isHovered ? AppPalette.accent.orange : AppPalette.border.medium);
+            stroke((isHovered || isSelected) ? AppPalette.accent.orange : AppPalette.border.medium);
             strokeWeight(1);
             rect(panel.x, panel.y, panel.w, panel.h, 9);
+        }
+    }
+
+    // Shared right-pane graph panel (48% of canvasW, always visible regardless of leftView).
+    // Bare graph when nothing is selected; the selected run's visited-so-far path (synced to the
+    // shared scrubber's currentT) is highlighted otherwise. Replaces the old full-canvas
+    // "focused mode" (_drawFocusedPanel) - same rendering approach, just always-on and pane-
+    // scoped instead of a modal takeover.
+    _drawGraphPanel(leftW, rightW, canvasH) {
+        const state = this.expectationState;
+        const vm = this.expectationViewModel;
+
+        const availH = canvasH - EXPECTATION_TOP_CLEARANCE;
+        const fitTransform = vm._computeFitTransform(this.graph, rightW, availH);
+        if (!fitTransform) return;
+
+        const { offsetX, offsetY, fitScale } = fitTransform;
+
+        drawingContext.save();
+        drawingContext.beginPath();
+        drawingContext.rect(leftW, EXPECTATION_TOP_CLEARANCE, rightW, availH);
+        drawingContext.clip();
+
+        fill(AppPalette.surface.card);
+        noStroke();
+        rect(leftW, EXPECTATION_TOP_CLEARANCE, rightW, availH);
+
+        push();
+        translate(leftW + offsetX, EXPECTATION_TOP_CLEARANCE + offsetY);
+        scale(fitScale);
+
+        for (const edge of this.graph.edges) {
+            this._drawEdge(edge.getFromNode(), edge.getToNode(), AppPalette.node.state, EXPECTATION_DIM_ALPHA);
+        }
+        for (const node of this.graph.nodes) {
+            this._drawNode(node, AppPalette.node.state, EXPECTATION_DIM_ALPHA, fitScale);
+        }
+
+        if (vm.selectedRunIndex !== null) {
+            const rollout = state.getDisplaySlice()[vm.selectedRunIndex];
+            if (rollout) {
+                const runColor = AppPalette.expectation.runColors[vm.selectedRunIndex % AppPalette.expectation.runColors.length];
+                const currentT = state.currentT;
+                const effectiveT = Math.min(currentT, rollout.numSteps);
+                const visitedSlice = rollout.trace.slice(0, 2 * effectiveT + 1);
+                for (let k = 0; k + 1 < visitedSlice.length; k++) {
+                    const fromNode = this.graph.getNodeById(visitedSlice[k].id);
+                    const toNode = this.graph.getNodeById(visitedSlice[k + 1].id);
+                    if (fromNode && toNode) this._drawEdge(fromNode, toNode, runColor, 255);
+                }
+                for (const entry of visitedSlice) {
+                    const node = this.graph.getNodeById(entry.id);
+                    if (node) this._drawNode(node, runColor, 255, fitScale);
+                }
+            }
+        }
+
+        this._drawTextLabels(fitScale);
+
+        pop();
+        drawingContext.restore();
+
+        noFill();
+        stroke(AppPalette.border.medium);
+        strokeWeight(1);
+        rect(leftW, EXPECTATION_TOP_CLEARANCE, rightW, availH);
+
+        if (vm.selectedRunIndex !== null) {
+            const rollout = state.getDisplaySlice()[vm.selectedRunIndex];
+            if (rollout) {
+                const utility = state._getUtility(rollout, state.currentT);
+                noStroke();
+                fill(AppPalette.accent.yellow);
+                textSize(13);
+                textAlign(LEFT, TOP);
+                textFont(Typography.mono());
+                text(`Run ${String(vm.selectedRunIndex + 1).padStart(2, '0')} · G = ${utility.toFixed(2)}`, leftW + 12, EXPECTATION_TOP_CLEARANCE + 10);
+            }
         }
     }
 
@@ -369,40 +480,20 @@ class ExpectationView {
         this._notifyDataChanged();
     }
 
-    // Grid view (no single focused run) has no one canonical path to label ticks with, so it
-    // falls back to plain numeric labels ("0","1","2"...) - matching today's existing behavior.
-    // Focus view (one pinned/hovered run) labels ticks with that rollout's real state/action
-    // names, mirroring Build/Policy's trace-based ticks exactly.
+    // The shared right-pane graph panel (not a full-canvas "focused" takeover) has no canonical
+    // single path to label ticks with even when a run is selected, since the left pane's own
+    // grid/chart view is what the scrubber really scrubs - so ticks are always plain numeric
+    // ("0","1","2"...), regardless of selection. (Before the MC screen split, "focused mode"
+    // used real trace-name ticks; that mode no longer exists.)
     _buildScrubberTicks() {
-        const vm = this.expectationViewModel;
-        const focusedRollout = vm.focusedRunIndex !== null
-            ? this.expectationState.getDisplaySlice()[vm.focusedRunIndex]
-            : null;
-
-        if (!focusedRollout) {
-            const maxT = this.expectationState.maxT || 0;
-            const ticks = [];
-            for (let t = 0; t <= maxT; t++) ticks.push(String(t));
-            return ticks;
-        }
-
-        // focusedRollout.trace is produced by TraceGenerator.generate() - the exact same
-        // {id, type, name} shape SimulationState.visited uses for Build/Policy (confirmed by
-        // reading runExpectationInteractor.js/traceGenerator.js), and
-        // rollouts.push({ trace, rewards, utilities, numSteps }) confirms `.trace` is the field
-        // name.
-        return focusedRollout.trace.map(entry => entry.name);
+        const maxT = this.expectationState.maxT || 0;
+        const ticks = [];
+        for (let t = 0; t <= maxT; t++) ticks.push(String(t));
+        return ticks;
     }
 
-    // Focus-view ticks are one per RAW trace node (state AND action alternating, 2*numSteps+1
-    // entries - see _buildScrubberTicks()), while currentT is in TRANSITIONS (0..maxT). Grid
-    // view's plain numeric ticks are already 1:1 with currentT (no conversion needed there).
-    // Converts currentT -> the correct scrubber tick index for whichever view is showing.
     _scrubberIndexForCurrentT() {
-        const vm = this.expectationViewModel;
-        return vm.focusedRunIndex !== null
-            ? this.expectationState.currentT * 2
-            : this.expectationState.currentT;
+        return this.expectationState.currentT;
     }
 
     _syncScrubber() {
@@ -423,8 +514,7 @@ class ExpectationView {
         this._scrubberCallbacks = {
             onScrub: (index, isFinal) => {
                 this.stopPlay();
-                const vm = this.expectationViewModel;
-                this.expectationState.currentT = vm.focusedRunIndex !== null ? Math.floor(index / 2) : index;
+                this.expectationState.currentT = index;
                 if (typeof redraw === 'function') redraw();
                 this._notifyDataChanged();
             },
@@ -464,20 +554,28 @@ class ExpectationView {
     handleClick(mx, my) {
         const vm = this.expectationViewModel;
         const state = this.expectationState;
-        if (!state.computed) return;
-
-        if (vm.focusedRunIndex !== null) {
-            return;
-        }
+        if (!state.computed || vm.leftView !== 'grid') return;
 
         const { panels } = vm.panelLayout || { panels: [] };
         for (let i = 0; i < panels.length; i++) {
             const p = panels[i];
             if (mx >= p.x && mx <= p.x + p.w && my >= p.y && my <= p.y + p.h) {
-                this.enterFocusMode(i);
+                // Clicking an already-selected panel deselects it (toggle), matching this
+                // codebase's other click-to-select-or-clear conventions.
+                this.selectRun(vm.selectedRunIndex === i ? null : i);
                 return;
             }
         }
+    }
+
+    // Sets which rollout's path the shared right-pane graph panel highlights. index === null
+    // clears the selection (bare graph). Replaces the old enterFocusMode(index) - no longer
+    // triggers any canvas mode switch, just updates which run is highlighted.
+    selectRun(index) {
+        const vm = this.expectationViewModel;
+        vm.selectedRunIndex = index;
+        this._notifyDataChanged();
+        if (typeof redraw === 'function') redraw();
     }
 
     // Updates expectationViewModel.hoveredRun for the grid's own hover highlight and (later
@@ -488,7 +586,7 @@ class ExpectationView {
         const state = this.expectationState;
         const prevHovered = vm.hoveredRun;
 
-        if (!state.computed || vm.focusedRunIndex !== null) {
+        if (!state.computed || vm.leftView !== 'grid') {
             vm.hoveredRun = null;
             return prevHovered !== null;
         }
@@ -506,120 +604,13 @@ class ExpectationView {
         return hovered !== prevHovered;
     }
 
-    enterFocusMode(index) {
-        const state = this.expectationState;
-        const vm = this.expectationViewModel;
-        if (index < 0 || index >= state.getDisplaySlice().length) return;
-        vm.focusedRunIndex = index;
-        this._createBackButton();
-        if (this._scrubber) {
-            this._scrubber.setTicks(this._buildScrubberTicks());
-            this._scrubber.setPosition(this._scrubberIndexForCurrentT());
-        }
-        this._notifyDataChanged();
-        if (typeof redraw === 'function') redraw();
-    }
-
-    exitFocusMode() {
-        const vm = this.expectationViewModel;
-        if (vm.focusedRunIndex === null) return;
-        vm.focusedRunIndex = null;
-        this._removeBackButton();
-        vm.invalidateLayout();
-        if (this._scrubber) {
-            this._scrubber.setTicks(this._buildScrubberTicks());
-            this._scrubber.setPosition(this._scrubberIndexForCurrentT());
-        }
-        this._notifyDataChanged();
-        if (typeof redraw === 'function') redraw();
-    }
-
-    handleKey(key) {
-        if (key === 'Escape') this.exitFocusMode();
-    }
-
-    _createBackButton() {
-        this._removeBackButton();
-        const btn = document.createElement('div');
-        btn.className = 'expectation-back-btn';
-        btn.textContent = '← All runs';
-        btn.style.top = (this._topOffset + 8) + 'px';
-        btn.style.left = '8px';
-        btn.addEventListener('click', () => this.exitFocusMode());
-        document.body.appendChild(btn);
-        this._backBtn = btn;
-    }
-
-    _removeBackButton() {
-        if (this._backBtn) {
-            this._backBtn.remove();
-            this._backBtn = null;
-        }
-    }
-
-    _drawFocusedPanel(canvasW, canvasH) {
-        const state = this.expectationState;
-        const vm = this.expectationViewModel;
-        const rollout = state.getDisplaySlice()[vm.focusedRunIndex];
-        if (!rollout) return;
-
-        const availH = canvasH - EXPECTATION_TOP_CLEARANCE;
-        const fitTransform = this.expectationViewModel._computeFitTransform(this.graph, canvasW, availH);
-        if (!fitTransform) return;
-
-        const { offsetX, offsetY, fitScale } = fitTransform;
-        const runColor = AppPalette.expectation.runColors[vm.focusedRunIndex % AppPalette.expectation.runColors.length];
-        const currentT = state.currentT;
-
-        drawingContext.save();
-        drawingContext.beginPath();
-        drawingContext.rect(0, EXPECTATION_TOP_CLEARANCE, canvasW, availH);
-        drawingContext.clip();
-
-        fill(AppPalette.surface.card);
-        noStroke();
-        rect(0, EXPECTATION_TOP_CLEARANCE, canvasW, availH);
-
-        push();
-        translate(offsetX, offsetY + EXPECTATION_TOP_CLEARANCE);
-        scale(fitScale);
-
-        for (const edge of this.graph.edges) {
-            this._drawEdge(edge.getFromNode(), edge.getToNode(), AppPalette.node.state, EXPECTATION_DIM_ALPHA);
-        }
-        for (const node of this.graph.nodes) {
-            this._drawNode(node, AppPalette.node.state, EXPECTATION_DIM_ALPHA, fitScale);
-        }
-
-        const effectiveT = Math.min(currentT, rollout.numSteps);
-        const visitedSlice = rollout.trace.slice(0, 2 * effectiveT + 1);
-        for (let k = 0; k + 1 < visitedSlice.length; k++) {
-            const fromNode = this.graph.getNodeById(visitedSlice[k].id);
-            const toNode = this.graph.getNodeById(visitedSlice[k + 1].id);
-            if (fromNode && toNode) this._drawEdge(fromNode, toNode, runColor, 255);
-        }
-        for (const entry of visitedSlice) {
-            const node = this.graph.getNodeById(entry.id);
-            if (node) this._drawNode(node, runColor, 255, fitScale);
-        }
-
-        this._drawTextLabels(fitScale);
-
-        pop();
-        drawingContext.restore();
-
-        const utility = state._getUtility(rollout, currentT);
-        noStroke();
-        fill(AppPalette.accent.yellow);
-        textSize(13);
-        textAlign(LEFT, TOP);
-        textFont(Typography.mono());
-        text(`Run ${String(vm.focusedRunIndex + 1).padStart(2, '0')} · G = ${utility.toFixed(2)}`, 48, 10);
-    }
+    // No-op: "focused mode" (and its Escape-to-exit) no longer exists after the MC screen split
+    // - kept as a method (rather than removed) because main.js's global keyPressed() calls it
+    // unconditionally while Values -> Monte Carlo is active.
+    handleKey(key) {}
 
     teardown() {
         this.stopPlay();
-        this.exitFocusMode();
         this._removeScrubber();
         this._imageCache.clear();
     }
@@ -642,5 +633,9 @@ class ExpectationView {
             this._positionScrubberAboveDock();
         }
         this.expectationViewModel.invalidateLayout();
+        if (this._expectationChartView) {
+            const { leftW } = this.expectationViewModel.splitWidths(canvasW);
+            this._expectationChartView.updateBounds(0, topOffset, leftW, canvasH);
+        }
     }
 }
