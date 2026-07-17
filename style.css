@@ -1976,6 +1976,47 @@ input[type="range"]::-moz-range-thumb {
   color: var(--color-primary-contrast, var(--text-white));
 }
 
+/* ── MC left-pane [Grid | Chart] pill (Phase 3a) ─────────────────────────── */
+
+.mc-left-view-pill {
+  position: absolute;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mc-left-view-pill-track {
+  display: flex;
+  gap: 2px;
+  background: var(--surface-card2, var(--bg-card));
+  border: 1px solid var(--border-hairline, var(--border-light));
+  border-radius: 8px;
+  padding: 2px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.mc-left-view-pill-btn {
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-family);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+
+.mc-left-view-pill-btn:hover {
+  background: var(--surface-hover, var(--bg-dark-hover));
+}
+
+.mc-left-view-pill-btn--active {
+  background: var(--accent-orange);
+  color: var(--color-primary-contrast, var(--text-white));
+}
+
 /* ── Goal card (Evaluate redesign Phase 1) ───────────────────────────────── */
 
 .goal-card-overlay {
