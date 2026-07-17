@@ -183,6 +183,11 @@ class ValueIterationView {
 
     _drawPlaceholder() {
         push();
+        // draw() runs inside mainView.js's own translate(leftW, ...) for the split (Phase 3b) -
+        // resetMatrix() first, matching _drawStatusStrip()'s own established pattern, so
+        // leftInset below positions in real screen space instead of double-shifting on top of
+        // the outer translate that's already active.
+        resetMatrix();
         fill(120);
         noStroke();
         textAlign(CENTER, CENTER);
