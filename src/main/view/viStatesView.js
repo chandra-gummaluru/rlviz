@@ -126,7 +126,18 @@ class ViStatesView {
         return section;
     }
 
+    // known:full (real Value Iteration) gets a rich per-state backup diagram; the other 3
+    // quadrants (Belief Iteration, PO Q-Learning, Learning Iteration) keep the flat state:value
+    // card - decided once per card, not per-frame, and Learning Iteration never reaches this
+    // method at all (the whole States view is hidden for it).
     _buildCard(sweepIndex, stateId) {
+        const quadrant = ValuesMethodMatrix.key(this.viewModel.modelKnown, this.viewModel.observability);
+        return quadrant === 'known:full'
+            ? this._buildDiagramCard(sweepIndex, stateId)
+            : this._buildFlatCard(sweepIndex, stateId);
+    }
+
+    _buildFlatCard(sweepIndex, stateId) {
         const card = document.createElement('div');
         card.className = 'vi-states-view-card';
 
@@ -143,6 +154,32 @@ class ViStatesView {
         valueEl.className = 'vi-states-view-card-value';
         valueEl.textContent = value.toFixed(2);
         card.appendChild(valueEl);
+
+        return card;
+    }
+
+    _buildDiagramCard(sweepIndex, stateId) {
+        const card = document.createElement('div');
+        card.className = 'vi-states-view-card vi-states-view-card--diagram';
+
+        const canvas = document.createElement('canvas');
+        // Fixed logical size (CSS controls display size via the card's own layout; the canvas's
+        // pixel buffer is set to match at 1x - devicePixelRatio scaling is a nice-to-have not
+        // needed for this static, small diagram).
+        canvas.width = 220;
+        canvas.height = 96;
+        card.appendChild(canvas);
+
+        const detail = this.viState.getBackupDetail(sweepIndex, stateId);
+        const priorValues = sweepIndex > 0
+            ? this.viState.getValues(sweepIndex - 1)
+            : this.viState.getValues(0);
+        const colors = {
+            action: AppPalette.valueIteration.actionBlue,
+            best: AppPalette.valueIteration.best,
+            result: AppPalette.valueIteration.result
+        };
+        ViBackupDiagram.draw(canvas, detail, priorValues, colors);
 
         return card;
     }

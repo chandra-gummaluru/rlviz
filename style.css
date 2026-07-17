@@ -2495,6 +2495,16 @@ input[type="range"]::-moz-range-thumb {
   font-variant-numeric: tabular-nums;
 }
 
+.vi-states-view-card--diagram {
+  padding: 4px;
+}
+
+.vi-states-view-card--diagram canvas {
+  display: block;
+  width: 220px;
+  height: 96px;
+}
+
 .chart-dock-qtable {
   font-family: var(--font-family-mono, var(--font-family));
   font-size: 10px;
