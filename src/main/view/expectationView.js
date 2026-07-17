@@ -407,9 +407,7 @@ class ExpectationView {
             const img = this._imageCache.get(key);
             return img && img !== 'failed' && img.complete && img.naturalWidth > 0;
         })();
-        // Action node names (e.g. "Hunt", "Eat") are omitted in the MC mini-panels - state names
-        // are what matter for reading a rollout's trajectory at this scale.
-        if (!hasVisibleImage && node.type === 'state') {
+        if (!hasVisibleImage) {
             const label = node.name && node.name.length > 4 ? node.name.slice(0, 3) + '…' : (node.name || '');
             const screenFontSize = Math.max(6, node.size * 0.55);
             const worldFontSize = screenFontSize / (fitScale || 1);
