@@ -349,6 +349,30 @@ function leaveMCSubView() {
     expectationViewModel.invalidateLayout();
 }
 
+// Positions/shows the Phase 3a split's own chrome (the [Grid|Chart] pill + the inline chart
+// view's bounds) - called from both the cold-entry values() hook and onEnterSubView.mc, since
+// both paths need this and the geometry math is identical either way.
+function setUpMCSplitChrome() {
+    if (!mainView) return;
+    const panelW = rightPanel ? rightPanel.getWidth() : 272;
+    const fullCanvasW = windowWidth - panelW;
+    const canvasW = mainView._valuesPaneWidths(fullCanvasW).mc;
+    const topOffset = mainView.TOP_BARS_HEIGHT;
+    const canvasH = windowHeight - topOffset - mainView.getDockHeight();
+    const { leftW } = expectationViewModel.splitWidths(canvasW);
+
+    if (mainView.mcLeftViewPill) {
+        mainView.mcLeftViewPill.updateBounds(0, leftW);
+        mainView.mcLeftViewPill.show();
+        mainView.mcLeftViewPill.refresh();
+    }
+    if (mainView.expectationChartView) {
+        mainView.expectationChartView.updateBounds(0, topOffset, leftW, canvasH);
+        if (expectationViewModel.leftView === 'chart') mainView.expectationChartView.show();
+        else mainView.expectationChartView.hide();
+    }
+}
+
 function leaveVISubView() {
     mathRenderer.clear();
     valueIterationViewModel?.clearExplanationDetail();
@@ -386,6 +410,8 @@ canvasController.registerModeLifecycle({
             if (mainView && mainView.chartDock) mainView.chartDock.hide();
             if (mainView && mainView.estimatorPill) mainView.estimatorPill.hide();
             if (mainView && mainView.mcRunsPill) mainView.mcRunsPill.hide();
+            if (mainView && mainView.mcLeftViewPill) mainView.mcLeftViewPill.hide();
+            if (mainView && mainView.expectationChartView) mainView.expectationChartView.hide();
             if (mainView && mainView.viSweepChip) mainView.viSweepChip.hide();
             if (learningTreePill) learningTreePill.hide();
         },
@@ -448,10 +474,6 @@ canvasController.registerModeLifecycle({
         // Cold-entry into Values mode (e.g. clicking the collapsed slot) runs whatever the
         // current sub-view's enter logic is, same as explicitly selecting that sub-view.
         values: () => {
-            if (mainView && mainView.chartDock) {
-                mainView.chartDock.updateBounds(0, windowWidth - mainView.RIGHT_PANEL_WIDTH);
-                mainView.chartDock.show();
-            }
             if (mainView && mainView.estimatorPill) {
                 mainView.estimatorPill.updateBounds(0, windowWidth - mainView.RIGHT_PANEL_WIDTH);
                 mainView.estimatorPill.show();
@@ -462,12 +484,21 @@ canvasController.registerModeLifecycle({
                 enterMCSubView();
                 if (mainView && mainView.zoomPill) mainView.zoomPill.hide();
                 if (mainView && mainView.viSweepChip) mainView.viSweepChip.hide();
+                // Chart view (Phase 3a's inline Convergence/Histogram) replaces the bottom dock
+                // for Monte Carlo specifically - the dock stays hidden here, unlike the vi branch
+                // below which still shows it (Iteration's own screen split is Phase 3b, unstarted).
+                if (mainView && mainView.chartDock) mainView.chartDock.hide();
                 if (mainView && mainView.mcRunsPill) {
                     mainView.mcRunsPill.updateBounds(0, windowWidth - mainView.RIGHT_PANEL_WIDTH);
                     mainView.mcRunsPill.show();
                     mainView.mcRunsPill.refresh();
                 }
+                setUpMCSplitChrome();
             } else if (sv === 'vi') {
+                if (mainView && mainView.chartDock) {
+                    mainView.chartDock.updateBounds(0, windowWidth - mainView.RIGHT_PANEL_WIDTH);
+                    mainView.chartDock.show();
+                }
                 if (mainView && mainView.zoomPill) mainView.zoomPill.show();
                 if (mainView && mainView.viSweepChip) {
                     mainView.viSweepChip.updateBounds(0, windowWidth - mainView.RIGHT_PANEL_WIDTH);
@@ -485,17 +516,25 @@ canvasController.registerModeLifecycle({
             if (mainView && mainView.estimatorPill) mainView.estimatorPill.refresh();
             if (mainView && mainView.viSweepChip) mainView.viSweepChip.hide();
             if (learningTreePill) learningTreePill.hide();
+            if (mainView && mainView.chartDock) mainView.chartDock.hide();
             if (mainView && mainView.mcRunsPill) {
                 mainView.mcRunsPill.updateBounds(0, windowWidth - mainView.RIGHT_PANEL_WIDTH);
                 mainView.mcRunsPill.show();
                 mainView.mcRunsPill.refresh();
             }
+            setUpMCSplitChrome();
         },
         vi: () => {
             // VI has no other "run on enter" behavior - starts via explicit Play click
             if (mainView && mainView.zoomPill) mainView.zoomPill.show();
             if (mainView && mainView.estimatorPill) mainView.estimatorPill.refresh();
             if (mainView && mainView.mcRunsPill) mainView.mcRunsPill.hide();
+            if (mainView && mainView.mcLeftViewPill) mainView.mcLeftViewPill.hide();
+            if (mainView && mainView.expectationChartView) mainView.expectationChartView.hide();
+            if (mainView && mainView.chartDock) {
+                mainView.chartDock.updateBounds(0, windowWidth - mainView.RIGHT_PANEL_WIDTH);
+                mainView.chartDock.show();
+            }
             if (mainView && mainView.viSweepChip) {
                 mainView.viSweepChip.updateBounds(0, windowWidth - mainView.RIGHT_PANEL_WIDTH);
                 mainView.viSweepChip.show();
@@ -938,6 +977,20 @@ function setup() {
     mainView.mcRunsPill = mcRunsPill;
     mcRunsPill.hide();
 
+    const mcLeftViewPill = new McLeftViewPill({
+        onSelectLeftView: (key) => {
+            expectationViewModel.leftView = key;
+            mcLeftViewPill.refresh();
+            if (mainView && mainView.expectationChartView) {
+                if (key === 'chart') mainView.expectationChartView.show();
+                else mainView.expectationChartView.hide();
+            }
+            if (typeof redraw === 'function') redraw();
+        }
+    }, canvasViewModel);
+    mcLeftViewPill.setup(mainView.TOP_BARS_HEIGHT);
+    mainView.mcLeftViewPill = mcLeftViewPill;
+
     viSweepChip = new ViSweepChip(canvasViewModel);
     viSweepChip.setup(mainView.TOP_BARS_HEIGHT);
     viSweepChip.updateBounds(0, windowWidth - mainView.RIGHT_PANEL_WIDTH);
@@ -1216,6 +1269,12 @@ function setup() {
     expectationView.setChartDock(mainView.chartDock);
     mainView.expectationView = expectationView;
 
+    const expectationChartView = new ExpectationChartView(
+        canvasViewModel, expectationState, expectationViewModel, valueIterationState);
+    expectationChartView.setup();
+    mainView.expectationChartView = expectationChartView;
+    expectationView.setExpectationChartView(expectationChartView);
+
     // Attach expectation state/viewmodel to right panel
     rightPanel.expectationState = expectationState;
     rightPanel.expectationViewModel = expectationViewModel;
@@ -1241,8 +1300,8 @@ function setup() {
     // source of truth for what "changing the run count" does.
     const onDisplayRunsChange = (displayRuns) => {
         expectationState.displayRuns = displayRuns;
-        if (expectationViewModel.focusedRunIndex !== null && expectationViewModel.focusedRunIndex >= displayRuns) {
-            if (expectationView) expectationView.exitFocusMode();
+        if (expectationViewModel.selectedRunIndex !== null && expectationViewModel.selectedRunIndex >= displayRuns) {
+            expectationViewModel.selectedRunIndex = null;
         }
         expectationViewModel.invalidateLayout();
         rightPanel.updateContent();
