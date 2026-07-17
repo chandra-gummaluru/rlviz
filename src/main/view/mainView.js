@@ -1312,6 +1312,10 @@ class MainView {
         if (this.expectationView && this.viewModel.interaction.mode === 'values'
             && this.viewModel.valuesSubView === 'mc') {
             this.expectationView.resize(paneWidths.mc, valuesHeight, this.TOP_BARS_HEIGHT);
+            if (this.mcLeftViewPill) {
+                const { leftW } = this.expectationView.expectationViewModel.splitWidths(paneWidths.mc);
+                this.mcLeftViewPill.updateBounds(0, leftW);
+            }
         }
 
         // Update top bar width
@@ -1347,6 +1351,10 @@ class MainView {
         if (this.expectationView && this.viewModel.interaction.mode === 'values'
             && this.viewModel.valuesSubView === 'mc') {
             this.expectationView.resize(paneWidths.mc, valuesHeight, this.TOP_BARS_HEIGHT);
+            if (this.mcLeftViewPill) {
+                const { leftW } = this.expectationView.expectationViewModel.splitWidths(paneWidths.mc);
+                this.mcLeftViewPill.updateBounds(0, leftW);
+            }
         }
         redraw();
     }
