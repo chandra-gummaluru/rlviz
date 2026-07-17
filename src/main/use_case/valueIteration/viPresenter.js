@@ -1,13 +1,7 @@
-// Escape user-controlled names for use inside LaTeX \text{} blocks
+// Escape user-controlled names for use inside LaTeX \text{} blocks - delegates to the shared
+// KatexRenderer helper (src/main/view/helpers/KatexRenderer.js).
 function latexEscapeText(value) {
-    return String(value)
-        .replace(/\\/g, '\\textbackslash{}')
-        .replace(/[{}]/g, match => `\\${match}`)
-        .replace(/_/g, '\\_')
-        .replace(/%/g, '\\%')
-        .replace(/&/g, '\\&')
-        .replace(/#/g, '\\#')
-        .replace(/\$/g, '\\$');
+    return KatexRenderer.escapeText(value);
 }
 
 // Presenter for synchronous-sweep Value Iteration — translates domain sweep events into

@@ -9,22 +9,14 @@ const RP_VI_TABLE_MAX_H      = 400;    // px max height of the V(s) table
 
 // Right panel displaying MDP information and node editing
 
-// Render a LaTeX string directly to HTML via KaTeX.
-// display=true for block (display) math, false for inline.
+// Thin delegates to the shared KatexRenderer helper (src/main/view/helpers/KatexRenderer.js) -
+// kept as same-named local functions so every existing call site in this file is untouched.
 function renderKatex(latex, display = false) {
-    if (typeof katex === 'undefined') return `<span>${latex}</span>`;
-    return katex.renderToString(latex, { throwOnError: false, displayMode: display });
+    return KatexRenderer.render(latex, display);
 }
 
 function latexEscapeText(value) {
-    return String(value)
-        .replace(/\\/g, '\\textbackslash{}')
-        .replace(/[{}]/g, match => `\\${match}`)
-        .replace(/_/g, '\\_')
-        .replace(/%/g, '\\%')
-        .replace(/&/g, '\\&')
-        .replace(/#/g, '\\#')
-        .replace(/\$/g, '\\$');
+    return KatexRenderer.escapeText(value);
 }
 
 function latexNodeName(name) {
