@@ -2287,12 +2287,15 @@ input[type="range"]::-moz-range-thumb {
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .expectation-chart-view-slot {
-  flex: 1;
-  min-height: 0;
+  /* Fixed height, not flex:1 - each chart keeps a legible minimum size instead of shrinking
+     indefinitely to fit both slots into whatever height the left pane happens to have; the
+     container scrolls (overflow-y: auto above) once the two slots don't both fit. */
+  flex: 0 0 220px;
   display: flex;
   flex-direction: column;
   border-top: 1px solid var(--border-hairline, var(--border-light));
