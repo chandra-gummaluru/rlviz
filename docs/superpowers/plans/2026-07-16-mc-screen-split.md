@@ -1200,6 +1200,35 @@ Find where `mcRunsPill.setup(...)` and `chartDock.setup()` are called (search fo
 ```
 (Match the exact surrounding call style/placement of the other pill `.setup()` calls — they're all called once, during the same app-bootstrap `setup()` phase.)
 
+- [ ] **Step 2b: Fix `onDisplayRunsChange` — a call site this plan's original research missed**
+
+Task 1 already renamed `ExpectationViewModel.focusedRunIndex` to `selectedRunIndex`, and Task 2 deletes `ExpectationView.exitFocusMode()` entirely (folding "focused mode" into the always-visible right pane). There is one more call site neither of those tasks' briefs mentioned, in the `onDisplayRunsChange` handler (search for `const onDisplayRunsChange = (displayRuns) => {`):
+```js
+    const onDisplayRunsChange = (displayRuns) => {
+        expectationState.displayRuns = displayRuns;
+        if (expectationViewModel.focusedRunIndex !== null && expectationViewModel.focusedRunIndex >= displayRuns) {
+            if (expectationView) expectationView.exitFocusMode();
+        }
+        expectationViewModel.invalidateLayout();
+        rightPanel.updateContent();
+        if (mainView && mainView.mcRunsPill) mainView.mcRunsPill.refresh();
+        redraw();
+    };
+```
+Replace the guard with the `selectedRunIndex`-based equivalent — clearing the selection (instead of exiting a takeover mode that no longer exists) when the run count shrinks below the currently selected index:
+```js
+    const onDisplayRunsChange = (displayRuns) => {
+        expectationState.displayRuns = displayRuns;
+        if (expectationViewModel.selectedRunIndex !== null && expectationViewModel.selectedRunIndex >= displayRuns) {
+            expectationViewModel.selectedRunIndex = null;
+        }
+        expectationViewModel.invalidateLayout();
+        rightPanel.updateContent();
+        if (mainView && mainView.mcRunsPill) mainView.mcRunsPill.refresh();
+        redraw();
+    };
+```
+
 - [ ] **Step 3: Update the `values` cold-entry hook — stop unconditionally showing `chartDock`**
 
 Find (in the `onEnter` object registered via `canvasController.registerModeLifecycle(...)`):
