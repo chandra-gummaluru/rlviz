@@ -371,15 +371,22 @@ function setUpMCSplitChrome() {
     const canvasW = mainView._valuesPaneWidths(fullCanvasW).mc;
     const topOffset = mainView.TOP_BARS_HEIGHT;
     const canvasH = windowHeight - topOffset - mainView.getDockHeight();
-    const { leftW } = expectationViewModel.splitWidths(canvasW);
+    const { leftW, rightW } = expectationViewModel.splitWidths(canvasW);
 
+    // Anchored to the RIGHT (MDP graph) pane's bounds, not the left grid/chart pane it actually
+    // controls - a deliberate cosmetic placement so it reads as "which view is shown beside the
+    // graph" rather than crowding the left pane's own grid/chart content.
     if (mainView.mcLeftViewPill) {
-        mainView.mcLeftViewPill.updateBounds(0, leftW);
+        mainView.mcLeftViewPill.updateBounds(leftW, rightW);
         mainView.mcLeftViewPill.show();
         mainView.mcLeftViewPill.refresh();
     }
     if (mainView.expectationChartView) {
-        mainView.expectationChartView.updateBounds(0, topOffset, leftW, canvasH);
+        // +56 clears estimatorPill's top-left "Monte Carlo"/method badge (values-method-badge,
+        // topOffset+24, ~24px tall) - without this inset the chart view's own box starts right at
+        // the canvas top and its content visually crowds/bleeds into that badge's corner.
+        const chartTopInset = 56;
+        mainView.expectationChartView.updateBounds(0, topOffset + chartTopInset, leftW, canvasH - chartTopInset);
         if (_shouldShowMcChartView()) mainView.expectationChartView.show();
         else mainView.expectationChartView.hide();
     }

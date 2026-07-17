@@ -642,7 +642,10 @@ class ExpectationView {
         this.expectationViewModel.invalidateLayout();
         if (this._expectationChartView) {
             const { leftW } = this.expectationViewModel.splitWidths(canvasW);
-            this._expectationChartView.updateBounds(0, topOffset, leftW, canvasH);
+            // +56 clears estimatorPill's top-left badge - see main.js's setUpMCSplitChrome()
+            // for the same inset applied on initial setup/mode-entry.
+            const chartTopInset = 56;
+            this._expectationChartView.updateBounds(0, topOffset + chartTopInset, leftW, canvasH - chartTopInset);
         }
     }
 }

@@ -2013,8 +2013,12 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .mc-left-view-pill-btn--active {
-  background: var(--accent-orange);
+  background: var(--accent-cyan);
   color: var(--color-primary-contrast, var(--text-white));
+}
+
+.mc-left-view-pill-btn--active:hover {
+  background: var(--accent-cyan);
 }
 
 /* ── Goal card (Evaluate redesign Phase 1) ───────────────────────────────── */

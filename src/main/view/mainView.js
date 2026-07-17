@@ -1314,8 +1314,8 @@ class MainView {
             && this.viewModel.valuesSubView === 'mc') {
             this.expectationView.resize(paneWidths.mc, valuesHeight, this.TOP_BARS_HEIGHT);
             if (this.mcLeftViewPill) {
-                const { leftW } = this.expectationView.expectationViewModel.splitWidths(paneWidths.mc);
-                this.mcLeftViewPill.updateBounds(0, leftW);
+                const { leftW, rightW } = this.expectationView.expectationViewModel.splitWidths(paneWidths.mc);
+                this.mcLeftViewPill.updateBounds(leftW, rightW);
             }
         }
 
@@ -1353,8 +1353,8 @@ class MainView {
             && this.viewModel.valuesSubView === 'mc') {
             this.expectationView.resize(paneWidths.mc, valuesHeight, this.TOP_BARS_HEIGHT);
             if (this.mcLeftViewPill) {
-                const { leftW } = this.expectationView.expectationViewModel.splitWidths(paneWidths.mc);
-                this.mcLeftViewPill.updateBounds(0, leftW);
+                const { leftW, rightW } = this.expectationView.expectationViewModel.splitWidths(paneWidths.mc);
+                this.mcLeftViewPill.updateBounds(leftW, rightW);
             }
         }
         redraw();
