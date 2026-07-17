@@ -44,7 +44,8 @@ class ViStatesView {
     // x, y, width, height: the left pane's full box, same convention as
     // expectationChartView.js's updateBounds(). The label chip is positioned independently,
     // right-edge-anchored within the same x/width (matching mcLeftViewPill.js's own
-    // right-edge-anchor convention), 12px inset from the pane's top.
+    // right-edge-anchor convention), dropped a full row below the pane's top to clear
+    // estimatorPill's own row (see _applyLayout()'s own comment for why).
     updateBounds(x, y, width, height) {
         this._bounds = { x, y, width, height };
         this._applyLayout();
@@ -59,15 +60,14 @@ class ViStatesView {
         this.containerEl.style.height = height + 'px';
         if (this._labelChipEl) {
             this._labelChipEl.style.left = (x + width - 12) + 'px';
-            // +12 (not -32) - `y` is the pane's own top edge (mainView.TOP_BARS_HEIGHT), which
-            // sits flush against the topbar's bottom edge. The topbar itself is a solid,
-            // z-index:1000 fixed bar (`.topbar`) - `y - 32` landed this chip's 8-32px range
-            // entirely INSIDE the topbar's own 0-40px vertical span, so it rendered but was
-            // always fully covered and invisible (only caught via headless-browser bounding-rect
-            // inspection, not visually obvious from the code alone). +12 places it just inside
-            // the pane's own top-right corner instead, matching this method's own doc comment
-            // above ("12px inset from the pane's top").
-            this._labelChipEl.style.top = (y + 12) + 'px';
+            // +64 (not +12) - `y` is the pane's own top edge (mainView.TOP_BARS_HEIGHT), flush
+            // against the topbar's bottom edge, so a small +12 inset still lands within
+            // estimatorPill's own row (topOffset+24, ~35px tall) - the LEFT pane's right edge
+            // (this chip's anchor) sits close enough to estimatorPill's centered position that
+            // sharing a row visibly overlaps both, the same collision mcLeftViewPill.js hit
+            // against estimatorPill in Phase 3a (fixed there the same way: drop to a second row
+            // that clears it regardless of window width).
+            this._labelChipEl.style.top = (y + 64) + 'px';
             this._labelChipEl.style.transform = 'translateX(-100%)';
         }
     }
