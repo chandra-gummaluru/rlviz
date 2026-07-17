@@ -331,6 +331,32 @@ class ExpectationView {
                     const color = idx === lastIdx ? AppPalette.node.activeInitial : runColor;
                     this._drawNode(node, color, alphaForIndex(idx), fitScale);
                 });
+
+                // Traveling ball along the newest chunk's path (matches Build/Policy's own
+                // travel-ball convention, AppPalette.simulation.travelBall) - only while a
+                // Play/Step reveal is actually animating; scrub-drags and fresh selections
+                // render everything instantly with no ball.
+                if (animating && reveal.toCount - reveal.fromCount > 0) {
+                    const waypoints = visitedSlice
+                        .slice(reveal.fromCount - 1, reveal.toCount)
+                        .map(entry => this.graph.getNodeById(entry.id))
+                        .filter(Boolean);
+                    if (waypoints.length >= 2) {
+                        const t = Math.min(1, (performance.now() - reveal.startTime) / 280);
+                        const eased = EasingUtils.easeInOut(t);
+                        const segCount = waypoints.length - 1;
+                        const segProgress = eased * segCount;
+                        const segIndex = Math.min(segCount - 1, Math.floor(segProgress));
+                        const segT = segProgress - segIndex;
+                        const from = waypoints[segIndex];
+                        const to = waypoints[segIndex + 1];
+                        const bx = from.x + (to.x - from.x) * segT;
+                        const by = from.y + (to.y - from.y) * segT;
+                        noStroke();
+                        fill(AppPalette.simulation.travelBall);
+                        circle(bx, by, Math.max(4, (from.size || 20) * 0.35));
+                    }
+                }
             }
         }
 
