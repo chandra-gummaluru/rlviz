@@ -84,6 +84,22 @@ const ChartDataBuilders = {
         return { rows };
     },
 
+    // Same per-action row shape buildQTableData() produces, but for exactly one state at an
+    // explicit sweep index - powers viEquationView.js's focused Q-table, which needs a specific
+    // (possibly non-live, hovered/pinned) sweep rather than always the latest one.
+    buildQTableRowForState(valueIterationState, stateId, sweepIndex) {
+        if (!valueIterationState || !valueIterationState.initialized) return { rows: [] };
+        const actionQs = valueIterationState.getQValues(sweepIndex, stateId);
+        const bestActionId = valueIterationState.getBestAction(sweepIndex, stateId);
+        const rows = actionQs.map(aq => ({
+            actionId: aq.actionId,
+            actionName: aq.actionName,
+            qValue: valueIterationState.getEffectiveQValue(stateId, aq.actionId, aq.qValue),
+            isBest: aq.actionId === bestActionId
+        }));
+        return { rows };
+    },
+
     // Aggregates the displayed rollouts into a visit-count tree: start state -> first action ->
     // resulting next state, with visit counts and terminal-reward samples per branch.
     buildMCTreeData(expectationState) {
