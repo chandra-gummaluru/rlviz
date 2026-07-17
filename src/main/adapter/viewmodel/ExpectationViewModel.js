@@ -31,8 +31,12 @@ class ExpectationViewModel {
     // expectationView.js) both need to add topOffset and subtract gridScrollY the same way to
     // convert between screen space and content space - this is their one shared source of truth.
     computeLayout(canvasW, canvasH, displayRuns, graph, topOffset = 0) {
-        const GRID = { 16: [4,4], 32: [8,4], 64: [8,8] };
-        const [cols, rows] = GRID[displayRuns] || [4, 4];
+        // Fixed at the 16-run layout's column count regardless of displayRuns - 32/64 add MORE
+        // ROWS at the exact same panel size instead of packing more columns into a narrower,
+        // smaller grid (which used to shrink every panel as displayRuns grew). The extra rows
+        // extend the scrollable content height; panel size itself never changes with run count.
+        const cols = 4;
+        const rows = Math.ceil(displayRuns / cols);
         const GAP = 8;
         const panelW = Math.floor((canvasW - GAP * (cols + 1)) / cols);
         // Fixed aspect ratio (not canvasH/rows) - panel size no longer shrinks as displayRuns
