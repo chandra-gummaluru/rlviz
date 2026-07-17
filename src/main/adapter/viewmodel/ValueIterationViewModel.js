@@ -24,6 +24,10 @@ class ValueIterationViewModel {
         // shows the real live sweep (valueIterationState.currentSweepIndex).
         this.hoveredSweepIndex = null;
         this.pinnedSweepIndex = null;
+        // 'states' (default) or 'chart' - which view the left pane currently shows, for the 3
+        // split quadrants (Phase 3b's own screen split). Presentation only, mirrors
+        // ExpectationViewModel.leftView's exact shape/convention.
+        this.leftView = 'states';
     }
 
     // Pinned wins over hovered, for the States view's own card-highlighting and for
