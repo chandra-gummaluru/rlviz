@@ -256,7 +256,14 @@ class ViEquationView {
         const tweenT = tweening ? EasingUtils.easeInOut(info.localT)
             : (info.phase === 'select_best' || info.phase === 'done'
                 || (info.phase === 'show_probabilities' && info.sub === 'settle') ? 1 : 0);
-        const qRevealed = info.phase === 'select_best' || info.phase === 'done';
+        // Q reveals as soon as the reward/probability labels finish tweening into the action's Q
+        // anchor (the 'settle' sub-phase, once fadeOut has reached 0) rather than waiting for the
+        // later select_best phase - otherwise there's a ~150ms visually-empty gap where the R/P
+        // labels have already faded out but no Q value has appeared yet, right at the moment the
+        // animation should be climaxing. select_best still exclusively governs the best-action
+        // highlight/star/dimming below, not whether the Q text itself is shown.
+        const qRevealed = info.phase === 'select_best' || info.phase === 'done'
+            || (info.phase === 'show_probabilities' && info.sub === 'settle');
         const bestRevealed = info.phase === 'done' || (info.phase === 'select_best' && info.localT > 0.3);
 
         const pulse = info.phase === 'highlight_value' ? Math.sin(info.localT * Math.PI) * 3 : 0;
