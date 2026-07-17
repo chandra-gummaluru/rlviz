@@ -349,6 +349,18 @@ function leaveMCSubView() {
     expectationViewModel.invalidateLayout();
 }
 
+// The inline Chart view has real content only once rollouts exist for a real start node -
+// otherwise ExpectationView.draw() itself early-returns to a single canvas-wide "Set an Initial
+// State..." prompt (pre-existing, unaffected by the Phase 3a split), and showing the Chart view's
+// DOM on top of/beside that centered prompt is visibly wrong (empty axes floating over half the
+// canvas while the prompt text bleeds into the other half). Gate visibility on the same
+// !state.computed || !startNode condition ExpectationView.draw() already uses.
+function _shouldShowMcChartView() {
+    return expectationViewModel.leftView === 'chart'
+        && expectationState.computed
+        && !!canvasViewModel.startNode;
+}
+
 // Positions/shows the Phase 3a split's own chrome (the [Grid|Chart] pill + the inline chart
 // view's bounds) - called from both the cold-entry values() hook and onEnterSubView.mc, since
 // both paths need this and the geometry math is identical either way.
@@ -368,7 +380,7 @@ function setUpMCSplitChrome() {
     }
     if (mainView.expectationChartView) {
         mainView.expectationChartView.updateBounds(0, topOffset, leftW, canvasH);
-        if (expectationViewModel.leftView === 'chart') mainView.expectationChartView.show();
+        if (_shouldShowMcChartView()) mainView.expectationChartView.show();
         else mainView.expectationChartView.hide();
     }
 }
@@ -982,7 +994,7 @@ function setup() {
             expectationViewModel.leftView = key;
             mcLeftViewPill.refresh();
             if (mainView && mainView.expectationChartView) {
-                if (key === 'chart') mainView.expectationChartView.show();
+                if (_shouldShowMcChartView()) mainView.expectationChartView.show();
                 else mainView.expectationChartView.hide();
             }
             if (typeof redraw === 'function') redraw();
@@ -1322,6 +1334,13 @@ function setup() {
     rightPanel.callbacks.onInitialStateChange = () => {
         _runExpectationBatch();
         if (mainView && mainView.chartDock) mainView.chartDock.refresh();
+        // Setting an Initial State while already in Values -> Monte Carlo with Chart view
+        // selected should reveal the (until-now-hidden) inline chart the moment real rollout
+        // data exists, not just on the next mode/sub-view re-entry.
+        if (mainView && mainView.expectationChartView) {
+            if (_shouldShowMcChartView()) mainView.expectationChartView.show();
+            else mainView.expectationChartView.hide();
+        }
         rightPanel.updateContent();
         redraw();
     };

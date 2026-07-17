@@ -19,7 +19,12 @@ class McLeftViewPill {
 
     setup(topOffset) {
         if (this.containerEl) return;
-        this._topOffset = topOffset + 12;
+        // +64 (not treeViewPill's +12, which this was originally modeled on) - Values mode
+        // already has estimatorPill/mcRunsPill sharing the topOffset+24 row, and this pill's
+        // right-edge anchor (the LEFT PANE's ~52% boundary) sits close enough to estimatorPill's
+        // centered (50%) position that sharing a row visibly overlaps both pills. Dropping to a
+        // second row clears that regardless of window width.
+        this._topOffset = topOffset + 64;
 
         const container = document.createElement('div');
         container.className = 'mc-left-view-pill';
