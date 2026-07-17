@@ -1002,6 +1002,7 @@ function setup() {
     }, canvasViewModel);
     mcLeftViewPill.setup(mainView.TOP_BARS_HEIGHT);
     mainView.mcLeftViewPill = mcLeftViewPill;
+    mcLeftViewPill.hide();
 
     viSweepChip = new ViSweepChip(canvasViewModel);
     viSweepChip.setup(mainView.TOP_BARS_HEIGHT);
