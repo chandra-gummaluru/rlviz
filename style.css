@@ -2444,11 +2444,10 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .vi-states-view-section {
-  border: 1px solid var(--border-hairline, var(--border-light));
+  border: 2px dashed var(--accent-teal);
   border-radius: 8px;
-  padding: 8px;
+  padding: 12px;
   margin-bottom: 8px;
-  cursor: pointer;
 }
 
 .vi-states-view-section:last-child {
@@ -2456,16 +2455,32 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .vi-states-view-section--active {
-  border-color: var(--accent-teal);
   background: color-mix(in srgb, var(--accent-teal) 10%, transparent);
 }
 
 .vi-states-view-section-header {
   font-family: var(--font-family-mono, var(--font-family));
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
-  color: var(--text-muted);
-  margin-bottom: 6px;
+  color: var(--accent-teal);
+  margin-bottom: 8px;
+}
+
+.vi-states-view-section--collapsed {
+  padding-bottom: 0;
+}
+
+.vi-states-view-section--collapsed .vi-states-view-section-header {
+  margin-bottom: 0;
+  cursor: pointer;
+}
+
+.vi-states-view-section--collapsed .vi-states-view-cards {
+  display: none;
+}
+
+.vi-states-view-section--collapsed .vi-states-view-section-header:hover {
+  color: var(--text-dark);
 }
 
 .vi-states-view-cards {
@@ -2483,6 +2498,7 @@ input[type="range"]::-moz-range-thumb {
   background: var(--surface-btn);
   font-family: var(--font-family-mono, var(--font-family));
   font-size: 11px;
+  cursor: pointer;
 }
 
 .vi-states-view-card-name {
@@ -2496,13 +2512,34 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .vi-states-view-card--diagram {
-  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  padding: 8px;
+  cursor: pointer;
 }
 
 .vi-states-view-card--diagram canvas {
   display: block;
-  width: 220px;
-  height: 96px;
+  width: 260px;
+  height: 140px;
+}
+
+.vi-states-view-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-family: var(--font-family-mono, var(--font-family));
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dark);
+  border-bottom: 1px solid var(--border-hairline, var(--border-light));
+  padding-bottom: 4px;
+  margin-bottom: 4px;
+}
+
+.vi-states-view-card-header span:last-child {
+  color: var(--accent-teal);
+  font-weight: 700;
 }
 
 .chart-dock-qtable {
