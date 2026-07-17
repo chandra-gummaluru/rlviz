@@ -92,6 +92,10 @@ class ValueIterationView {
         // layout stays correct even if those dimensions change (panel resize, spec dimension
         // updates) instead of duplicating magic numbers here.
         this.layout = layout || { getPanelWidth: () => 272, getTopOffset: () => 40, getBottomOffset: () => 40, getLeftInset: () => 0 };
+        // main.js passes a real (non-null) layout object that predates getLeftInset (Phase 3b) -
+        // the `layout || {...}` fallback above only covers a missing layout ENTIRELY, not a
+        // partial one, so normalize the one new accessor here rather than at every call site.
+        if (!this.layout.getLeftInset) this.layout.getLeftInset = () => 0;
     }
 
     get viState() {
