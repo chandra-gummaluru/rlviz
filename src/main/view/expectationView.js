@@ -541,7 +541,14 @@ class ExpectationView {
     // Build/Policy (which has no dock) is unaffected.
     _positionScrubberAboveDock() {
         if (!this._scrubber || !this._scrubber.containerEl) return;
-        const dockH = this._chartDock ? this._chartDock.getReservedHeight() : 0;
+        // Goes through mainView.getDockHeight() (sub-view-aware) rather than reading
+        // this._chartDock.getReservedHeight() directly - the dock's own dockState.open is a
+        // persistent user preference from Iteration that outlives a visit to Iteration, so a
+        // raw getReservedHeight() call here would float the scrubber above a dock that isn't
+        // even visible once the user has ever opened it in Iteration and come back to Monte
+        // Carlo. mainView.getDockHeight() is the one place that reconciles "reserved height"
+        // with which sub-view is actually active.
+        const dockH = (typeof mainView !== 'undefined' && mainView) ? mainView.getDockHeight() : 0;
         this._scrubber.containerEl.style.bottom = (dockH + 16) + 'px';
     }
 

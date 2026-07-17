@@ -133,6 +133,7 @@ class MainView {
     // Height the chart dock currently reserves at the bottom of the values-mode canvas area
     // (0 while closed or before it's mounted).
     getDockHeight() {
+        if (this.viewModel.interaction.mode === 'values' && this.viewModel.valuesSubView === 'mc') return 0;
         return this.chartDock ? this.chartDock.getReservedHeight() : 0;
     }
 

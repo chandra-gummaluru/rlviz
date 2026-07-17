@@ -1066,6 +1066,7 @@ function setup() {
         mainView.invalidateDotGrid();
         rightPanel.updateContent();
         if (topBar) topBar._updateThemeIcon();
+        if (mainView.expectationChartView) mainView.expectationChartView.refresh();
     };
 
     canvasViewModel._onUndoRedoChange = (canUndo, canRedo) => {
