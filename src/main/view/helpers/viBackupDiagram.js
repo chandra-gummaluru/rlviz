@@ -32,8 +32,11 @@ const ViBackupDiagram = {
         const PADDING = 8;
         const stateX = PADDING + 14;
         const stateY = h / 2;
-        const actionX = w * 0.42;
-        const transX = w - PADDING - 14;
+        const actionX = w * 0.38;
+        // 0.58 (not w - PADDING - 14) - the next-state label ("S1 0.00") drawn to the RIGHT of
+        // this circle needs real room budgeted for it; the original w-PADDING-14 placement left
+        // the circle almost flush with the canvas edge, clipping every label off entirely.
+        const transX = w * 0.58;
 
         // Flatten (action, transition) pairs in order - this is the right column's row list.
         const rows = [];
