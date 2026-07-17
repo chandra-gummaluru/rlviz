@@ -409,7 +409,11 @@ function setUpVISplitChrome() {
     const viSplit = mainView._viSplitWidths(canvasW);
 
     if (viSplit) {
-        mainView.viStatesView.updateBounds(0, mainView.TOP_BARS_HEIGHT, viSplit.leftW, canvasH);
+        // +56 clears estimatorPill's top-left "Value Iteration"/"Monte Carlo" method badge
+        // (values-method-badge, topOffset+24, ~24px tall) - same inset Phase 3a's
+        // ExpectationChartView already applies for MC's identical badge-overlap case.
+        const topInset = 56;
+        mainView.viStatesView.updateBounds(0, mainView.TOP_BARS_HEIGHT + topInset, viSplit.leftW, canvasH - topInset);
         mainView.viStatesView.show();
     } else {
         mainView.viStatesView.hide();

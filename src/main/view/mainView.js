@@ -1359,7 +1359,10 @@ class MainView {
             && this.viewModel.valuesSubView === 'vi') {
             const viSplit = this._viSplitWidths(paneWidths.vi);
             if (viSplit) {
-                this.viStatesView.updateBounds(0, this.TOP_BARS_HEIGHT, viSplit.leftW, valuesHeight);
+                // +56 clears estimatorPill's top-left method badge - see main.js's
+                // setUpVISplitChrome() for the same inset applied on initial setup/mode-entry.
+                const topInset = 56;
+                this.viStatesView.updateBounds(0, this.TOP_BARS_HEIGHT + topInset, viSplit.leftW, valuesHeight - topInset);
                 this.viStatesView.show();
             } else {
                 this.viStatesView.hide();
@@ -1408,7 +1411,10 @@ class MainView {
             && this.viewModel.valuesSubView === 'vi') {
             const viSplit = this._viSplitWidths(paneWidths.vi);
             if (viSplit) {
-                this.viStatesView.updateBounds(0, this.TOP_BARS_HEIGHT, viSplit.leftW, valuesHeight);
+                // +56 clears estimatorPill's top-left method badge - see main.js's
+                // setUpVISplitChrome() for the same inset applied on initial setup/mode-entry.
+                const topInset = 56;
+                this.viStatesView.updateBounds(0, this.TOP_BARS_HEIGHT + topInset, viSplit.leftW, valuesHeight - topInset);
                 this.viStatesView.show();
             } else {
                 this.viStatesView.hide();
