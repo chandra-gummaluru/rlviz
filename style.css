@@ -2553,41 +2553,22 @@ input[type="range"]::-moz-range-thumb {
   font-weight: 600;
   color: var(--text-muted);
   margin-bottom: 8px;
+  cursor: pointer;
 }
 
 .vi-states-view-section--live .vi-states-view-section-header {
   color: var(--accent-yellow);
+  /* The live sweep's header click is a no-op (see ViStatesView's header click handler) - default
+     cursor rather than pointer avoids implying it's collapsible when it isn't. */
+  cursor: default;
 }
 
-/* A collapsed sweep sheds its full dashed-border box and renders as a single clickable
-   `t = k` pill instead (the design language CLAUDE.md calls for) - the wrapper's border and
-   padding are dropped so only the header, restyled as a compact chip (matching
-   .vi-states-view-chip's own pill look), shows. Without this the collapsed section was just an
-   empty-looking dashed box with faint teal text inside it. */
-.vi-states-view-section--collapsed {
-  border-color: transparent;
-  padding: 0;
-}
-
-.vi-states-view-section--collapsed .vi-states-view-section-header {
-  display: inline-flex;
-  align-items: center;
-  margin-bottom: 0;
-  padding: 4px 10px;
-  /* Collapsing is only ever possible for a non-live sweep (the live one is never collapsible -
-     see ViStatesView's header click handler), so this pill is always gray, never yellow. Dashed
-     to match the expanded section's own dashed time-box border - it's the same "time" wrapper,
-     just shrunk to a chip, not a distinct element that should look different. */
-  border: 1px dashed var(--border-hairline, var(--border-light));
-  border-radius: var(--radius-btn, 6px);
-  background: var(--surface-card2, var(--bg-card));
-  cursor: pointer;
-}
-
-/* A collapsed sweep still shows a compact preview row of its cards (small pills, name + V,
-   canvas hidden) rather than nothing - matching the flat card's own always-compact look, so a
-   collapsed section still reads as "here's what this sweep found" at a glance rather than
-   disappearing into a bare header line. */
+/* Collapsing never changes the section's own dashed box or header - both stay exactly as they
+   look expanded (just gray, since only the live sweep is ever yellow). Only the cards row
+   changes: the tall per-state backup diagrams shrink to small, always-compact pills (name + V,
+   canvas hidden), still inside the same unbroken dashed wrapper - matching the reference design
+   where a collapsed `t = k` box still reads as one dashed timebox with small state pills inside
+   it, not a separate standalone chip. */
 .vi-states-view-section--collapsed .vi-states-view-cards {
   display: flex;
   flex-wrap: wrap;
@@ -2614,11 +2595,6 @@ input[type="range"]::-moz-range-thumb {
   margin-bottom: 0;
   gap: 20px;
   justify-content: flex-start;
-}
-
-.vi-states-view-section--collapsed .vi-states-view-section-header:hover {
-  color: var(--text-dark);
-  border-color: var(--text-dark);
 }
 
 .vi-states-view-cards {
