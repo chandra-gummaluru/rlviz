@@ -171,6 +171,22 @@ using plain Canvas2D calls (not `mathRenderer`, whose failure-fallback path is m
 not SVG; not `TreeLayout.js`, which solves a different, harder layout problem) — the other 3
 quadrants keep the flat `state: value` card.
 
+A further redesign (2026-07-17) reworked both panes again. Left pane: each state's card now shows
+a header (name + `V = X.XX`) above its diagram, whose nodes are labeled in `treeView.js`'s own
+visual language (`ViBackupDiagram`'s `state`/`action`/`best` colors mirror `AppPalette.node.state`/
+`.node.action`/`.valueIteration.best` exactly) instead of the original anonymous circles. Each
+`t = k` section now gets a dashed-border wrapper; only the live sweep stays expanded, older ones
+collapse to a clickable `t = k` pill (`ViStatesView._manuallyExpanded`) - a freshly-expanded
+sweep's cards stage in via `ViBackupDiagram.drawAnimated()` rather than popping in fully drawn.
+Clicking an individual state's card sets `ValueIterationViewModel.activeStateId` and pins that
+sweep, driving the right pane below. Right pane: a new `[Equation | Graph]` toggle
+(`viRightViewPill.js`, mirroring `viLeftViewPill.js`'s placement on the opposite inner edge of the
+split) defaults to **Equation** (`viEquationView.js`) - the active state's Bellman equation header
+plus an animated, 4-phase reveal of its Q-value calculation (highlight V → show each outcome's
+reward → show its probability, tweening both into that action's Q → highlight the best action) and
+a Q-table scoped to just that state - replacing the live MDP graph there by default; toggling to
+**Graph** restores exactly today's `ValueIterationView.draw()` rendering, unchanged.
+
 ### Monte Carlo (Values → mc)
 
 `ExpectationState` generates and stores multiple rollouts from the start state. Values → Monte Carlo's canvas is a persistent **52% left / 48% right split** (Phase 3a of the Evaluate redesign roadmap — see `docs/superpowers/specs/2026-07-16-mc-screen-split-design.md`), not the old mutually-exclusive grid/focused-run modes: the left pane toggles between **Grid** (today's mini-panel grid — `ExpectationViewModel.computeLayout()` lays rollouts into a grid of 16/32/64 panels and computes one shared fit-transform for rendering each rollout's graph into its mini-panel) and **Chart** (`expectationChartView.js` — Convergence + Histogram rendered inline via the same `chartDataBuilders.js` pure functions the bottom `ChartDock` uses, replacing that dock for Monte Carlo specifically; `ChartDock` itself still serves Values → Iteration unchanged) via the floating `[Grid | Chart]` pill (`mcLeftViewPill.js`). The right pane (`ExpectationView._drawGraphPanel()`) is a single always-visible rendering of the MDP graph — bare when nothing is selected, or with the selected run's visited-so-far path highlighted (`ExpectationViewModel.selectedRunIndex`, set by clicking a mini-panel; clicking the same panel again deselects). `expectationScrubber.js` drives a shared `currentT` across both panes. `ExpectationState.getPerStateMeans()` aggregates already-collected rollout data per visited state, feeding the MC column of the "Estimate vs exact" table.
