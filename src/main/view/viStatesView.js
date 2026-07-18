@@ -18,9 +18,11 @@ class ViStatesView {
         this._renderedSweepCount = 0;
         // Sweeps the user has explicitly clicked open (independent of which sweep is "live") -
         // the live sweep always shows expanded regardless of this set's contents; this set is
-        // purely for re-opening older, otherwise-collapsed sweeps. Never cleared on refresh() -
-        // only rebuildAll() (a full teardown) resets it, matching a theme toggle's own "start
-        // clean" semantics.
+        // purely for re-opening older, otherwise-collapsed sweeps. Not cleared by refresh(),
+        // rebuildAll(), or Reset - stale indices left behind by a Reset/theme-toggle/quadrant-
+        // switch are harmless, since _applyExpansion() only ever iterates sections that actually
+        // exist, so manual expansions simply persist across those events (arguably better UX than
+        // losing them) rather than being reset to a "start clean" state.
         this._manuallyExpanded = new Set();
         // Sweep indices whose diagram cards have already played their staged reveal once - a
         // section that re-expands via its pill (already computed, already seen) renders instantly
