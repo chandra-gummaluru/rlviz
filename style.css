@@ -2547,6 +2547,15 @@ input[type="range"]::-moz-range-thumb {
   background: color-mix(in srgb, var(--accent-yellow) 10%, transparent);
 }
 
+/* Briefly highlights the sweep a hovered green prior-value triangle's number actually came from
+   (see ViStatesView._flashSection()) - a transitioned border-color swap rather than a keyframe
+   pulse, so it reads as "this one, right here" without extra motion competing with the diagram's
+   own backward-pass animation. */
+.vi-states-view-section--flash {
+  border-color: var(--accent-green, #4CAF50);
+  transition: border-color 0.15s ease-out;
+}
+
 .vi-states-view-section-header {
   font-family: var(--font-family-mono, var(--font-family));
   font-size: 12px;
