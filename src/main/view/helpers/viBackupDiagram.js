@@ -40,7 +40,10 @@ const ViBackupDiagram = {
     // faster. Callers pass the app's existing animation-speed slider value here (see
     // viStatesView.js's construction in main.js) so this reveal tracks the same global control
     // Play/Step/Skip's own sweep pacing already uses, instead of running at a fixed rate.
-    drawAnimated(canvas, detail, priorValues, colors, stateName, speedScale = 1) {
+    // onComplete: called once, after the final ('best') stage has rendered - lets a caller chain
+    // several cards' reveals one after another (see viStatesView.js's _renderDiagramJobs()) rather
+    // than every card starting at once. Never called if cancel() fires first.
+    drawAnimated(canvas, detail, priorValues, colors, stateName, speedScale = 1, onComplete = () => {}) {
         const events = this._buildRevealEvents(detail);
         let cancelled = false;
         const timers = [];
@@ -48,7 +51,10 @@ const ViBackupDiagram = {
         const runStage = (stageIndex) => {
             if (cancelled) return;
             this._render(canvas, detail, priorValues, colors, stateName, stageIndex);
-            if (stageIndex >= events.length) return;
+            if (stageIndex >= events.length) {
+                onComplete();
+                return;
+            }
             const evt = events[stageIndex];
             const baseDelay = evt === 'best' ? VBD_REVEAL_BEST_MS
                 : evt.type === 'action' ? VBD_REVEAL_ACTION_MS

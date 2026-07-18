@@ -2524,7 +2524,11 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .vi-states-view-section {
-  border: 2px dashed var(--accent-teal);
+  /* Yellow (not the quadrant's own teal) - marks this box as a TIME step wrapper, matching the
+     palette's existing "yellow = highlights: playhead, hover-links, ..." convention rather than
+     Value Iteration's brand teal, which stays reserved for per-state V/Q values elsewhere in this
+     view. */
+  border: 2px dashed var(--accent-yellow);
   border-radius: 8px;
   padding: 12px;
   margin-bottom: 8px;
@@ -2535,14 +2539,14 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .vi-states-view-section--active {
-  background: color-mix(in srgb, var(--accent-teal) 10%, transparent);
+  background: color-mix(in srgb, var(--accent-yellow) 10%, transparent);
 }
 
 .vi-states-view-section-header {
   font-family: var(--font-family-mono, var(--font-family));
   font-size: 12px;
   font-weight: 600;
-  color: var(--accent-teal);
+  color: var(--accent-yellow);
   margin-bottom: 8px;
 }
 
@@ -2561,7 +2565,7 @@ input[type="range"]::-moz-range-thumb {
   align-items: center;
   margin-bottom: 0;
   padding: 4px 10px;
-  border: 1px solid var(--accent-teal);
+  border: 1px solid var(--accent-yellow);
   border-radius: var(--radius-btn, 6px);
   background: var(--surface-card2, var(--bg-card));
   cursor: pointer;
@@ -2579,6 +2583,10 @@ input[type="range"]::-moz-range-thumb {
 
 .vi-states-view-section--collapsed .vi-states-view-card--diagram {
   flex: 0 0 auto;
+  /* Resets the expanded rule's width:100% (see .vi-states-view-card--diagram below) - flex-basis
+     'auto' defers to an explicit width if one is set, so without this override every collapsed
+     pill would stay full-width instead of shrinking to its compact preview size. */
+  width: auto;
   padding: 4px 12px;
   cursor: pointer;
 }
@@ -2636,13 +2644,18 @@ input[type="range"]::-moz-range-thumb {
      own content width instead of stretching to the card's full width, leaving the header's
      justify-content:space-between with no room to actually space its two spans apart. */
   align-items: stretch;
+  /* Forces one state per line regardless of how wide the pane is (rather than letting
+     .vi-states-view-cards' flex-wrap pack two narrow cards side by side), and gives the canvas a
+     real width to stretch to fill - see viStatesView.js's _renderDiagramJobs(), which sets the
+     canvas's pixel buffer from its own measured clientWidth once this rule has taken effect. */
+  width: 100%;
   padding: 8px;
   cursor: pointer;
 }
 
 .vi-states-view-card--diagram canvas {
   display: block;
-  width: 260px;
+  width: 100%;
   height: 140px;
 }
 

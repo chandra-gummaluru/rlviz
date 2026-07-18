@@ -106,8 +106,11 @@ class ViStatesView {
         }
 
         let addedNew = false;
+        const newSections = [];
         for (let k = this._renderedSweepCount; k < totalSweeps; k++) {
-            this._sectionsEl.appendChild(this._buildSection(k));
+            const section = this._buildSection(k);
+            this._sectionsEl.appendChild(section);
+            newSections.push({ sweepIndex: k, diagramJobs: section._diagramJobs });
             addedNew = true;
         }
         this._renderedSweepCount = totalSweeps;
@@ -122,6 +125,11 @@ class ViStatesView {
         // "newly built this call" apart from "already animated in an earlier call" without that
         // assumption.
         for (let k = 0; k < totalSweeps - 1; k++) this._animatedSweeps.add(k);
+
+        // Only now that every new section is attached to the live document (so each diagram
+        // canvas has a real, measurable width to fill) do we size and draw/animate its cards -
+        // _buildSection() itself only constructs the DOM, deferring the actual render.
+        newSections.forEach(({ sweepIndex, diagramJobs }) => this._renderDiagramJobs(diagramJobs, sweepIndex));
 
         this._applyHighlight();
         this._applyExpansion();
@@ -180,10 +188,16 @@ class ViStatesView {
 
         const cards = document.createElement('div');
         cards.className = 'vi-states-view-cards';
+        const diagramJobs = [];
         this.viState.stateIds.forEach(stateId => {
-            cards.appendChild(this._buildCard(sweepIndex, stateId));
+            const { card, job } = this._buildCard(sweepIndex, stateId);
+            cards.appendChild(card);
+            if (job) diagramJobs.push(job);
         });
         section.appendChild(cards);
+        // Stashed for refresh() to pick up once this section is attached to the live document -
+        // a plain property (not dataset) since it holds objects/functions, not strings.
+        section._diagramJobs = diagramJobs;
 
         // Hover/leave still preview the sweep on the shared right pane (Phase 3b's own
         // convention), scoped to the header row only - individual card clicks (state selection)
@@ -208,9 +222,9 @@ class ViStatesView {
     // method at all (the whole States view is hidden for it).
     _buildCard(sweepIndex, stateId) {
         const quadrant = ValuesMethodMatrix.key(this.viewModel.modelKnown, this.viewModel.observability);
-        const card = quadrant === 'known:full'
+        const { card, job } = quadrant === 'known:full'
             ? this._buildDiagramCard(sweepIndex, stateId)
-            : this._buildFlatCard(sweepIndex, stateId);
+            : { card: this._buildFlatCard(sweepIndex, stateId), job: null };
         card.addEventListener('click', (e) => {
             e.stopPropagation();
             const alreadyActive = this.viViewModel.activeStateId === stateId
@@ -221,7 +235,7 @@ class ViStatesView {
             if (this.onActiveStateChanged) this.onActiveStateChanged();
             if (typeof redraw === 'function') redraw();
         });
-        return card;
+        return { card, job };
     }
 
     _buildFlatCard(sweepIndex, stateId) {
@@ -260,11 +274,11 @@ class ViStatesView {
         card.appendChild(header);
 
         const canvas = document.createElement('canvas');
-        // Fixed logical size (CSS controls display size via the card's own layout; the canvas's
-        // pixel buffer is set to match at 1x - devicePixelRatio scaling is a nice-to-have not
-        // needed for this diagram). Bigger than the original 220x96 - the redesign gives each
-        // node room for an in-circle name label plus its own value/reward label.
-        canvas.width = 260;
+        // Height is fixed; width is deferred to _renderDiagramJobs() (called once this card is
+        // attached to the live document) and set to the card's own real, measured width via CSS
+        // `width: 100%` + canvas.clientWidth - so each state's diagram stretches to fill its full
+        // row instead of a fixed logical width, whatever that row's actual pane width turns out
+        // to be.
         canvas.height = 140;
         card.appendChild(canvas);
 
@@ -281,17 +295,34 @@ class ViStatesView {
             result: AppPalette.valueIteration.result
         };
 
-        // Animate only the first time this sweep's cards are ever built (a freshly-expanded live
-        // sweep); an already-seen sweep re-expanded via its pill renders instantly.
-        if (!this._animatedSweeps.has(sweepIndex)) {
-            const cancel = ViBackupDiagram.drawAnimated(
-                canvas, detail, priorValues, colors, stateName, this.getSpeedScale());
-            this._revealCancels.push(cancel);
-        } else {
-            ViBackupDiagram.draw(canvas, detail, priorValues, colors, stateName);
-        }
+        return { card, job: { canvas, detail, priorValues, colors, stateName } };
+    }
 
-        return card;
+    // Sizes and draws/animates one section's diagram canvases, called only once that section is
+    // attached to the live document (so canvas.clientWidth reflects real, laid-out width). Cards
+    // animate one at a time, in state order, each starting only once the previous one's reveal has
+    // finished - chained via drawAnimated()'s onComplete rather than all firing at once. Only the
+    // freshly-built live sweep animates (this._animatedSweeps already reflects that by the time
+    // refresh() calls this - see its own comment); every other sweep's cards render statically and
+    // instantly, one after another with no delay.
+    _renderDiagramJobs(jobs, sweepIndex) {
+        if (!jobs || jobs.length === 0) return;
+        const shouldAnimate = !this._animatedSweeps.has(sweepIndex);
+        const runNext = (i) => {
+            if (i >= jobs.length) return;
+            const { canvas, detail, priorValues, colors, stateName } = jobs[i];
+            canvas.width = Math.max(1, Math.round(canvas.clientWidth));
+            if (shouldAnimate) {
+                const cancel = ViBackupDiagram.drawAnimated(
+                    canvas, detail, priorValues, colors, stateName, this.getSpeedScale(),
+                    () => runNext(i + 1));
+                this._revealCancels.push(cancel);
+            } else {
+                ViBackupDiagram.draw(canvas, detail, priorValues, colors, stateName);
+                runNext(i + 1);
+            }
+        };
+        runNext(0);
     }
 
     // Toggles the active-highlight class on whichever section matches previewedSweepIndex - a
