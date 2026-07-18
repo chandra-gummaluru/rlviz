@@ -29,10 +29,14 @@ const VEV_PHASE_BEST_MS = 600;
 const VEV_TOTAL_MS = VEV_PHASE_HIGHLIGHT_MS + VEV_PHASE_REWARDS_MS + VEV_PHASE_PROBS_MS + VEV_PHASE_BEST_MS;
 
 class ViEquationView {
-    constructor(canvasViewModel, valueIterationState, valueIterationViewModel) {
+    // getSpeedScale: () => number, multiplies the 4-phase reveal's total pacing (1 = this view's
+    // own base rate, >1 slower, <1 faster) - defaults to a fixed rate if the caller doesn't wire
+    // it to the app's actual animation-speed slider (see main.js's construction call).
+    constructor(canvasViewModel, valueIterationState, valueIterationViewModel, getSpeedScale = () => 1) {
         this.viewModel = canvasViewModel;
         this.viState = valueIterationState;
         this.viViewModel = valueIterationViewModel;
+        this.getSpeedScale = getSpeedScale;
 
         this.containerEl = null;
         this._headerEl = null;
@@ -174,8 +178,14 @@ class ViEquationView {
 
     _startReveal(detail, priorValues, colors, stateName) {
         const startTime = Date.now();
+        // speedScale > 1 slows the reveal down (a given amount of real wall-clock time maps to
+        // less "virtual" phase-progress time), < 1 speeds it up - matching the app's existing
+        // animation-speed slider convention (see viBackupDiagram.js's drawAnimated() for the same
+        // scaling applied to the left-pane cards' own reveal).
+        const speedScale = this.getSpeedScale();
         const tick = () => {
-            const elapsed = Math.min(Date.now() - startTime, VEV_TOTAL_MS);
+            const realElapsed = Date.now() - startTime;
+            const elapsed = Math.min(realElapsed / speedScale, VEV_TOTAL_MS);
             this._renderFrame(detail, priorValues, colors, stateName, elapsed);
             if (elapsed < VEV_TOTAL_MS) {
                 this._rafHandle = requestAnimationFrame(tick);

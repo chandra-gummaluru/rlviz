@@ -36,7 +36,11 @@ const ViBackupDiagram = {
     // Returns a cancel() function - callers MUST invoke it before re-triggering an animation on
     // the same canvas (e.g. viStatesView.js's rebuildAll()), so an orphaned timer never draws onto
     // a canvas element that's already mid-replacement.
-    drawAnimated(canvas, detail, priorValues, colors, stateName) {
+    // speedScale: multiplies every base delay - 1 = this file's own base pacing, >1 slower, <1
+    // faster. Callers pass the app's existing animation-speed slider value here (see
+    // viStatesView.js's construction in main.js) so this reveal tracks the same global control
+    // Play/Step/Skip's own sweep pacing already uses, instead of running at a fixed rate.
+    drawAnimated(canvas, detail, priorValues, colors, stateName, speedScale = 1) {
         const events = this._buildRevealEvents(detail);
         let cancelled = false;
         const timers = [];
@@ -46,10 +50,10 @@ const ViBackupDiagram = {
             this._render(canvas, detail, priorValues, colors, stateName, stageIndex);
             if (stageIndex >= events.length) return;
             const evt = events[stageIndex];
-            const delay = evt === 'best' ? VBD_REVEAL_BEST_MS
+            const baseDelay = evt === 'best' ? VBD_REVEAL_BEST_MS
                 : evt.type === 'action' ? VBD_REVEAL_ACTION_MS
                 : VBD_REVEAL_TRANSITION_MS;
-            timers.push(setTimeout(() => runStage(stageIndex + 1), delay));
+            timers.push(setTimeout(() => runStage(stageIndex + 1), baseDelay * speedScale));
         };
         runStage(0);
 

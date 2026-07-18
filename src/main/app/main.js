@@ -1280,7 +1280,13 @@ function setup() {
     });
     mainView.valueIterationView = valueIterationView;
 
-    const viStatesView = new ViStatesView(canvasViewModel, valueIterationState, valueIterationViewModel);
+    // Ties the States view's per-card staged reveal to the same animation-speed slider Play/Step/
+    // Skip's own sweep pacing already uses (viAnimOptions.getBeatMs(), 150-450ms across the
+    // slider's range) - normalized so the slider's midpoint (currentSpeed=0.5, beat=300ms)
+    // matches this reveal's own calibrated base pacing (scale=1).
+    const getVIRevealSpeedScale = () => viAnimOptions.getBeatMs() / 300;
+    const viStatesView = new ViStatesView(
+        canvasViewModel, valueIterationState, valueIterationViewModel, getVIRevealSpeedScale);
     mainView.viStatesView = viStatesView;
     const viLeftViewPill = new ViLeftViewPill({
         onSelectLeftView: (key) => {
@@ -1320,7 +1326,8 @@ function setup() {
     }, canvasViewModel);
     mainView.viRightViewPill = viRightViewPill;
 
-    const viEquationView = new ViEquationView(canvasViewModel, valueIterationState, valueIterationViewModel);
+    const viEquationView = new ViEquationView(
+        canvasViewModel, valueIterationState, valueIterationViewModel, getVIRevealSpeedScale);
     mainView.viEquationView = viEquationView;
     viRightViewPill.setup(mainView.TOP_BARS_HEIGHT);
     viEquationView.setup();

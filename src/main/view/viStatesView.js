@@ -7,10 +7,14 @@
 // (click again to unpin) - same convention ExpectationViewModel.hoveredRun/selectedRunIndex
 // established for Monte Carlo's grid, applied here to sweeps instead of runs.
 class ViStatesView {
-    constructor(canvasViewModel, valueIterationState, valueIterationViewModel) {
+    // getSpeedScale: () => number, multiplies the staged-reveal's base pacing (1 = this view's
+    // own base rate, >1 slower, <1 faster) - defaults to a fixed rate if the caller doesn't wire
+    // it to the app's actual animation-speed slider (see main.js's construction call).
+    constructor(canvasViewModel, valueIterationState, valueIterationViewModel, getSpeedScale = () => 1) {
         this.viewModel = canvasViewModel;
         this.viState = valueIterationState;
         this.viViewModel = valueIterationViewModel;
+        this.getSpeedScale = getSpeedScale;
 
         this.containerEl = null;
         this._sectionsEl = null;
@@ -280,7 +284,8 @@ class ViStatesView {
         // Animate only the first time this sweep's cards are ever built (a freshly-expanded live
         // sweep); an already-seen sweep re-expanded via its pill renders instantly.
         if (!this._animatedSweeps.has(sweepIndex)) {
-            const cancel = ViBackupDiagram.drawAnimated(canvas, detail, priorValues, colors, stateName);
+            const cancel = ViBackupDiagram.drawAnimated(
+                canvas, detail, priorValues, colors, stateName, this.getSpeedScale());
             this._revealCancels.push(cancel);
         } else {
             ViBackupDiagram.draw(canvas, detail, priorValues, colors, stateName);
