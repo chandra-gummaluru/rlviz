@@ -33,10 +33,15 @@ class ViStatesView {
         // via draw(), not drawAnimated(), so re-opening history doesn't replay the animation every
         // time.
         this._animatedSweeps = new Set();
-        // Per-canvas cancel() handles from any in-flight drawAnimated() calls, so rebuildAll()
-        // (theme toggle) can stop them before tearing down their canvases.
-        this._revealCancels = [];
-        // setTimeout handle backing _flashSection()'s brief highlight-then-fade.
+        // Whichever sweep's card-by-card reveal is currently in flight (at most one, ever) -
+        // { sweepIndex, cardEntries, cancel }. If a NEW sweep arrives (e.g. continuous Play
+        // advancing faster than one sweep's now much more elaborate per-transition animation can
+        // finish), refresh() cancels this and instantly snaps its remaining cards to their
+        // resolved state before starting the new sweep's own reveal - without this, two sweeps'
+        // reveal chains could run concurrently, each still mutating its own (superseded) canvases,
+        // which read as the view randomly jumping between unrelated time steps.
+        this._activeReveal = null;
+        // setTimeout handle backing _flashCard()'s brief highlight-then-fade.
         this._flashTimeout = null;
     }
 
@@ -89,8 +94,7 @@ class ViStatesView {
             // happens to have been seen in a prior run.
             this._sectionsEl.innerHTML = '';
             this._renderedSweepCount = 0;
-            this._revealCancels.forEach(cancel => cancel());
-            this._revealCancels = [];
+            this._cancelActiveReveal();
             this._animatedSweeps.clear();
             return;
         }
@@ -102,8 +106,7 @@ class ViStatesView {
             // same way, for the same reason, if it ever does.
             this._sectionsEl.innerHTML = '';
             this._renderedSweepCount = 0;
-            this._revealCancels.forEach(cancel => cancel());
-            this._revealCancels = [];
+            this._cancelActiveReveal();
             this._animatedSweeps.clear();
         }
 
@@ -162,8 +165,7 @@ class ViStatesView {
     // otherwise trigger its own scroll-to-bottom behavior.
     rebuildAll() {
         if (!this.containerEl) return;
-        this._revealCancels.forEach(cancel => cancel());
-        this._revealCancels = [];
+        this._cancelActiveReveal();
         this._animatedSweeps.clear();
         const scrollTop = this._sectionsEl.scrollTop;
         this._sectionsEl.innerHTML = '';
@@ -234,6 +236,8 @@ class ViStatesView {
         const { card, job } = quadrant === 'known:full'
             ? this._buildDiagramCard(sweepIndex, stateId)
             : { card: this._buildFlatCard(sweepIndex, stateId), job: null };
+        // Looked up by _flashCard() to find this exact state's card within an older section.
+        card.dataset.stateId = String(stateId);
         card.addEventListener('click', (e) => {
             e.stopPropagation();
             const alreadyActive = this.viViewModel.activeStateId === stateId
@@ -288,13 +292,14 @@ class ViStatesView {
         // `width: 100%` + canvas.clientWidth - so each state's diagram stretches to fill its full
         // row instead of a fixed logical width, whatever that row's actual pane width turns out
         // to be.
-        canvas.height = 140;
+        canvas.height = 220;
         card.appendChild(canvas);
 
         // Hovering one of the diagram's green "prior value" triangles scrolls to and flashes the
-        // sweep that value actually came from (sweepIndex - 1) - ViBackupDiagram stashes
-        // canvas._triangleHitRegions on every render, so this hit-tests against whatever was
-        // drawn most recently rather than duplicating layout math here.
+        // SPECIFIC state's card (not the whole time box) in the sweep that value actually came
+        // from (sweepIndex - 1) - ViBackupDiagram stashes canvas._triangleHitRegions on every
+        // render, so this hit-tests against whatever was drawn most recently rather than
+        // duplicating layout math here.
         let hoveredNextStateId = null;
         canvas.addEventListener('mousemove', (e) => {
             const regions = canvas._triangleHitRegions || [];
@@ -307,7 +312,7 @@ class ViStatesView {
             canvas.style.cursor = hit ? 'pointer' : 'default';
             if (!hit || hit.nextStateId === hoveredNextStateId) return;
             hoveredNextStateId = hit.nextStateId;
-            if (sweepIndex > 0) this._flashSection(sweepIndex - 1);
+            if (sweepIndex > 0) this._flashCard(sweepIndex - 1, hit.nextStateId);
         });
         canvas.addEventListener('mouseleave', () => {
             hoveredNextStateId = null;
@@ -315,7 +320,7 @@ class ViStatesView {
         });
 
         const detail = this.viState.getBackupDetail(sweepIndex, stateId);
-        // Left blank until this card's own reveal actually completes (see _renderDiagramJobs()) -
+        // Left blank until this card's own reveal actually completes (see _renderCards()) -
         // populating it immediately would show every state's answer up front while the diagrams
         // below still trickle in one at a time, defeating the "state 0 computes V, then state 1,
         // then state 2" sequencing the reveal is meant to convey.
@@ -331,44 +336,65 @@ class ViStatesView {
             result: AppPalette.valueIteration.result
         };
 
-        return { card, job: { canvas, detail, priorValues, colors, stateName, valueEl } };
+        return { card, job: { canvas, detail, priorValues, colors, stateName, valueEl, gamma: this.viState.gamma } };
     }
 
-    // Appends and draws/animates one section's cards, called only once that section is attached
-    // to the live document (so a diagram canvas's clientWidth reflects real, laid-out width).
+    // Appends and draws one section's cards, called only once that section is attached to the
+    // live document (so a diagram canvas's clientWidth reflects real, laid-out width).
     // cardEntries: [{card, job}] in state order, built (but not yet appended) by _buildSection().
     //
-    // Every card appends immediately, for every sweep - the entire tree (every state, every
-    // action, every outcome) is visible from frame one; nothing about the DOM/structure itself
-    // ever stages in. For a historical or already-seen sweep (!shouldAnimate) each diagram also
-    // draws fully resolved right away. For a freshly-live sweep, each diagram instead runs its own
-    // backward-pass reveal (ViBackupDiagram.drawAnimated) - one state's calculation animates,
-    // then (chained via its onComplete) the next state's does, matching "state 0 computes V, then
-    // state 1, ..." - but every card is already sitting there in full, static form the whole time.
-    // Flat cards (job === null, the other 3 quadrants) have no reveal to pace against, so they're
-    // just drawn immediately regardless of shouldAnimate. Each diagram card's header V value is
-    // still populated in lockstep with its own reveal completing (not upfront) - see
-    // _buildDiagramCard()'s own comment for why.
+    // Every card appends immediately, for every sweep, and every diagram job is sized and drawn
+    // as a full SKELETON right away (drawSkeleton() - the whole tree, nothing revealed) - the
+    // entire tree, for every state, is visible from frame one, whether or not it's that state's
+    // turn to actually animate yet. For a historical or already-seen sweep (!shouldAnimate) every
+    // diagram then immediately upgrades straight to fully resolved. For a freshly-live sweep, only
+    // ONE diagram at a time upgrades from skeleton to its own animated backward-pass reveal
+    // (ViBackupDiagram.drawAnimated) - state 0's calculation animates, then (chained via its
+    // onComplete) state 1's does, and so on. Flat cards (job === null, the other 3 quadrants) have
+    // no reveal to pace against, so they're just drawn immediately regardless of shouldAnimate.
     _renderCards(cardsEl, cardEntries, sweepIndex) {
         if (!cardEntries || cardEntries.length === 0) return;
         cardEntries.forEach(({ card }) => cardsEl.appendChild(card));
+        cardEntries.forEach(({ job }) => {
+            if (!job) return;
+            job.canvas.width = Math.max(1, Math.round(job.canvas.clientWidth));
+            ViBackupDiagram.drawSkeleton(job.canvas, job.detail, job.priorValues, job.colors, job.stateName);
+        });
 
-        const shouldAnimate = !this._animatedSweeps.has(sweepIndex);
+        // Continuous Play advances sweeps on its own timer, unrelated to how long this view's now
+        // much more detailed per-transition animation takes - letting it animate anyway just means
+        // every sweep's reveal gets cancelled by the next one moments after starting (see
+        // _cancelActiveReveal()), reading as a chaotic zoom/flash rather than a real reveal. Step
+        // always pauses first (VIStepInteractor.execute()), so isPlaying reliably tells us "the
+        // user asked to watch this one sweep specifically" vs. "the user asked to run through many
+        // sweeps quickly" - only the former gets the animated reveal.
+        const shouldAnimate = !this._animatedSweeps.has(sweepIndex) && !this.viState.isPlaying;
         if (!shouldAnimate) {
             cardEntries.forEach(({ job }) => { if (job) this._drawJobStatic(job); });
             return;
         }
 
+        // Only one sweep's cards ever animate at a time - if a previous sweep's reveal is still
+        // running (Play advancing faster than it can finish), stop it and snap its own cards
+        // straight to resolved rather than let two sweeps' reveals run concurrently.
+        this._cancelActiveReveal();
+
         const runNext = (i) => {
-            if (i >= cardEntries.length) return;
+            if (i >= cardEntries.length) {
+                this._activeReveal = null;
+                return;
+            }
             const { card, job } = cardEntries[i];
             if (!job) {
                 runNext(i + 1);
                 return;
             }
-            job.canvas.width = Math.max(1, Math.round(job.canvas.clientWidth));
             const cancel = ViBackupDiagram.drawAnimated(
-                job.canvas, job.detail, job.priorValues, job.colors, job.stateName, this.getSpeedScale(),
+                job.canvas, job.detail, job.priorValues, job.colors, job.stateName, job.gamma, this.getSpeedScale(),
+                (nextStateId) => {
+                    // "Highlight the specific state in the prior step" - not the whole time box.
+                    if (sweepIndex > 0) this._flashCard(sweepIndex - 1, nextStateId);
+                },
                 () => {
                     job.valueEl.textContent = `V = ${(job.detail ? job.detail.value : 0).toFixed(2)}`;
                     // Shrinks this one card to a compact pill the instant its own calculation
@@ -378,9 +404,25 @@ class ViStatesView {
                     card.classList.add('vi-states-view-card--pill');
                     runNext(i + 1);
                 });
-            this._revealCancels.push(cancel);
+            this._activeReveal = { sweepIndex, cardEntries, cancel };
         };
         runNext(0);
+    }
+
+    // Stops whatever sweep's reveal is currently in flight (if any) and instantly snaps every one
+    // of its cards to their fully resolved state - used both for a genuine teardown (Reset/theme
+    // rebuild, where the DOM is about to be wiped anyway) and for a supersede (a new sweep
+    // starting before the old one finished, where the old one's cards need to look "done," not
+    // half-drawn, forever).
+    _cancelActiveReveal() {
+        if (!this._activeReveal) return;
+        this._activeReveal.cancel();
+        this._activeReveal.cardEntries.forEach(({ card, job }) => {
+            if (!job) return;
+            this._drawJobStatic(job);
+            card.classList.add('vi-states-view-card--pill');
+        });
+        this._activeReveal = null;
     }
 
     _drawJobStatic(job) {
@@ -389,18 +431,22 @@ class ViStatesView {
         job.valueEl.textContent = `V = ${(job.detail ? job.detail.value : 0).toFixed(2)}`;
     }
 
-    // Scrolls to and briefly flashes the sweep a hovered green triangle's value actually came
-    // from (see _buildDiagramCard()'s canvas mousemove handler) - the prior section IS "the prior
-    // step's calculation," so surfacing it this way needs no separate tooltip/duplicate render.
-    _flashSection(sweepIndex) {
+    // Scrolls to and briefly flashes the SPECIFIC state's card (not the whole time box) within an
+    // older sweep's section - triggered automatically as the live reveal's highlight phase for
+    // that outcome begins (see _renderCards()), and also on hovering the same triangle later (see
+    // _buildDiagramCard()'s canvas mousemove handler). The prior card already shows "the prior
+    // step's calculation" (its own V), so surfacing it this way needs no separate tooltip.
+    _flashCard(sweepIndex, stateId) {
         if (!this._sectionsEl) return;
-        const target = Array.from(this._sectionsEl.children)
-            .find(section => Number(section.dataset.sweepIndex) === sweepIndex);
-        if (!target) return;
-        target.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-        target.classList.add('vi-states-view-section--flash');
+        const section = Array.from(this._sectionsEl.children)
+            .find(s => Number(s.dataset.sweepIndex) === sweepIndex);
+        if (!section) return;
+        const card = section.querySelector(`.vi-states-view-card[data-state-id="${stateId}"]`);
+        if (!card) return;
+        card.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        card.classList.add('vi-states-view-card--flash');
         clearTimeout(this._flashTimeout);
-        this._flashTimeout = setTimeout(() => target.classList.remove('vi-states-view-section--flash'), 900);
+        this._flashTimeout = setTimeout(() => card.classList.remove('vi-states-view-card--flash'), 900);
     }
 
     // Toggles the active-highlight class on whichever section matches previewedSweepIndex - a
