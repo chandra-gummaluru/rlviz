@@ -107,6 +107,13 @@ class ViStatesView {
             this._animatedSweeps.clear();
         }
 
+        // Captured BEFORE any new section is appended (which grows scrollHeight) - only auto-
+        // follow to the newest sweep if the user was already looking at the bottom, the same
+        // convention a chat log uses. Without this check, every single Step during continuous
+        // Play yanked the view back to the bottom even if the user had deliberately scrolled up
+        // to review an earlier state's card - a real reported bug, not just a nicety.
+        const wasNearBottom = this._sectionsEl.scrollHeight - this._sectionsEl.scrollTop - this._sectionsEl.clientHeight < 40;
+
         let addedNew = false;
         const newSections = [];
         for (let k = this._renderedSweepCount; k < totalSweeps; k++) {
@@ -136,11 +143,10 @@ class ViStatesView {
         this._applyHighlight();
         this._applyExpansion();
 
-        // Auto-scroll only when a genuinely new sweep was added, not on every refresh() call
-        // (Play's continuous ticking calls refresh() far more often than sweeps actually
-        // advance) - keeps the newest section in view without fighting the user for scroll
-        // position mid-sweep.
-        if (addedNew) {
+        // Auto-scroll only when a genuinely new sweep was added AND the user was already at the
+        // bottom - not on every refresh() call (Play's continuous ticking calls refresh() far
+        // more often than sweeps actually advance), and never overriding a deliberate scroll-up.
+        if (addedNew && wasNearBottom) {
             this._sectionsEl.scrollTop = this._sectionsEl.scrollHeight;
         }
     }
@@ -355,7 +361,7 @@ class ViStatesView {
 
         const runNext = (i) => {
             if (i >= cardEntries.length) return;
-            const { job } = cardEntries[i];
+            const { card, job } = cardEntries[i];
             if (!job) {
                 runNext(i + 1);
                 return;
@@ -365,6 +371,11 @@ class ViStatesView {
                 job.canvas, job.detail, job.priorValues, job.colors, job.stateName, this.getSpeedScale(),
                 () => {
                     job.valueEl.textContent = `V = ${(job.detail ? job.detail.value : 0).toFixed(2)}`;
+                    // Shrinks this one card to a compact pill the instant its own calculation
+                    // finishes - the next state's card (still full-size) stays the visual focus,
+                    // and already-done states no longer take up space. Cleared by _applyExpansion()
+                    // once this section stops being the live one (see its own comment).
+                    card.classList.add('vi-states-view-card--pill');
                     runNext(i + 1);
                 });
             this._revealCancels.push(cancel);
@@ -419,6 +430,15 @@ class ViStatesView {
             const expanded = idx === liveSweep || this._manuallyExpanded.has(idx);
             section.classList.toggle('vi-states-view-section--collapsed', !expanded);
             section.classList.toggle('vi-states-view-section--live', idx === liveSweep);
+            if (idx !== liveSweep) {
+                // A non-live section's compact-vs-full look is entirely owned by the
+                // --collapsed CSS above (toggled via its own expand/collapse click), not by the
+                // transient per-card marker _renderCards() adds as each state finishes its live
+                // reveal - clear it here so a manually re-expanded historical section still shows
+                // its full diagrams, not leftover pills from when it was the live one.
+                section.querySelectorAll('.vi-states-view-card--pill')
+                    .forEach(card => card.classList.remove('vi-states-view-card--pill'));
+            }
         });
     }
 

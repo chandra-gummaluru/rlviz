@@ -2584,7 +2584,13 @@ input[type="range"]::-moz-range-thumb {
   margin-top: 8px;
 }
 
-.vi-states-view-section--collapsed .vi-states-view-card--diagram {
+/* .vi-states-view-card--pill (below) is the same compact look applied to ONE card at a time,
+   independent of its section's own collapsed state - ViStatesView adds it the moment a live
+   sweep's card finishes its backward-pass reveal, so already-done states shrink out of the way
+   while whichever state is still calculating stays full-size. Grouped into the same rules as the
+   section-collapsed look since both are visually identical, just triggered differently. */
+.vi-states-view-section--collapsed .vi-states-view-card--diagram,
+.vi-states-view-card--diagram.vi-states-view-card--pill {
   flex: 0 0 auto;
   /* Resets the expanded rule's width:100% (see .vi-states-view-card--diagram below) - flex-basis
      'auto' defers to an explicit width if one is set, so without this override every collapsed
@@ -2594,11 +2600,13 @@ input[type="range"]::-moz-range-thumb {
   cursor: pointer;
 }
 
-.vi-states-view-section--collapsed .vi-states-view-card--diagram canvas {
+.vi-states-view-section--collapsed .vi-states-view-card--diagram canvas,
+.vi-states-view-card--diagram.vi-states-view-card--pill canvas {
   display: none;
 }
 
-.vi-states-view-section--collapsed .vi-states-view-card-header {
+.vi-states-view-section--collapsed .vi-states-view-card-header,
+.vi-states-view-card--diagram.vi-states-view-card--pill .vi-states-view-card-header {
   border-bottom: none;
   padding-bottom: 0;
   margin-bottom: 0;
