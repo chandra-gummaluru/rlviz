@@ -2575,8 +2575,10 @@ input[type="range"]::-moz-range-thumb {
   margin-bottom: 0;
   padding: 4px 10px;
   /* Collapsing is only ever possible for a non-live sweep (the live one is never collapsible -
-     see ViStatesView's header click handler), so this pill is always gray, never yellow. */
-  border: 1px solid var(--border-hairline, var(--border-light));
+     see ViStatesView's header click handler), so this pill is always gray, never yellow. Dashed
+     to match the expanded section's own dashed time-box border - it's the same "time" wrapper,
+     just shrunk to a chip, not a distinct element that should look different. */
+  border: 1px dashed var(--border-hairline, var(--border-light));
   border-radius: var(--radius-btn, 6px);
   background: var(--surface-card2, var(--bg-card));
   cursor: pointer;
@@ -2600,8 +2602,6 @@ input[type="range"]::-moz-range-thumb {
   width: auto;
   padding: 4px 12px;
   cursor: pointer;
-  border: 1px dashed var(--border-hairline, var(--border-light));
-  border-radius: 6px;
 }
 
 .vi-states-view-section--collapsed .vi-states-view-card--diagram canvas {

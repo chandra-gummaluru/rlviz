@@ -110,7 +110,7 @@ class ViStatesView {
         for (let k = this._renderedSweepCount; k < totalSweeps; k++) {
             const section = this._buildSection(k);
             this._sectionsEl.appendChild(section);
-            newSections.push({ sweepIndex: k, diagramJobs: section._diagramJobs });
+            newSections.push({ sweepIndex: k, cardsEl: section._cardsEl, cardEntries: section._cardEntries });
             addedNew = true;
         }
         this._renderedSweepCount = totalSweeps;
@@ -129,7 +129,7 @@ class ViStatesView {
         // Only now that every new section is attached to the live document (so each diagram
         // canvas has a real, measurable width to fill) do we size and draw/animate its cards -
         // _buildSection() itself only constructs the DOM, deferring the actual render.
-        newSections.forEach(({ sweepIndex, diagramJobs }) => this._renderDiagramJobs(diagramJobs, sweepIndex));
+        newSections.forEach(({ sweepIndex, cardsEl, cardEntries }) => this._renderCards(cardsEl, cardEntries, sweepIndex));
 
         this._applyHighlight();
         this._applyExpansion();
@@ -188,16 +188,16 @@ class ViStatesView {
 
         const cards = document.createElement('div');
         cards.className = 'vi-states-view-cards';
-        const diagramJobs = [];
-        this.viState.stateIds.forEach(stateId => {
-            const { card, job } = this._buildCard(sweepIndex, stateId);
-            cards.appendChild(card);
-            if (job) diagramJobs.push(job);
-        });
+        // Cards are built now but NOT appended yet - _renderCards() appends each one only when
+        // it's that state's turn (a freshly-live sweep) or all at once immediately (a historical/
+        // already-seen sweep). Building them now (rather than lazily) keeps _buildCard()'s click
+        // handler wiring in one place regardless of when a card actually enters the DOM.
+        const cardEntries = this.viState.stateIds.map(stateId => this._buildCard(sweepIndex, stateId));
         section.appendChild(cards);
         // Stashed for refresh() to pick up once this section is attached to the live document -
         // a plain property (not dataset) since it holds objects/functions, not strings.
-        section._diagramJobs = diagramJobs;
+        section._cardsEl = cards;
+        section._cardEntries = cardEntries;
 
         // Hover/leave still preview the sweep on the shared right pane (Phase 3b's own
         // convention), scoped to the header row only - individual card clicks (state selection)
@@ -302,37 +302,65 @@ class ViStatesView {
         return { card, job: { canvas, detail, priorValues, colors, stateName, valueEl } };
     }
 
-    // Sizes and draws/animates one section's diagram canvases, called only once that section is
-    // attached to the live document (so canvas.clientWidth reflects real, laid-out width). Cards
-    // animate one at a time, in state order, each starting only once the previous one's reveal has
-    // finished - chained via drawAnimated()'s onComplete rather than all firing at once. Only the
-    // freshly-built live sweep animates (this._animatedSweeps already reflects that by the time
-    // refresh() calls this - see its own comment); every other sweep's cards render statically and
-    // instantly, one after another with no delay. Each card's header V value is populated in
-    // lockstep with its own reveal completing (not upfront) - see _buildDiagramCard()'s own
-    // comment for why.
-    _renderDiagramJobs(jobs, sweepIndex) {
-        if (!jobs || jobs.length === 0) return;
+    // Appends and draws/animates one section's cards, called only once that section is attached
+    // to the live document (so a diagram canvas's clientWidth reflects real, laid-out width).
+    // cardEntries: [{card, job}] in state order, built (but not yet appended) by _buildSection().
+    //
+    // For a historical or already-seen sweep (!shouldAnimate), every card appends and draws at
+    // once - nothing to stage, it's already computed. For a freshly-live sweep, cards reveal one
+    // STATE AT A TIME: the next card doesn't even enter the DOM until the previous one's diagram
+    // has finished animating (chained via drawAnimated()'s onComplete) - not just its diagram
+    // filling in while every card sits pre-built and empty. Each newly-appended card is scrolled
+    // into view, so a tall section auto-scrolls to keep the currently-revealing state visible.
+    // Flat cards (job === null, the other 3 quadrants) have no reveal to pace against, so they
+    // still append one after another with no delay - only known:full's diagram cards actually
+    // stagger. Each diagram card's header V value is populated in lockstep with its own reveal
+    // completing (not upfront) - see _buildDiagramCard()'s own comment for why.
+    _renderCards(cardsEl, cardEntries, sweepIndex) {
+        if (!cardEntries || cardEntries.length === 0) return;
         const shouldAnimate = !this._animatedSweeps.has(sweepIndex);
+
+        if (!shouldAnimate) {
+            cardEntries.forEach(({ card, job }) => {
+                cardsEl.appendChild(card);
+                if (job) this._drawJobStatic(job);
+            });
+            return;
+        }
+
         const runNext = (i) => {
-            if (i >= jobs.length) return;
-            const { canvas, detail, priorValues, colors, stateName, valueEl } = jobs[i];
-            canvas.width = Math.max(1, Math.round(canvas.clientWidth));
-            const revealValue = () => {
-                valueEl.textContent = `V = ${(detail ? detail.value : 0).toFixed(2)}`;
-            };
-            if (shouldAnimate) {
-                const cancel = ViBackupDiagram.drawAnimated(
-                    canvas, detail, priorValues, colors, stateName, this.getSpeedScale(),
-                    () => { revealValue(); runNext(i + 1); });
-                this._revealCancels.push(cancel);
-            } else {
-                ViBackupDiagram.draw(canvas, detail, priorValues, colors, stateName);
-                revealValue();
+            if (i >= cardEntries.length) return;
+            const { card, job } = cardEntries[i];
+            cardsEl.appendChild(card);
+            this._scrollCardIntoView(card);
+            if (!job) {
                 runNext(i + 1);
+                return;
             }
+            job.canvas.width = Math.max(1, Math.round(job.canvas.clientWidth));
+            const cancel = ViBackupDiagram.drawAnimated(
+                job.canvas, job.detail, job.priorValues, job.colors, job.stateName, this.getSpeedScale(),
+                () => {
+                    job.valueEl.textContent = `V = ${(job.detail ? job.detail.value : 0).toFixed(2)}`;
+                    runNext(i + 1);
+                });
+            this._revealCancels.push(cancel);
         };
         runNext(0);
+    }
+
+    _drawJobStatic(job) {
+        job.canvas.width = Math.max(1, Math.round(job.canvas.clientWidth));
+        ViBackupDiagram.draw(job.canvas, job.detail, job.priorValues, job.colors, job.stateName);
+        job.valueEl.textContent = `V = ${(job.detail ? job.detail.value : 0).toFixed(2)}`;
+    }
+
+    // Keeps the currently-revealing card in view as new cards append below it - _sectionsEl is
+    // the actual scrollable container, so scrollIntoView() finds it as the nearest scrollable
+    // ancestor automatically.
+    _scrollCardIntoView(card) {
+        if (typeof card.scrollIntoView !== 'function') return;
+        card.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     }
 
     // Toggles the active-highlight class on whichever section matches previewedSweepIndex - a
