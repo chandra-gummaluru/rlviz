@@ -283,7 +283,11 @@ class ViStatesView {
         card.appendChild(canvas);
 
         const detail = this.viState.getBackupDetail(sweepIndex, stateId);
-        valueEl.textContent = `V = ${(detail ? detail.value : 0).toFixed(2)}`;
+        // Left blank until this card's own reveal actually completes (see _renderDiagramJobs()) -
+        // populating it immediately would show every state's answer up front while the diagrams
+        // below still trickle in one at a time, defeating the "state 0 computes V, then state 1,
+        // then state 2" sequencing the reveal is meant to convey.
+        valueEl.textContent = '';
 
         const priorValues = sweepIndex > 0
             ? this.viState.getValues(sweepIndex - 1)
@@ -295,7 +299,7 @@ class ViStatesView {
             result: AppPalette.valueIteration.result
         };
 
-        return { card, job: { canvas, detail, priorValues, colors, stateName } };
+        return { card, job: { canvas, detail, priorValues, colors, stateName, valueEl } };
     }
 
     // Sizes and draws/animates one section's diagram canvases, called only once that section is
@@ -304,21 +308,27 @@ class ViStatesView {
     // finished - chained via drawAnimated()'s onComplete rather than all firing at once. Only the
     // freshly-built live sweep animates (this._animatedSweeps already reflects that by the time
     // refresh() calls this - see its own comment); every other sweep's cards render statically and
-    // instantly, one after another with no delay.
+    // instantly, one after another with no delay. Each card's header V value is populated in
+    // lockstep with its own reveal completing (not upfront) - see _buildDiagramCard()'s own
+    // comment for why.
     _renderDiagramJobs(jobs, sweepIndex) {
         if (!jobs || jobs.length === 0) return;
         const shouldAnimate = !this._animatedSweeps.has(sweepIndex);
         const runNext = (i) => {
             if (i >= jobs.length) return;
-            const { canvas, detail, priorValues, colors, stateName } = jobs[i];
+            const { canvas, detail, priorValues, colors, stateName, valueEl } = jobs[i];
             canvas.width = Math.max(1, Math.round(canvas.clientWidth));
+            const revealValue = () => {
+                valueEl.textContent = `V = ${(detail ? detail.value : 0).toFixed(2)}`;
+            };
             if (shouldAnimate) {
                 const cancel = ViBackupDiagram.drawAnimated(
                     canvas, detail, priorValues, colors, stateName, this.getSpeedScale(),
-                    () => runNext(i + 1));
+                    () => { revealValue(); runNext(i + 1); });
                 this._revealCancels.push(cancel);
             } else {
                 ViBackupDiagram.draw(canvas, detail, priorValues, colors, stateName);
+                revealValue();
                 runNext(i + 1);
             }
         };
@@ -339,7 +349,11 @@ class ViStatesView {
 
     // Toggles the collapsed/expanded CSS class per section: the live sweep is always expanded;
     // everything else follows _manuallyExpanded's membership. Independent of _applyHighlight()'s
-    // own hover/pin class - a section can be expanded without being the hovered/pinned one.
+    // own hover/pin class - a section can be expanded without being the hovered/pinned one. Also
+    // toggles --live, which drives the yellow-vs-gray "t = k" box color (see style.css) - yellow
+    // marks only the one sweep actually being computed right now; every other sweep (including a
+    // manually re-expanded historical one) reads as gray, regardless of its own expanded/collapsed
+    // state.
     _applyExpansion() {
         if (!this._sectionsEl) return;
         const liveSweep = this.viState.currentSweepIndex;
@@ -347,6 +361,7 @@ class ViStatesView {
             const idx = Number(section.dataset.sweepIndex);
             const expanded = idx === liveSweep || this._manuallyExpanded.has(idx);
             section.classList.toggle('vi-states-view-section--collapsed', !expanded);
+            section.classList.toggle('vi-states-view-section--live', idx === liveSweep);
         });
     }
 

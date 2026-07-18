@@ -2524,11 +2524,12 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .vi-states-view-section {
-  /* Yellow (not the quadrant's own teal) - marks this box as a TIME step wrapper, matching the
-     palette's existing "yellow = highlights: playhead, hover-links, ..." convention rather than
-     Value Iteration's brand teal, which stays reserved for per-state V/Q values elsewhere in this
-     view. */
-  border: 2px dashed var(--accent-yellow);
+  /* Gray by default (a completed, historical time step); .vi-states-view-section--live
+     overrides to yellow below for whichever one sweep is actually being computed right now -
+     matching the palette's existing "yellow = highlights: playhead, hover-links, ..." convention,
+     reserved for the CURRENT step rather than every step. Value Iteration's own brand teal stays
+     reserved for per-state V/Q values elsewhere in this view, unrelated to either color here. */
+  border: 2px dashed var(--border-hairline, var(--border-light));
   border-radius: 8px;
   padding: 12px;
   margin-bottom: 8px;
@@ -2536,6 +2537,10 @@ input[type="range"]::-moz-range-thumb {
 
 .vi-states-view-section:last-child {
   margin-bottom: 0;
+}
+
+.vi-states-view-section--live {
+  border-color: var(--accent-yellow);
 }
 
 .vi-states-view-section--active {
@@ -2546,8 +2551,12 @@ input[type="range"]::-moz-range-thumb {
   font-family: var(--font-family-mono, var(--font-family));
   font-size: 12px;
   font-weight: 600;
-  color: var(--accent-yellow);
+  color: var(--text-muted);
   margin-bottom: 8px;
+}
+
+.vi-states-view-section--live .vi-states-view-section-header {
+  color: var(--accent-yellow);
 }
 
 /* A collapsed sweep sheds its full dashed-border box and renders as a single clickable
@@ -2565,7 +2574,9 @@ input[type="range"]::-moz-range-thumb {
   align-items: center;
   margin-bottom: 0;
   padding: 4px 10px;
-  border: 1px solid var(--accent-yellow);
+  /* Collapsing is only ever possible for a non-live sweep (the live one is never collapsible -
+     see ViStatesView's header click handler), so this pill is always gray, never yellow. */
+  border: 1px solid var(--border-hairline, var(--border-light));
   border-radius: var(--radius-btn, 6px);
   background: var(--surface-card2, var(--bg-card));
   cursor: pointer;
@@ -2589,6 +2600,8 @@ input[type="range"]::-moz-range-thumb {
   width: auto;
   padding: 4px 12px;
   cursor: pointer;
+  border: 1px dashed var(--border-hairline, var(--border-light));
+  border-radius: 6px;
 }
 
 .vi-states-view-section--collapsed .vi-states-view-card--diagram canvas {
