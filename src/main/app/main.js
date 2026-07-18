@@ -1320,6 +1320,19 @@ function setup() {
 
     viPresenter.setEquationView(viEquationView);
 
+    // BUG FIX (found during Task 7's own Step 9 verification, outside the brief's explicit step
+    // list but within its file scope): ViStatesView.onActiveStateChanged is a real hook the States
+    // view's card click handler already invokes (see viStatesView.js's _buildCard()), but nothing
+    // in main.js ever assigned it - clicking a card updated activeStateId but never told the
+    // Equation pane to re-render, so its header/reveal/Q-table silently stayed on whatever state
+    // was active before (or the empty placeholder) until some unrelated VI lifecycle event (a
+    // sweep) happened to fire VIPresenter's own _refreshEquationView(). Wiring it here makes the
+    // click itself refresh immediately, matching the brief's Step 9 verification ("click a state's
+    // card... confirm the Equation pane's header renders...").
+    viStatesView.onActiveStateChanged = () => {
+        if (mainView.viEquationView) mainView.viEquationView.refresh();
+    };
+
     // ===== Learning Iteration (unknown:full) real Q-learning wiring =====
     const qlPresenter = new QLPresenter(canvasViewModel);
     qlPresenter.onComplete = () => {
