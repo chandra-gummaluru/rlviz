@@ -2546,21 +2546,58 @@ input[type="range"]::-moz-range-thumb {
   margin-bottom: 8px;
 }
 
+/* A collapsed sweep sheds its full dashed-border box and renders as a single clickable
+   `t = k` pill instead (the design language CLAUDE.md calls for) - the wrapper's border and
+   padding are dropped so only the header, restyled as a compact chip (matching
+   .vi-states-view-chip's own pill look), shows. Without this the collapsed section was just an
+   empty-looking dashed box with faint teal text inside it. */
 .vi-states-view-section--collapsed {
-  padding-bottom: 0;
+  border-color: transparent;
+  padding: 0;
 }
 
 .vi-states-view-section--collapsed .vi-states-view-section-header {
+  display: inline-flex;
+  align-items: center;
   margin-bottom: 0;
+  padding: 4px 10px;
+  border: 1px solid var(--accent-teal);
+  border-radius: var(--radius-btn, 6px);
+  background: var(--surface-card2, var(--bg-card));
   cursor: pointer;
 }
 
+/* A collapsed sweep still shows a compact preview row of its cards (small pills, name + V,
+   canvas hidden) rather than nothing - matching the flat card's own always-compact look, so a
+   collapsed section still reads as "here's what this sweep found" at a glance rather than
+   disappearing into a bare header line. */
 .vi-states-view-section--collapsed .vi-states-view-cards {
+  display: flex;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.vi-states-view-section--collapsed .vi-states-view-card--diagram {
+  flex: 0 0 auto;
+  padding: 4px 12px;
+  cursor: pointer;
+}
+
+.vi-states-view-section--collapsed .vi-states-view-card--diagram canvas {
   display: none;
+}
+
+.vi-states-view-section--collapsed .vi-states-view-card-header {
+  border-bottom: none;
+  padding-bottom: 0;
+  margin-bottom: 0;
+  gap: 20px;
+  justify-content: flex-start;
 }
 
 .vi-states-view-section--collapsed .vi-states-view-section-header:hover {
   color: var(--text-dark);
+  border-color: var(--text-dark);
 }
 
 .vi-states-view-cards {
@@ -2594,6 +2631,11 @@ input[type="range"]::-moz-range-thumb {
 .vi-states-view-card--diagram {
   display: flex;
   flex-direction: column;
+  /* Overrides the shared .vi-states-view-card rule's align-items:center (needed for the FLAT
+     card's single-row layout) - without this override, the header/canvas shrink-wrap to their
+     own content width instead of stretching to the card's full width, leaving the header's
+     justify-content:space-between with no room to actually space its two spans apart. */
+  align-items: stretch;
   padding: 8px;
   cursor: pointer;
 }
