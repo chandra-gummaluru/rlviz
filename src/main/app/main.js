@@ -250,6 +250,11 @@ const onModelKnownToggle = (known) => {
     if (canvasViewModel.mode === 'values' && canvasViewModel.valuesSubView === 'vi') {
         refreshVIButtons();
         setUpVISplitChrome();
+        // ViStatesView._buildCard() decides diagram-vs-flat once per card, not per-frame (see
+        // its own comment) - already-built sections keep showing the PREVIOUS quadrant's card
+        // style otherwise, e.g. rich known:full diagrams surviving a toggle into a partial-
+        // observability quadrant that should show flat state:value cards instead.
+        if (mainView && mainView.viStatesView) mainView.viStatesView.rebuildAll();
         if (mainView && mainView.chartDock) {
             if (_isLearningIterationActive()) {
                 mainView.chartDock.updateBounds(0, windowWidth - mainView.RIGHT_PANEL_WIDTH);
@@ -272,6 +277,8 @@ const onObservabilityToggle = (value) => {
     if (canvasViewModel.mode === 'values' && canvasViewModel.valuesSubView === 'vi') {
         refreshVIButtons();
         setUpVISplitChrome();
+        // Same diagram-vs-flat re-render need as onModelKnownToggle's own identical fix above.
+        if (mainView && mainView.viStatesView) mainView.viStatesView.rebuildAll();
         if (mainView && mainView.chartDock) {
             if (_isLearningIterationActive()) {
                 mainView.chartDock.updateBounds(0, windowWidth - mainView.RIGHT_PANEL_WIDTH);
