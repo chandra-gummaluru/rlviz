@@ -219,7 +219,7 @@ class MainView {
                 // split, drawn full-width exactly as today (isSplit is false there, leftW is 0).
                 if (quadrant === 'unknown:full' && this.learningIterationView) {
                     this.learningIterationView.draw();
-                } else {
+                } else if (this.viewModel.valueIterationViewModel.rightView !== 'equation') {
                     this.valueIterationView.draw();
                 }
                 if (isSplit) drawingContext.restore();
@@ -1381,10 +1381,28 @@ class MainView {
                     this.viLeftViewPill.updateBounds(viSplit.leftW, viSplit.rightW);
                     this.viLeftViewPill.show();
                 }
+                // Respect whichever of Equation/Graph is currently selected (viRightViewPill's
+                // [Equation|Graph] toggle) - mirrors the leftView/showChart branch above.
+                const showGraph = this.viewModel.valueIterationViewModel
+                    && this.viewModel.valueIterationViewModel.rightView === 'graph';
+                if (this.viEquationView) {
+                    if (showGraph) {
+                        this.viEquationView.hide();
+                    } else {
+                        this.viEquationView.updateBounds(viSplit.leftW, this.TOP_BARS_HEIGHT, viSplit.rightW, valuesHeight);
+                        this.viEquationView.show();
+                    }
+                }
+                if (this.viRightViewPill) {
+                    this.viRightViewPill.updateBounds(viSplit.leftW, viSplit.rightW);
+                    this.viRightViewPill.show();
+                }
             } else {
                 this.viStatesView.hide();
                 if (this.viChartView) this.viChartView.hide();
                 if (this.viLeftViewPill) this.viLeftViewPill.hide();
+                if (this.viRightViewPill) this.viRightViewPill.hide();
+                if (this.viEquationView) this.viEquationView.hide();
             }
         }
 
@@ -1450,10 +1468,28 @@ class MainView {
                     this.viLeftViewPill.updateBounds(viSplit.leftW, viSplit.rightW);
                     this.viLeftViewPill.show();
                 }
+                // Respect whichever of Equation/Graph is currently selected - see the identical
+                // comment in windowResized() above.
+                const showGraph = this.viewModel.valueIterationViewModel
+                    && this.viewModel.valueIterationViewModel.rightView === 'graph';
+                if (this.viEquationView) {
+                    if (showGraph) {
+                        this.viEquationView.hide();
+                    } else {
+                        this.viEquationView.updateBounds(viSplit.leftW, this.TOP_BARS_HEIGHT, viSplit.rightW, valuesHeight);
+                        this.viEquationView.show();
+                    }
+                }
+                if (this.viRightViewPill) {
+                    this.viRightViewPill.updateBounds(viSplit.leftW, viSplit.rightW);
+                    this.viRightViewPill.show();
+                }
             } else {
                 this.viStatesView.hide();
                 if (this.viChartView) this.viChartView.hide();
                 if (this.viLeftViewPill) this.viLeftViewPill.hide();
+                if (this.viRightViewPill) this.viRightViewPill.hide();
+                if (this.viEquationView) this.viEquationView.hide();
             }
         }
         redraw();

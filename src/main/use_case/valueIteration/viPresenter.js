@@ -16,6 +16,7 @@ class VIPresenter extends VIOutputBoundary {
         this.sweepChip = null;
         this.statesView = null;
         this.chartView = null;
+        this.equationView = null;
     }
 
     get viViewModel() {
@@ -32,6 +33,7 @@ class VIPresenter extends VIOutputBoundary {
     setSweepChip(sweepChip) { this.sweepChip = sweepChip; }
     setStatesView(statesView) { this.statesView = statesView; }
     setChartView(chartView) { this.chartView = chartView; }
+    setEquationView(equationView) { this.equationView = equationView; }
 
     // --- Lifecycle events ---
 
@@ -40,6 +42,7 @@ class VIPresenter extends VIOutputBoundary {
         this._refreshSweepChip();
         this._refreshStatesView();
         this._refreshChartView();
+        this._refreshEquationView();
         this._updateButtonStates();
         this._redraw();
         this._updateRightPanel();
@@ -54,6 +57,7 @@ class VIPresenter extends VIOutputBoundary {
         this._refreshSweepChip();
         this._refreshStatesView();
         this._refreshChartView();
+        this._refreshEquationView();
         this._updateButtonStates();
         this._redraw();
         this._updateRightPanel();
@@ -64,6 +68,7 @@ class VIPresenter extends VIOutputBoundary {
         this._refreshSweepChip();
         this._refreshStatesView();
         this._refreshChartView();
+        this._refreshEquationView();
         this._updateButtonStates();
         this._redraw();
         this._updateRightPanel();
@@ -80,6 +85,7 @@ class VIPresenter extends VIOutputBoundary {
         this._refreshSweepChip();
         this._refreshStatesView();
         this._refreshChartView();
+        this._refreshEquationView();
         this._updateButtonStates();
         this._redraw();
         this._updateRightPanel();
@@ -275,6 +281,14 @@ class VIPresenter extends VIOutputBoundary {
     // lifecycle event the same way _refreshStatesView() already is.
     _refreshChartView() {
         if (this.chartView) this.chartView.refresh();
+    }
+
+    // The Equation right-pane view - refresh() itself is a no-op while hidden (rightView ===
+    // 'graph', or a non-split quadrant/mode) or while nothing is selected (activeStateId ===
+    // null), so this is safe to call on every lifecycle event the same way the other two
+    // refresh hooks already are.
+    _refreshEquationView() {
+        if (this.equationView) this.equationView.refresh();
     }
 
     _updateRightPanel() {

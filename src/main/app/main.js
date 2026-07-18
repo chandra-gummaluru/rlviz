@@ -444,10 +444,22 @@ function setUpVISplitChrome() {
             mainView.viLeftViewPill.show();
             mainView.viLeftViewPill.refresh();
         }
+
+        const showGraph = valueIterationViewModel.rightView === 'graph';
+        if (showGraph) {
+            mainView.viEquationView.hide();
+        } else {
+            mainView.viEquationView.updateBounds(viSplit.leftW, mainView.TOP_BARS_HEIGHT, viSplit.rightW, canvasH);
+            mainView.viEquationView.show();
+        }
+        mainView.viRightViewPill.updateBounds(viSplit.leftW, viSplit.rightW);
+        mainView.viRightViewPill.show();
     } else {
         mainView.viStatesView.hide();
         mainView.viChartView.hide();
         if (mainView.viLeftViewPill) mainView.viLeftViewPill.hide();
+        if (mainView.viRightViewPill) mainView.viRightViewPill.hide();
+        if (mainView.viEquationView) mainView.viEquationView.hide();
     }
 }
 
@@ -494,6 +506,8 @@ canvasController.registerModeLifecycle({
             if (mainView && mainView.viStatesView) mainView.viStatesView.hide();
             if (mainView && mainView.viLeftViewPill) mainView.viLeftViewPill.hide();
             if (mainView && mainView.viChartView) mainView.viChartView.hide();
+            if (mainView && mainView.viRightViewPill) mainView.viRightViewPill.hide();
+            if (mainView && mainView.viEquationView) mainView.viEquationView.hide();
             if (learningTreePill) learningTreePill.hide();
         },
         // Policy's canvas is now identical to Build's (fully editable - only the right panel
@@ -608,6 +622,8 @@ canvasController.registerModeLifecycle({
             if (mainView && mainView.viStatesView) mainView.viStatesView.hide();
             if (mainView && mainView.viLeftViewPill) mainView.viLeftViewPill.hide();
             if (mainView && mainView.viChartView) mainView.viChartView.hide();
+            if (mainView && mainView.viRightViewPill) mainView.viRightViewPill.hide();
+            if (mainView && mainView.viEquationView) mainView.viEquationView.hide();
             if (mainView && mainView.chartDock) mainView.chartDock.hide();
             if (mainView && mainView.mcRunsPill) {
                 mainView.mcRunsPill.updateBounds(0, windowWidth - mainView.RIGHT_PANEL_WIDTH);
@@ -1183,6 +1199,10 @@ function setup() {
         // (line/grid/V* colors) - refresh() rebuilds the chart from scratch, same as
         // expectationChartView above.
         if (mainView.viChartView) mainView.viChartView.refresh();
+        // ViEquationView's canvas also bakes AppPalette colors into raster pixels (the reveal's
+        // node/line colors) - refresh() re-renders the current frame (held, non-replaying) with
+        // the new palette.
+        if (mainView.viEquationView) mainView.viEquationView.refresh();
     };
 
     canvasViewModel._onUndoRedoChange = (canUndo, canRedo) => {
@@ -1282,6 +1302,23 @@ function setup() {
     // Play/Step/Skip/Reset cycle whenever Chart was the active pane (see viPresenter.js's
     // _refreshChartView()).
     viPresenter.setChartView(viChartView);
+
+    const viRightViewPill = new ViRightViewPill({
+        onSelectRightView: (key) => {
+            valueIterationViewModel.rightView = key;
+            viRightViewPill.refresh();
+            setUpVISplitChrome();
+            if (typeof redraw === 'function') redraw();
+        }
+    }, canvasViewModel);
+    mainView.viRightViewPill = viRightViewPill;
+
+    const viEquationView = new ViEquationView(canvasViewModel, valueIterationState, valueIterationViewModel);
+    mainView.viEquationView = viEquationView;
+    viRightViewPill.setup(mainView.TOP_BARS_HEIGHT);
+    viEquationView.setup();
+
+    viPresenter.setEquationView(viEquationView);
 
     // ===== Learning Iteration (unknown:full) real Q-learning wiring =====
     const qlPresenter = new QLPresenter(canvasViewModel);
