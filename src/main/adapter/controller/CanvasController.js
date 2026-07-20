@@ -673,22 +673,46 @@ class CanvasController {
         this.viewModel.simulationState.setPolicyWeight(stateId, actionId, value);
     }
 
+    // Time-dependent policy (π_t, Evaluate redesign Phase 6) passthroughs - thin delegation to
+    // SimulationState, mirroring setPolicyAction/setPolicyWeight's own shape exactly.
+    setPiMode(mode) {
+        this.viewModel.simulationState.setPiMode(mode, this.viewModel.graph);
+    }
+
+    setPiHorizon(horizon) {
+        this.viewModel.simulationState.setPiHorizon(horizon);
+    }
+
+    cycleTimeDependentAction(stateId, t, actionIds) {
+        this.viewModel.simulationState.cycleTimeDependentAction(stateId, t, actionIds);
+    }
+
+    setTimeDependentAction(stateId, t, value) {
+        this.viewModel.simulationState.setTimeDependentAction(stateId, t, value);
+    }
+
     // Policy log hover-preview (Evaluate pi Phase 2) - sets/clears the preview pair
     // EdgeViewModel.policyEdgeProbability reads, WITHOUT touching the real simulationState.policy.
-    setPolicyPreview(policySnapshot, policyWeightsSnapshot) {
+    // timeDependentPolicySnapshot (Phase 6) is optional - undefined for stationary log entries.
+    setPolicyPreview(policySnapshot, policyWeightsSnapshot, timeDependentPolicySnapshot) {
         this.viewModel.interaction.previewPolicy = policySnapshot;
         this.viewModel.interaction.previewPolicyWeights = policyWeightsSnapshot;
+        this.viewModel.interaction.previewTimeDependentPolicy = timeDependentPolicySnapshot ?? null;
     }
 
     clearPolicyPreview() {
         this.viewModel.interaction.previewPolicy = null;
         this.viewModel.interaction.previewPolicyWeights = null;
+        this.viewModel.interaction.previewTimeDependentPolicy = null;
     }
 
     // Restores a Policy log entry's snapshotted policy for REAL - overwrites the live
     // simulationState.policy/.policyWeights (shallow-copying the snapshot again so later edits to
     // the live policy don't retroactively mutate the log entry itself, mirroring
-    // EvaluatePolicyInteractor's own snapshot-on-log discipline).
+    // EvaluatePolicyInteractor's own snapshot-on-log discipline). A time-dependent entry
+    // (entry.timeDependentPolicySnapshot set) also restores piMode/piHorizon/timeDependentPolicy;
+    // a stationary entry leaves those untouched (switching back to Stationary, if the user was in
+    // π_t mode, is a separate explicit toggle, not implied by restoring an older stationary run).
     restorePolicyFromLog(entry) {
         this.viewModel.simulationState.policy = { ...entry.policySnapshot };
         const weights = {};
@@ -696,6 +720,16 @@ class CanvasController {
             weights[stateId] = { ...w };
         });
         this.viewModel.simulationState.policyWeights = weights;
+
+        if (entry.timeDependentPolicySnapshot) {
+            const timeDependentPolicy = {};
+            Object.entries(entry.timeDependentPolicySnapshot).forEach(([stateId, seq]) => {
+                timeDependentPolicy[stateId] = seq.slice();
+            });
+            this.viewModel.simulationState.timeDependentPolicy = timeDependentPolicy;
+            this.viewModel.simulationState.piMode = 'timeDependent';
+            this.viewModel.simulationState.piHorizon = entry.horizon;
+        }
     }
 
     // Empties the Policy log (rightPanel.js's "clear" link).

@@ -604,7 +604,7 @@ class TopBar {
         this.viTInput.addClass('toolbar-t-input');
         this.viTInput.attribute('min', '0');
         this.viTInput.attribute('max', '100');
-        this.viTInput.attribute('title', 'Max sweeps before giving up');
+        this.viTInput.attribute('title', 'Safety cap — Iteration stops here even if it has not converged');
         this.viTInput.size(50);
     }
 
@@ -847,10 +847,14 @@ class TopBar {
         }
     }
 
-    // canStep: can advance one sweep (T cap only). canPlay: canStep AND not yet converged -
-    // Play auto-stops at convergence, but Step/Skip keep working past it (re-confirming the fixed
-    // point) until the T cap. Defaults keep older 2-arg callers working.
-    updateVIButtonStates(isPlaying, canStep, canPlay = canStep) {
+    // canStep: can advance (T cap only in the 3 non-diagram quadrants; "does the live sweep have
+    // an un-revealed state left" in known:full - see ViStatesView.canRevealNextState()). canPlay:
+    // "Find Optimal"'s own enablement (canStep AND not yet converged in the non-diagram
+    // quadrants; always just the T cap in known:full, independent of per-state reveal progress -
+    // see ViStatesView.canSkipCurrentState()). canSkip defaults to canStep, keeping every
+    // pre-existing 3-arg call site (the other 3 quadrants + Learning Iteration, where Step and
+    // Skip always share the same enablement) unchanged.
+    updateVIButtonStates(isPlaying, canStep, canPlay = canStep, canSkip = canStep) {
         if (isPlaying) {
             this.setVIPlayPauseMode('pause');
         } else {
@@ -868,7 +872,7 @@ class TopBar {
         }
 
         if (this.viSkipBtn) {
-            if (!isPlaying && canStep) this.viSkipBtn.removeAttribute('disabled');
+            if (!isPlaying && canSkip) this.viSkipBtn.removeAttribute('disabled');
             else this.viSkipBtn.attribute('disabled', '');
         }
     }

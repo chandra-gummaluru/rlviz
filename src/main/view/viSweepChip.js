@@ -1,15 +1,24 @@
-// Floating, top-right Values -> Method (vi) status chip. Mirrors McRunsPill/ZoomPill's
-// floating-chip pattern. Shows the live sweep count and convergence delta:
-//   sweep 0        -> "sweep 0 / T · π = init"
-//   unconverged    -> "sweep k / T · Δ = 0.xxxx"   (yellow)
-//   converged      -> "✓ Δ < 0.01"                 (green)
+// Floating Values -> Method (vi) stop-condition chip, right-aligned to the canvas region on the
+// same row as estimatorPill.js's top-left method badge ("Value Iteration" etc.) - mirrors
+// rightPanel.js's own "title top-left, stop condition right-aligned" header-row convention.
+// Leads with the convergence stop condition, never "sweep" language (Evaluate redesign Phase 4):
+//   pre-init       -> "press Run to start"
+//   k=0            -> label + formula, value = "init"
+//   unconverged    -> label + formula, value = live Δ (orange)
+//   converged      -> label + formula, value = Δ + ✓ (green)
 // Hidden outside the Method sub-view; wired via the mode-lifecycle hooks in main.js and refreshed
 // from VIPresenter's sweep-start/complete/reset callbacks.
 class ViSweepChip {
-    constructor(canvasViewModel) {
+    // estimatorPill: the sibling pill whose badgeEl this chip docks beside - constructed before
+    // this one in main.js, so its badgeEl already exists by the time this reads its bounding rect.
+    constructor(canvasViewModel, estimatorPill) {
         this.viewModel = canvasViewModel;
+        this.estimatorPill = estimatorPill;
         this.containerEl = null;
-        this.textEl = null;
+        this.labelEl = null;
+        this.formulaEl = null;
+        this.valueEl = null;
+        this.plainTextEl = null;
         this._bounds = null;
     }
 
@@ -23,53 +32,83 @@ class ViSweepChip {
         document.body.appendChild(container);
         this.containerEl = container;
 
-        const text = document.createElement('span');
-        text.className = 'vi-sweep-chip-text';
-        container.appendChild(text);
-        this.textEl = text;
+        const plainText = document.createElement('span');
+        plainText.className = 'vi-sweep-chip-plain';
+        container.appendChild(plainText);
+        this.plainTextEl = plainText;
+
+        const label = document.createElement('span');
+        label.className = 'vi-sweep-chip-label';
+        label.textContent = 'Stop condition';
+        container.appendChild(label);
+        this.labelEl = label;
+
+        const formula = document.createElement('span');
+        formula.className = 'vi-sweep-chip-formula';
+        container.appendChild(formula);
+        this.formulaEl = formula;
+
+        const value = document.createElement('span');
+        value.className = 'vi-sweep-chip-value';
+        container.appendChild(value);
+        this.valueEl = value;
 
         this.refresh();
     }
 
-    // x, width: the canvas region (same convention as McRunsPill) - anchored to its right edge.
+    // x, width: the canvas region (same bounds convention as EstimatorPill/McRunsPill) - anchors
+    // this chip to its right edge instead of docking beside the badge.
     updateBounds(x, width) {
         this._bounds = { x, width };
         this._applyLayout();
     }
 
+    // Right-aligned to the canvas region, same row as estimatorPill.js's top-left method badge -
+    // reads the badge's LIVE bounding rect (not a cached value) only for vertical (top) alignment,
+    // so this stays correct across quadrant changes that resize the badge's text (e.g.
+    // "Value Iteration" vs "PO Q-Learning").
     _applyLayout() {
-        if (!this.containerEl || !this._bounds) return;
+        if (!this.containerEl) return;
+        const badgeEl = this.estimatorPill && this.estimatorPill.badgeEl;
+        let top = this._topOffset;
+        if (badgeEl && badgeEl.style.display !== 'none') {
+            const rect = badgeEl.getBoundingClientRect();
+            if (rect.width > 0) top = rect.top;
+        }
+
+        if (!this._bounds) return;
         this.containerEl.style.left = (this._bounds.x + this._bounds.width - 12) + 'px';
         this.containerEl.style.transform = 'translateX(-100%)';
+        this.containerEl.style.top = top + 'px';
     }
 
     refresh() {
-        if (!this.textEl || !this.containerEl) return;
+        if (!this.containerEl) return;
+        this.containerEl.classList.remove('vi-sweep-chip--converged', 'vi-sweep-chip--unconverged', 'vi-sweep-chip--plain');
         const vi = this.viewModel.valueIterationState;
-        this.containerEl.classList.remove('vi-sweep-chip--converged', 'vi-sweep-chip--unconverged');
 
         if (!vi || !vi.initialized) {
-            this.textEl.textContent = 'press Run to start';
-            return;
+            this.containerEl.classList.add('vi-sweep-chip--plain');
+            this.plainTextEl.textContent = 'press Run to start';
+        } else {
+            const epsilonStr = vi.epsilon.toFixed(3);
+            this.formulaEl.innerHTML = KatexRenderer.render(`\\|V_{t+1} - V_t\\| < ${epsilonStr}`, false);
+
+            const k = vi.currentSweepIndex;
+            if (vi.converged) {
+                const d = vi.getDelta(k);
+                this.valueEl.textContent = `${(d ?? 0).toFixed(3)} ✓`;
+                this.containerEl.classList.add('vi-sweep-chip--converged');
+            } else if (k === 0) {
+                this.valueEl.textContent = 'init';
+            } else {
+                const d = vi.getDelta(k);
+                this.valueEl.textContent = (d ?? 0).toFixed(3);
+                this.containerEl.classList.add('vi-sweep-chip--unconverged');
+            }
         }
 
-        const k = vi.currentSweepIndex;
-        const T = vi.T;
-
-        if (vi.converged) {
-            this.textEl.textContent = `✓ Δ < ${vi.epsilon.toFixed(2)}`;
-            this.containerEl.classList.add('vi-sweep-chip--converged');
-            return;
-        }
-
-        if (k === 0) {
-            this.textEl.textContent = `sweep 0 / ${T} · π = init`;
-            return;
-        }
-
-        const d = vi.getDelta(k);
-        this.textEl.textContent = `sweep ${k} / ${T} · Δ = ${(d ?? 0).toFixed(4)}`;
-        this.containerEl.classList.add('vi-sweep-chip--unconverged');
+        this._applyLayout();
     }
 
     show() {

@@ -19,6 +19,13 @@ class VIPlayInteractor extends VIPlayInputBoundary {
         }
 
         this.viState.play();
-        this.animator.continuousPlay();
+        // If a loop is still alive (including suspended mid-pause, inside animateOneSweep()'s
+        // awaitReveal()), this Play click is really "resume a paused reveal" - flipping isPlaying
+        // back on above is enough to let that SAME suspended call continue once the (now resumed,
+        // see main.js's onVIPlay) reveal finishes. Starting a second continuousPlay() here would
+        // independently compute another sweep out from under the one still paused mid-reveal.
+        if (!this.animator.isLoopRunning()) {
+            this.animator.continuousPlay();
+        }
     }
 }

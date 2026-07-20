@@ -177,15 +177,26 @@ class ViEquationView {
     // --- Reveal engine ---
 
     _startReveal(detail, priorValues, colors, stateName) {
-        const startTime = Date.now();
         // speedScale > 1 slows the reveal down (a given amount of real wall-clock time maps to
         // less "virtual" phase-progress time), < 1 speeds it up - matching the app's existing
         // animation-speed slider convention (see viBackupDiagram.js's drawAnimated() for the same
-        // scaling applied to the left-pane cards' own reveal).
-        const speedScale = this.getSpeedScale();
+        // scaling applied to the left-pane cards' own reveal). Re-read every frame (not just
+        // once) so a mid-reveal slider change takes effect immediately - when it changes, rebase
+        // startTime so plugging the NEW speedScale into the elapsed formula below reproduces the
+        // SAME elapsed value at that instant, continuing smoothly instead of jumping (elapsed is
+        // derived from a fixed startTime + Date.now(), unlike drawAnimated()'s per-move rAF
+        // timestamps, so the rebase target here is startTime itself, not a "how far into this
+        // move" delta).
+        let startTime = Date.now();
+        let lastSpeedScale = this.getSpeedScale();
         const tick = () => {
-            const realElapsed = Date.now() - startTime;
-            const elapsed = Math.min(realElapsed / speedScale, VEV_TOTAL_MS);
+            const liveSpeedScale = this.getSpeedScale();
+            if (liveSpeedScale !== lastSpeedScale) {
+                const elapsedSoFar = Math.min((Date.now() - startTime) / lastSpeedScale, VEV_TOTAL_MS);
+                startTime = Date.now() - elapsedSoFar * liveSpeedScale;
+                lastSpeedScale = liveSpeedScale;
+            }
+            const elapsed = Math.min((Date.now() - startTime) / liveSpeedScale, VEV_TOTAL_MS);
             this._renderFrame(detail, priorValues, colors, stateName, elapsed);
             if (elapsed < VEV_TOTAL_MS) {
                 this._rafHandle = requestAnimationFrame(tick);
@@ -357,7 +368,7 @@ class ViEquationView {
             ctx.textAlign = 'center';
             ctx.textBaseline = 'alphabetic';
             ctx.globalAlpha = 0.6;
-            ctx.fillText('t = k−1 (prior sweep)', transX, h - 8);
+            ctx.fillText('t = k−1 (prior iteration)', transX, h - 8);
             ctx.globalAlpha = 1;
         }
     }

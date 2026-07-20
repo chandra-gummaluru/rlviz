@@ -219,7 +219,13 @@ class MainView {
                 // split, drawn full-width exactly as today (isSplit is false there, leftW is 0).
                 if (quadrant === 'unknown:full' && this.learningIterationView) {
                     this.learningIterationView.draw();
-                } else if (this.viewModel.valueIterationViewModel.rightView !== 'equation') {
+                } else if (this.viewModel.valueIterationViewModel.rightView === 'graph') {
+                    // 'graph' is no longer a reachable rightView value from the UI (viRightViewPill
+                    // only offers 'equation'/'chart' now) - this branch, and ValueIterationView
+                    // itself, are kept rather than deleted, just unreachable in practice. An
+                    // explicit '=== graph' check (rather than the old '!== equation') matters here:
+                    // 'chart' must NOT also fall into this branch and draw the live graph
+                    // underneath ViChartView's own DOM overlay.
                     this.valueIterationView.draw();
                 }
                 if (isSplit) drawingContext.restore();
@@ -262,6 +268,10 @@ class MainView {
         if (!_inTreeView) this.drawHighlightedEdgeTravelBall();
 
         pop();
+
+        // π badge (Evaluate redesign Phase 6) - screen-space, drawn after pop() so pan/zoom
+        // doesn't affect it (no resetMatrix() needed since we're already outside the push()).
+        if (this._isEditableMode()) this._drawPiBadge();
 
         // Continuous redraw during animated simulation phases. Tree view's 'transition' phase is
         // additionally included here (gated to Tree view only) because it now drives a real
@@ -332,6 +342,46 @@ class MainView {
         const quadrant = ValuesMethodMatrix.key(this.viewModel.modelKnown, this.viewModel.observability);
         if (quadrant === 'unknown:full') return null;
         return this.expectationView.expectationViewModel.splitWidths(usableW);
+    }
+
+    // π badge (Evaluate redesign Phase 6): "π at t = k · <action>" while a time-dependent policy
+    // is active, "π · all t" while stationary - small top-left screen-space chip, positioned below
+    // the floating tool palette so it never overlaps it (see toolPalette.js's own placement).
+    _drawPiBadge() {
+        const simulationState = this.viewModel.simulationState;
+        if (!simulationState) return;
+
+        let label;
+        if (simulationState.isTimeDependent()) {
+            const t = this.viewModel.interaction.piTCursor || 0;
+            const states = this.viewModel.graph.nodes.filter(n => n.type === 'state' && (n.actions || []).length > 0);
+            const first = states[0];
+            const action = first ? simulationState.getTimeDependentAction(first.id, t) : null;
+            const actionNode = action && action !== 'random'
+                ? this.viewModel.graph.nodes.find(n => n.type === 'action' && n.id === action)
+                : null;
+            const actionLabel = actionNode ? actionNode.name : (action === 'random' ? 'random' : '—');
+            label = `π at t = ${t} · ${actionLabel}`;
+        } else {
+            label = 'π · all t';
+        }
+
+        push();
+        const badgeX = 14;
+        const badgeY = 236; // below toolPalette.js's own floating panel (topOffset+12, ~4 rows tall)
+        textSize(11);
+        textFont(Typography.mono());
+        const padX = 9;
+        const w = textWidth(label) + padX * 2;
+        fill(AppPalette.surface.card);
+        stroke(AppPalette.border.medium);
+        strokeWeight(1);
+        rect(badgeX, badgeY, w, 22, 6);
+        noStroke();
+        fill(AppPalette.text.dark);
+        textAlign(LEFT, CENTER);
+        text(label, badgeX + padX, badgeY + 11);
+        pop();
     }
 
     drawMessages() {
@@ -1362,47 +1412,55 @@ class MainView {
                 // +56 clears estimatorPill's top-left method badge - see main.js's
                 // setUpVISplitChrome() for the same inset applied on initial setup/mode-entry.
                 const topInset = 56;
+                // Left pane always shows States now - Chart moved to the right pane's own pill
+                // (merged with Equation), so there's no left-pane toggle left to respect.
                 this.viStatesView.updateBounds(0, this.TOP_BARS_HEIGHT + topInset, viSplit.leftW, valuesHeight - topInset);
-                if (this.viChartView) this.viChartView.updateBounds(0, this.TOP_BARS_HEIGHT + topInset, viSplit.leftW, valuesHeight - topInset);
-                // Respect whichever of States/Chart is currently selected (viLeftViewPill's
-                // [States|Chart] toggle) rather than unconditionally showing States - this branch
-                // predates that toggle (Phase 3b) and would otherwise force States back on top of
-                // an active Chart view on every resize.
-                const showChart = this.viewModel.valueIterationViewModel
-                    && this.viewModel.valueIterationViewModel.leftView === 'chart';
-                if (showChart) {
-                    this.viStatesView.hide();
-                    if (this.viChartView) this.viChartView.show();
-                } else {
-                    if (this.viChartView) this.viChartView.hide();
-                    this.viStatesView.show();
-                }
-                if (this.viLeftViewPill) {
-                    this.viLeftViewPill.updateBounds(viSplit.leftW, viSplit.rightW);
-                    this.viLeftViewPill.show();
-                }
-                // Respect whichever of Equation/Graph is currently selected (viRightViewPill's
-                // [Equation|Graph] toggle) - mirrors the leftView/showChart branch above.
-                const showGraph = this.viewModel.valueIterationViewModel
-                    && this.viewModel.valueIterationViewModel.rightView === 'graph';
-                if (this.viEquationView) {
-                    if (showGraph) {
-                        this.viEquationView.hide();
+                this.viStatesView.show();
+
+                // Right pane shows exactly one of Equation/Backward/Chart, per viRightViewPill's
+                // own toggle (Backward only reachable while it's actually available - see
+                // ViRightViewPill.refresh()) - Graph is no longer a reachable rightView value (see
+                // draw()'s own comment), so nothing else needs to gate here.
+                const rightView = this.viewModel.valueIterationViewModel
+                    ? this.viewModel.valueIterationViewModel.rightView : 'equation';
+                if (this.viChartView) {
+                    if (rightView === 'chart') {
+                        this.viChartView.updateBounds(viSplit.leftW, this.TOP_BARS_HEIGHT + topInset, viSplit.rightW, valuesHeight - topInset);
+                        this.viChartView.show();
                     } else {
+                        this.viChartView.hide();
+                    }
+                }
+                if (this.viEquationView) {
+                    if (rightView === 'equation') {
                         this.viEquationView.updateBounds(viSplit.leftW, this.TOP_BARS_HEIGHT, viSplit.rightW, valuesHeight);
                         this.viEquationView.show();
+                    } else {
+                        this.viEquationView.hide();
+                    }
+                }
+                if (this.viBackwardView) {
+                    if (rightView === 'backward') {
+                        this.viBackwardView.updateBounds(viSplit.leftW, this.TOP_BARS_HEIGHT, viSplit.rightW, valuesHeight);
+                        this.viBackwardView.show();
+                    } else {
+                        this.viBackwardView.hide();
                     }
                 }
                 if (this.viRightViewPill) {
                     this.viRightViewPill.updateBounds(viSplit.leftW, viSplit.rightW);
                     this.viRightViewPill.show();
                 }
+                // Docks to the LEFT pane's own right edge, not the full canvas width - see
+                // main.js's _viSweepChipBounds() for why (avoids colliding with viRightViewPill,
+                // which right-anchors to the RIGHT pane on this same top row).
+                if (this.viSweepChip) this.viSweepChip.updateBounds(0, viSplit.leftW);
             } else {
                 this.viStatesView.hide();
                 if (this.viChartView) this.viChartView.hide();
-                if (this.viLeftViewPill) this.viLeftViewPill.hide();
                 if (this.viRightViewPill) this.viRightViewPill.hide();
                 if (this.viEquationView) this.viEquationView.hide();
+                if (this.viBackwardView) this.viBackwardView.hide();
             }
         }
 
@@ -1451,45 +1509,53 @@ class MainView {
                 // +56 clears estimatorPill's top-left method badge - see main.js's
                 // setUpVISplitChrome() for the same inset applied on initial setup/mode-entry.
                 const topInset = 56;
+                // Left pane always shows States now - see the identical comment in
+                // windowResized() above.
                 this.viStatesView.updateBounds(0, this.TOP_BARS_HEIGHT + topInset, viSplit.leftW, valuesHeight - topInset);
-                if (this.viChartView) this.viChartView.updateBounds(0, this.TOP_BARS_HEIGHT + topInset, viSplit.leftW, valuesHeight - topInset);
-                // Respect whichever of States/Chart is currently selected - see the identical
+                this.viStatesView.show();
+
+                // Right pane shows exactly one of Equation/Backward/Chart - see the identical
                 // comment in windowResized() above.
-                const showChart = this.viewModel.valueIterationViewModel
-                    && this.viewModel.valueIterationViewModel.leftView === 'chart';
-                if (showChart) {
-                    this.viStatesView.hide();
-                    if (this.viChartView) this.viChartView.show();
-                } else {
-                    if (this.viChartView) this.viChartView.hide();
-                    this.viStatesView.show();
-                }
-                if (this.viLeftViewPill) {
-                    this.viLeftViewPill.updateBounds(viSplit.leftW, viSplit.rightW);
-                    this.viLeftViewPill.show();
-                }
-                // Respect whichever of Equation/Graph is currently selected - see the identical
-                // comment in windowResized() above.
-                const showGraph = this.viewModel.valueIterationViewModel
-                    && this.viewModel.valueIterationViewModel.rightView === 'graph';
-                if (this.viEquationView) {
-                    if (showGraph) {
-                        this.viEquationView.hide();
+                const rightView = this.viewModel.valueIterationViewModel
+                    ? this.viewModel.valueIterationViewModel.rightView : 'equation';
+                if (this.viChartView) {
+                    if (rightView === 'chart') {
+                        this.viChartView.updateBounds(viSplit.leftW, this.TOP_BARS_HEIGHT + topInset, viSplit.rightW, valuesHeight - topInset);
+                        this.viChartView.show();
                     } else {
+                        this.viChartView.hide();
+                    }
+                }
+                if (this.viEquationView) {
+                    if (rightView === 'equation') {
                         this.viEquationView.updateBounds(viSplit.leftW, this.TOP_BARS_HEIGHT, viSplit.rightW, valuesHeight);
                         this.viEquationView.show();
+                    } else {
+                        this.viEquationView.hide();
+                    }
+                }
+                if (this.viBackwardView) {
+                    if (rightView === 'backward') {
+                        this.viBackwardView.updateBounds(viSplit.leftW, this.TOP_BARS_HEIGHT, viSplit.rightW, valuesHeight);
+                        this.viBackwardView.show();
+                    } else {
+                        this.viBackwardView.hide();
                     }
                 }
                 if (this.viRightViewPill) {
                     this.viRightViewPill.updateBounds(viSplit.leftW, viSplit.rightW);
                     this.viRightViewPill.show();
                 }
+                // Docks to the LEFT pane's own right edge, not the full canvas width - see
+                // main.js's _viSweepChipBounds() for why (avoids colliding with viRightViewPill,
+                // which right-anchors to the RIGHT pane on this same top row).
+                if (this.viSweepChip) this.viSweepChip.updateBounds(0, viSplit.leftW);
             } else {
                 this.viStatesView.hide();
                 if (this.viChartView) this.viChartView.hide();
-                if (this.viLeftViewPill) this.viLeftViewPill.hide();
                 if (this.viRightViewPill) this.viRightViewPill.hide();
                 if (this.viEquationView) this.viEquationView.hide();
+                if (this.viBackwardView) this.viBackwardView.hide();
             }
         }
         redraw();

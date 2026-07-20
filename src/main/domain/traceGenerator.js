@@ -11,9 +11,14 @@ class TraceGenerator {
      * @param {Object} policy - Optional stateId -> actionId map. Missing entries use random actions.
      * @param {Object} policyWeights - Optional stateId -> {actionId: rawWeight} map for explicit
      *   weighted-random policies. Consulted only for states with no deterministic policy entry.
+     * @param {Object|null} timeDependentPolicy - Optional stateId -> array[t] of (actionId |
+     *   'random') for a time-dependent (π_t) policy - a plain snapshot object, not a
+     *   SimulationState reference, matching how policy/policyWeights are already passed in. When
+     *   present, overrides policy/policyWeights for any state with an entry at the current elapsed
+     *   decision count; states with no entry fall through to policy/policyWeights unchanged.
      * @returns {Array} visited - Array of {id, type, name} objects representing the path
      */
-    generate(startNode, maxSteps = 50, policy = {}, policyWeights = {}) {
+    generate(startNode, maxSteps = 50, policy = {}, policyWeights = {}, timeDependentPolicy = null) {
         if (!startNode) {
             throw new Error('Start node is required');
         }
@@ -24,6 +29,8 @@ class TraceGenerator {
         const visited = [];
         let current = startNode;
         let stepCount = 0;
+        let elapsedT = 0; // increments once per DECISION (state node picking an action), matching
+                           // π_t's own elapsed-time indexing - not the raw node-visit count below.
 
         // Add start node
         visited.push(this.createVisitedEntry(current));
@@ -35,12 +42,16 @@ class TraceGenerator {
             if (current.type === 'state') {
                 // From state: follow selected policy action when present; otherwise sample by
                 // the state's weighted policy if configured, else uniform random.
-                const nextAction = this.selectActionForPolicy(current, policy, policyWeights);
+                const piTAction = timeDependentPolicy
+                    ? this._resolvePiTAction(timeDependentPolicy, current.id, elapsedT)
+                    : null;
+                const nextAction = this.selectActionForPolicy(current, policy, policyWeights, piTAction);
                 if (!nextAction) {
                     break;  // Terminal state
                 }
                 visited.push(this.createVisitedEntry(nextAction));
                 current = nextAction;
+                elapsedT++;
 
             } else if (current.type === 'action') {
                 // From action: pick random next state (weighted by probability)
@@ -56,13 +67,38 @@ class TraceGenerator {
         return visited;
     }
 
+    // Clamped read from a plain {stateId -> array} time-dependent policy snapshot - null if the
+    // state has no entry (selectActionForPolicy() then falls through to policy/policyWeights).
+    _resolvePiTAction(timeDependentPolicy, stateId, elapsedT) {
+        const seq = timeDependentPolicy[stateId];
+        if (!seq || seq.length === 0) return null;
+        const idx = Math.max(0, Math.min(seq.length - 1, elapsedT));
+        return seq[idx];
+    }
+
     /**
      * Select an action from a state using a deterministic policy when available, else a
-     * weighted-random policy when configured, else uniform random.
+     * weighted-random policy when configured, else uniform random. `piTAction` (a concrete
+     * actionId, the 'random' sentinel, or null), when non-null, overrides policy/policyWeights
+     * entirely for this call - see the time-dependent-policy param on generate() above.
      */
-    selectActionForPolicy(stateNode, policy = {}, policyWeights = {}) {
+    selectActionForPolicy(stateNode, policy = {}, policyWeights = {}, piTAction = null) {
         if (!stateNode.actions || stateNode.actions.length === 0) {
             return null;
+        }
+
+        if (piTAction !== null && piTAction !== undefined) {
+            if (piTAction === 'random') {
+                return this.selectRandomAction(stateNode);
+            }
+            const normalizedId = Number(piTAction);
+            const matchingActionId = stateNode.actions.find(actionId => Number(actionId) === normalizedId);
+            if (matchingActionId !== undefined) {
+                const actionNode = this.graph.nodes.find(n => n.type === 'action' && n.id === matchingActionId);
+                if (actionNode) return actionNode;
+            }
+            // Stale/invalid time-dependent entry (e.g. action deleted since it was set) - fall
+            // through to the stationary resolution below rather than crashing or dead-ending.
         }
 
         const selectedActionId = policy[stateNode.id];

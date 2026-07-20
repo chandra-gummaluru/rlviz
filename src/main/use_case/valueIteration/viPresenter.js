@@ -17,6 +17,7 @@ class VIPresenter extends VIOutputBoundary {
         this.statesView = null;
         this.chartView = null;
         this.equationView = null;
+        this.backwardView = null;
     }
 
     get viViewModel() {
@@ -34,6 +35,7 @@ class VIPresenter extends VIOutputBoundary {
     setStatesView(statesView) { this.statesView = statesView; }
     setChartView(chartView) { this.chartView = chartView; }
     setEquationView(equationView) { this.equationView = equationView; }
+    setBackwardView(backwardView) { this.backwardView = backwardView; }
 
     // --- Lifecycle events ---
 
@@ -43,6 +45,7 @@ class VIPresenter extends VIOutputBoundary {
         this._refreshStatesView();
         this._refreshChartView();
         this._refreshEquationView();
+        this._refreshBackwardView();
         this._updateButtonStates();
         this._redraw();
         this._updateRightPanel();
@@ -58,6 +61,7 @@ class VIPresenter extends VIOutputBoundary {
         this._refreshStatesView();
         this._refreshChartView();
         this._refreshEquationView();
+        this._refreshBackwardView();
         this._updateButtonStates();
         this._redraw();
         this._updateRightPanel();
@@ -69,6 +73,7 @@ class VIPresenter extends VIOutputBoundary {
         this._refreshStatesView();
         this._refreshChartView();
         this._refreshEquationView();
+        this._refreshBackwardView();
         this._updateButtonStates();
         this._redraw();
         this._updateRightPanel();
@@ -86,6 +91,7 @@ class VIPresenter extends VIOutputBoundary {
         this._refreshStatesView();
         this._refreshChartView();
         this._refreshEquationView();
+        this._refreshBackwardView();
         this._updateButtonStates();
         this._redraw();
         this._updateRightPanel();
@@ -289,6 +295,13 @@ class VIPresenter extends VIOutputBoundary {
     // refresh hooks already are.
     _refreshEquationView() {
         if (this.equationView) this.equationView.refresh();
+    }
+
+    // The Backward right-pane view (Evaluate redesign Phase 6) - refresh() itself is a no-op
+    // while hidden (rightView !== 'backward', not offered outside known:full + π_t, or nothing
+    // selected), so this is safe to call on every lifecycle event the same way _refreshEquationView() is.
+    _refreshBackwardView() {
+        if (this.backwardView) this.backwardView.refresh();
     }
 
     _updateRightPanel() {

@@ -297,6 +297,17 @@ function _isLearningIterationActive() {
     return ValuesMethodMatrix.key(canvasViewModel.modelKnown, canvasViewModel.observability) === 'unknown:full';
 }
 
+// viSweepChip only ever shows for the 3 split quadrants (Learning Iteration hides it in favor of
+// its own Graph|Tree pill in the same slot - see refreshLearningTreePill()), so its right edge
+// docks to the LEFT pane's own right edge (viSplit.leftW), not the full canvas width - anchoring
+// to the canvas's right edge would collide with viRightViewPill.js, which already right-anchors
+// to the RIGHT pane at this same top row.
+function _viSweepChipBounds() {
+    const w = windowWidth - mainView.RIGHT_PANEL_WIDTH;
+    const viSplit = mainView._viSplitWidths(w);
+    return { x: 0, width: viSplit ? viSplit.leftW : w };
+}
+
 // Idempotently seeds the Q-learning tree root from the current start state, so Tree mode shows a
 // root placeholder immediately on entering the quadrant (not gated behind the first Run/Step).
 function ensureQLRoot() {
@@ -321,7 +332,8 @@ function refreshLearningTreePill() {
     } else {
         learningTreePill.hide();
         if (inVi && mainView.viSweepChip) {
-            mainView.viSweepChip.updateBounds(0, w);
+            const b = _viSweepChipBounds();
+            mainView.viSweepChip.updateBounds(b.x, b.width);
             mainView.viSweepChip.show();
             mainView.viSweepChip.refresh();
         }
@@ -352,7 +364,8 @@ function enterMCSubView() {
             expectationState.displayRuns,
             expectationState.maxSteps,
             expectationState.gamma,
-            Object.assign({}, simulationState.policyWeights)
+            Object.assign({}, simulationState.policyWeights),
+            simulationState.isTimeDependent() ? simulationState.timeDependentPolicy : null
         ));
     }
 
@@ -436,37 +449,44 @@ function setUpVISplitChrome() {
     const topInset = 56;
 
     if (viSplit) {
-        const showChart = valueIterationViewModel.leftView === 'chart';
+        // Left pane always shows States now - Chart moved to the right pane's own pill (merged
+        // with Equation), so there's no left-pane toggle left to respect.
         mainView.viStatesView.updateBounds(0, mainView.TOP_BARS_HEIGHT + topInset, viSplit.leftW, canvasH - topInset);
-        mainView.viChartView.updateBounds(0, mainView.TOP_BARS_HEIGHT + topInset, viSplit.leftW, canvasH - topInset);
-        if (showChart) {
-            mainView.viStatesView.hide();
+        mainView.viStatesView.show();
+
+        // Right pane shows exactly one of Equation/Backward/Chart, per viRightViewPill's own
+        // toggle - Graph is no longer reachable (see mainView.js draw()'s own comment).
+        const rightView = valueIterationViewModel.rightView;
+        // Same +56 inset as viStatesView's own, so the Q-table card's top edge lines up with the
+        // left pane's "t = 0" card instead of starting higher and colliding with viRightViewPill.
+        mainView.viChartView.updateBounds(viSplit.leftW, mainView.TOP_BARS_HEIGHT + topInset, viSplit.rightW, canvasH - topInset);
+        if (rightView === 'chart') {
             mainView.viChartView.show();
         } else {
             mainView.viChartView.hide();
-            mainView.viStatesView.show();
         }
-        if (mainView.viLeftViewPill) {
-            mainView.viLeftViewPill.updateBounds(viSplit.leftW, viSplit.rightW);
-            mainView.viLeftViewPill.show();
-            mainView.viLeftViewPill.refresh();
-        }
-
-        const showGraph = valueIterationViewModel.rightView === 'graph';
-        if (showGraph) {
-            mainView.viEquationView.hide();
-        } else {
+        if (rightView === 'equation') {
             mainView.viEquationView.updateBounds(viSplit.leftW, mainView.TOP_BARS_HEIGHT, viSplit.rightW, canvasH);
             mainView.viEquationView.show();
+        } else {
+            mainView.viEquationView.hide();
+        }
+        if (mainView.viBackwardView) {
+            if (rightView === 'backward') {
+                mainView.viBackwardView.updateBounds(viSplit.leftW, mainView.TOP_BARS_HEIGHT, viSplit.rightW, canvasH);
+                mainView.viBackwardView.show();
+            } else {
+                mainView.viBackwardView.hide();
+            }
         }
         mainView.viRightViewPill.updateBounds(viSplit.leftW, viSplit.rightW);
         mainView.viRightViewPill.show();
     } else {
         mainView.viStatesView.hide();
         mainView.viChartView.hide();
-        if (mainView.viLeftViewPill) mainView.viLeftViewPill.hide();
         if (mainView.viRightViewPill) mainView.viRightViewPill.hide();
         if (mainView.viEquationView) mainView.viEquationView.hide();
+        if (mainView.viBackwardView) mainView.viBackwardView.hide();
     }
 }
 
@@ -511,10 +531,10 @@ canvasController.registerModeLifecycle({
             if (mainView && mainView.expectationChartView) mainView.expectationChartView.hide();
             if (mainView && mainView.viSweepChip) mainView.viSweepChip.hide();
             if (mainView && mainView.viStatesView) mainView.viStatesView.hide();
-            if (mainView && mainView.viLeftViewPill) mainView.viLeftViewPill.hide();
             if (mainView && mainView.viChartView) mainView.viChartView.hide();
             if (mainView && mainView.viRightViewPill) mainView.viRightViewPill.hide();
             if (mainView && mainView.viEquationView) mainView.viEquationView.hide();
+            if (mainView && mainView.viBackwardView) mainView.viBackwardView.hide();
             if (learningTreePill) learningTreePill.hide();
         },
         // Policy's canvas is now identical to Build's (fully editable - only the right panel
@@ -610,7 +630,8 @@ canvasController.registerModeLifecycle({
                 }
                 if (mainView && mainView.zoomPill) mainView.zoomPill.show();
                 if (mainView && mainView.viSweepChip) {
-                    mainView.viSweepChip.updateBounds(0, windowWidth - mainView.RIGHT_PANEL_WIDTH);
+                    const b = _viSweepChipBounds();
+                    mainView.viSweepChip.updateBounds(b.x, b.width);
                     mainView.viSweepChip.show();
                     mainView.viSweepChip.refresh();
                 }
@@ -627,7 +648,6 @@ canvasController.registerModeLifecycle({
             if (mainView && mainView.viSweepChip) mainView.viSweepChip.hide();
             if (learningTreePill) learningTreePill.hide();
             if (mainView && mainView.viStatesView) mainView.viStatesView.hide();
-            if (mainView && mainView.viLeftViewPill) mainView.viLeftViewPill.hide();
             if (mainView && mainView.viChartView) mainView.viChartView.hide();
             if (mainView && mainView.viRightViewPill) mainView.viRightViewPill.hide();
             if (mainView && mainView.viEquationView) mainView.viEquationView.hide();
@@ -657,7 +677,8 @@ canvasController.registerModeLifecycle({
                 }
             }
             if (mainView && mainView.viSweepChip) {
-                mainView.viSweepChip.updateBounds(0, windowWidth - mainView.RIGHT_PANEL_WIDTH);
+                const b = _viSweepChipBounds();
+                mainView.viSweepChip.updateBounds(b.x, b.width);
                 mainView.viSweepChip.show();
                 mainView.viSweepChip.refresh();
             }
@@ -682,13 +703,6 @@ const onModeChange = (mode) => {
     // to run unconditionally here.
     canvasController.dismissGoalCard();
     if (mainView && mainView.goalCard) mainView.goalCard.refresh();
-    redraw();
-};
-
-const onValuesSubViewChange = (subView) => {
-    canvasController.setValuesSubView(subView);
-    if (topBar) topBar.refreshValuesSubView(subView);
-    if (estimatorPill) estimatorPill.refresh();
     redraw();
 };
 
@@ -803,18 +817,29 @@ const refreshVIButtons = () => {
     // always enabled. Reuse the same quadrant check onVIPlay/onVIStep/onVIReset already use,
     // rather than re-deriving it here.
     if (_isLearningIterationActive()) {
-        topBar.updateVIButtonStates(false, true, true);
+        topBar.updateVIButtonStates(false, true, true, true);
         return;
     }
-    const { canStep, canPlay } = valueIterationState.getButtonEnablement();
-    topBar.updateVIButtonStates(valueIterationState.isPlaying, canStep, canPlay);
+    // known:full (real Value Iteration): Step/Skip are gated by whether the live sweep's
+    // per-state reveal has anything left, NOT by the sweep-level T-cap/convergence check below -
+    // crossing into a new sweep is "Find Optimal"'s job alone now. canPlay ("Find Optimal"'s own
+    // enablement) is unaffected either way.
+    const enablement = valueIterationState.getButtonEnablement();
+    if (mainView && mainView.viStatesView && mainView.viStatesView.isDiagramQuadrant()) {
+        const canStep = mainView.viStatesView.canRevealNextState();
+        const canSkip = mainView.viStatesView.canSkipCurrentState();
+        topBar.updateVIButtonStates(valueIterationState.isPlaying, canStep, enablement.canPlay, canSkip);
+        return;
+    }
+    topBar.updateVIButtonStates(valueIterationState.isPlaying, enablement.canStep, enablement.canPlay);
 };
 
 const ensureVIInitialized = () => {
     if (valueIterationState.initialized) return;
     const T = topBar ? topBar.getVIT() : 8;
     const gamma = rightPanel ? rightPanel.discountFactor : 0.9;
-    runVIInteractor.execute(new RunVIInputData(T, gamma));
+    const epsilon = rightPanel ? rightPanel.viEpsilon : 0.01;
+    runVIInteractor.execute(new RunVIInputData(T, gamma, epsilon));
 };
 
 // The VI Play/Step/Skip/Reset buttons are shared by all four Values-mode Method quadrants. In
@@ -837,11 +862,22 @@ const onVIPlay = () => {
     if (!runVIInteractor || !viPlayInteractor) return;
     ensureVIInitialized();
     viPlayInteractor.execute(new VIPlayInputData());
+    // Resume takes priority over refresh() - if a reveal was paused mid-animation, this
+    // continues it exactly where it was; refresh() alone only covers the very first frame of
+    // a genuinely NEW sweep, before its own first beat completes. Must run BEFORE
+    // refreshVIButtons() below - see onVIPause()'s own comment for why the ordering matters.
+    // clearStepMode() must run BEFORE resumeActiveReveal() - if VIPlayInteractor's own
+    // continuousPlay() loop is already suspended awaiting this exact reveal (isLoopRunning()
+    // true, so execute() above didn't start a fresh loop), THIS resumeActiveReveal() call is the
+    // only thing that wakes it back up, and without clearing step mode first, a Step-paused
+    // reveal would just play one more move and immediately re-pause instead of "Find Optimal"
+    // genuinely taking over.
+    if (mainView && mainView.viStatesView) {
+        mainView.viStatesView.clearStepMode();
+        mainView.viStatesView.resumeActiveReveal();
+        mainView.viStatesView.refresh();
+    }
     refreshVIButtons();
-    // The real per-tick refresh during continuous Play happens via VIPresenter's own
-    // presentSweepComplete()/presentComplete() (see viPresenter.js's _refreshStatesView()) - this
-    // call just covers the very first frame, before the first beat completes.
-    if (mainView && mainView.viStatesView) mainView.viStatesView.refresh();
 };
 
 const onVIPause = () => {
@@ -849,6 +885,13 @@ const onVIPause = () => {
     if (_isLearningIterationActive()) return;
     if (!viPauseInteractor) return;
     viPauseInteractor.execute(new VIPauseInputData());
+    // Freezes whichever state is currently mid-reveal exactly where it is, instead of only
+    // preventing the NEXT sweep from starting once the current one finishes on its own. Must run
+    // BEFORE refreshVIButtons() below - ViStatesView.canRevealNextState() treats a PAUSED reveal
+    // as "Step may resume it" (enabled), but only once _activeReveal.paused is actually true;
+    // refreshing buttons first would read the still-actively-playing state and leave Step
+    // incorrectly disabled with nothing left to ever re-enable it.
+    if (mainView && mainView.viStatesView) mainView.viStatesView.pauseActiveReveal();
     refreshVIButtons();
 };
 
@@ -1090,9 +1133,7 @@ function setup() {
     traceScrubber.hide();
     mainView.traceScrubber = traceScrubber;
 
-    estimatorPill = new EstimatorPill({
-        onSelectSubView: onValuesSubViewChange
-    }, canvasViewModel);
+    estimatorPill = new EstimatorPill({}, canvasViewModel);
     estimatorPill.setup(mainView.TOP_BARS_HEIGHT);
     estimatorPill.updateBounds(0, windowWidth - mainView.RIGHT_PANEL_WIDTH);
     mainView.estimatorPill = estimatorPill;
@@ -1121,7 +1162,7 @@ function setup() {
     mainView.mcLeftViewPill = mcLeftViewPill;
     mcLeftViewPill.hide();
 
-    viSweepChip = new ViSweepChip(canvasViewModel);
+    viSweepChip = new ViSweepChip(canvasViewModel, estimatorPill);
     viSweepChip.setup(mainView.TOP_BARS_HEIGHT);
     viSweepChip.updateBounds(0, windowWidth - mainView.RIGHT_PANEL_WIDTH);
     mainView.viSweepChip = viSweepChip;
@@ -1210,6 +1251,7 @@ function setup() {
         // node/line colors) - refresh() re-renders the current frame (held, non-replaying) with
         // the new palette.
         if (mainView.viEquationView) mainView.viEquationView.refresh();
+        if (mainView.viBackwardView) mainView.viBackwardView.refresh();
     };
 
     canvasViewModel._onUndoRedoChange = (canUndo, canRedo) => {
@@ -1243,9 +1285,20 @@ function setup() {
 
     // Between-sweep pause AND the beat's own pulse duration both track the animation-speed
     // slider (fast .. slow). Beat range (150-450ms) is centered on the old fixed 300ms default.
+    // awaitReveal lets continuous Play's ("Find Optimal" in known:full) sweep-advance pacing
+    // catch up on/wait for the States view's own per-card reveal to actually finish (instead of
+    // racing a fixed timer against it) - viStatesView is declared further below in this same
+    // function scope, but these arrow functions only read it at call time (well after that const
+    // has run), so the forward reference is safe. revealNextState/skipCurrentState let
+    // VIStepInteractor/VISkipInteractor claim a Step/Skip click for known:full's own per-state
+    // reveal before falling through to the old sweep-level advance.
     const viAnimOptions = {
         getPauseMs: () => Math.round(150 + 650 * currentSpeed),
-        getBeatMs: () => Math.round(150 + 300 * currentSpeed)
+        getBeatMs: () => Math.round(150 + 300 * currentSpeed),
+        awaitReveal: () => (viStatesView ? viStatesView.playRemainingLiveSweep() : Promise.resolve()),
+        isRevealActive: () => (viStatesView ? viStatesView.hasActiveReveal() : false),
+        revealNextState: () => (viStatesView ? viStatesView.revealNextState() : false),
+        skipCurrentState: () => (viStatesView ? viStatesView.skipCurrentState() : false)
     };
     runVIInteractor = new RunVIInteractor(graph, valueIterationState, viPresenter);
     viPlayInteractor = new VIPlayInteractor(valueIterationState, viPresenter, graph, viAnimOptions);
@@ -1286,18 +1339,21 @@ function setup() {
     // matches this reveal's own calibrated base pacing (scale=1).
     const getVIRevealSpeedScale = () => viAnimOptions.getBeatMs() / 300;
     const viStatesView = new ViStatesView(
-        canvasViewModel, valueIterationState, valueIterationViewModel, getVIRevealSpeedScale);
+        canvasViewModel, valueIterationState, valueIterationViewModel, getVIRevealSpeedScale,
+        // A live-section card's animation can finish entirely on its own (no click involved) -
+        // canRevealNextState()/canSkipCurrentState() flipping back to true at that moment needs
+        // its own button refresh, since nothing else would trigger one (see ViStatesView's own
+        // onRevealProgress doc comment).
+        () => refreshVIButtons());
     mainView.viStatesView = viStatesView;
-    const viLeftViewPill = new ViLeftViewPill({
-        onSelectLeftView: (key) => {
-            valueIterationViewModel.leftView = key;
-            viLeftViewPill.refresh();
-            setUpVISplitChrome();
-            if (typeof redraw === 'function') redraw();
-        }
-    }, canvasViewModel);
-    mainView.viLeftViewPill = viLeftViewPill;
+    // Repaint already-drawn (non-animating) backup-diagram cards once a node photo they reference
+    // finishes loading - ViBackupDiagram itself only caches/draws images, it has no notion of
+    // "which cards exist" to repaint on its own.
+    ViBackupDiagram.setOnImageLoaded(() => viStatesView.redrawStaticCards());
 
+    // ViChartView now lives in the RIGHT pane (merged into viRightViewPill's own [Equation|Chart]
+    // toggle below) - the left pane always shows States, so there's no left-pane pill anymore
+    // (viLeftViewPill.js is kept, just unwired, same treatment as Graph - see viRightViewPill.js).
     const viChartView = new ViChartView(canvasViewModel, valueIterationState, expectationState);
     mainView.viChartView = viChartView;
     // Called here (immediately after construction), not at the viSweepChip.setup() call site the
@@ -1305,7 +1361,6 @@ function setup() {
     // than this const's own declaration, which would throw a TDZ ReferenceError. Still satisfies
     // "call .setup() during app bootstrap"; see the Task 5 report for the full explanation.
     viStatesView.setup();
-    viLeftViewPill.setup(mainView.TOP_BARS_HEIGHT);
     viChartView.setup();
     // Wires the real per-sweep-advance refresh hook (Play tick / Step / Skip / Reset all funnel
     // through VIPresenter's own lifecycle methods - see viPresenter.js's _refreshStatesView()).
@@ -1334,6 +1389,13 @@ function setup() {
 
     viPresenter.setEquationView(viEquationView);
 
+    // Backward view (Evaluate redesign Phase 6) - offered only in known:full while a
+    // time-dependent policy is active, gated by ViRightViewPill itself.
+    const viBackwardView = new ViBackwardView(canvasViewModel, valueIterationState, valueIterationViewModel);
+    mainView.viBackwardView = viBackwardView;
+    viBackwardView.setup();
+    viPresenter.setBackwardView(viBackwardView);
+
     // BUG FIX (found during Task 7's own Step 9 verification, outside the brief's explicit step
     // list but within its file scope): ViStatesView.onActiveStateChanged is a real hook the States
     // view's card click handler already invokes (see viStatesView.js's _buildCard()), but nothing
@@ -1345,6 +1407,7 @@ function setup() {
     // card... confirm the Equation pane's header renders...").
     viStatesView.onActiveStateChanged = () => {
         if (mainView.viEquationView) mainView.viEquationView.refresh();
+        if (mainView.viBackwardView) mainView.viBackwardView.refresh();
     };
 
     // ===== Learning Iteration (unknown:full) real Q-learning wiring =====
@@ -1506,7 +1569,8 @@ function setup() {
             expectationState.displayRuns,
             expectationState.maxSteps,
             expectationState.gamma,
-            Object.assign({}, simulationState.policyWeights)
+            Object.assign({}, simulationState.policyWeights),
+            simulationState.isTimeDependent() ? simulationState.timeDependentPolicy : null
         ));
         if (expectationView) expectationView.updateScrubberMax();
     };

@@ -6,15 +6,16 @@
 // (clicking a Q-table cell) plus the currently-focused state id.
 class ValueIterationViewModel {
     constructor() {
-        // 'states' (default) or 'chart' - which view the left pane currently shows, for the 3
-        // split quadrants (Phase 3b's own screen split). Presentation only, mirrors
-        // ExpectationViewModel.leftView's exact shape/convention - lives here, not in reset(), so
-        // a VI Reset/Initialize (which calls reset()) doesn't silently flip the left pane back to
-        // States while the DOM/pill are still showing Chart.
+        // Always 'states' now - the left pane no longer has a toggle (Chart moved to the right
+        // pane's own pill, merged with Equation). Left in place, unmutated, only because the
+        // kept-but-unwired ViLeftViewPill.refresh() still reads it; nothing else does.
         this.leftView = 'states';
-        // 'equation' (default) or 'graph' - which view the RIGHT pane currently shows, for the
-        // same 3 split quadrants (2026-07-17 redesign). Same constructor-not-reset() placement as
-        // leftView, for the identical reset-desync reason.
+        // 'equation' (default) or 'chart' - which view the RIGHT pane currently shows, for the
+        // 3 split quadrants. Originally 'equation'/'graph' (2026-07-17 redesign); Chart moved here
+        // from the left pane and Graph was dropped as a selectable option (ValueIterationView/the
+        // 'graph' code path are kept, just unreachable - see mainView.js draw()'s own comment).
+        // Constructor-not-reset() placement so a VI Reset/Initialize (which calls reset()) doesn't
+        // silently flip the right pane back to Equation while the DOM/pill are still showing Chart.
         this.rightView = 'equation';
         this.reset();
     }

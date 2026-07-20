@@ -8,7 +8,7 @@ class RunExpectationInteractor extends RunExpectationInputBoundary {
     }
 
     execute(inputData) {
-        const { startNodeId, policy, displayRuns, maxSteps, gamma, policyWeights = {} } = inputData;
+        const { startNodeId, policy, displayRuns, maxSteps, gamma, policyWeights = {}, timeDependentPolicy = null } = inputData;
 
         const startNode = this.graph.getNodeById(startNodeId);
         if (!startNode || startNode.type !== 'state') {
@@ -32,7 +32,7 @@ class RunExpectationInteractor extends RunExpectationInputBoundary {
 
         const rollouts = [];
         for (let i = 0; i < EXPECTATION_TOTAL_RUNS; i++) {
-            const trace = this.traceGenerator.generate(startNode, maxSteps * 2 + 1, policySnapshot, policyWeightsSnapshot);
+            const trace = this.traceGenerator.generate(startNode, maxSteps * 2 + 1, policySnapshot, policyWeightsSnapshot, timeDependentPolicy);
             const rewardResult = this._extractRewards(trace);
             if (rewardResult.error) {
                 return this.outputBoundary.presentError(rewardResult.error);

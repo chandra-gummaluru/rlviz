@@ -643,6 +643,25 @@ input[type="range"].menubar-speed-slider::-moz-range-thumb {
   margin-bottom: 8px;
 }
 
+/* Method panel header row (Values -> Iteration): title left, ε-convergence stop condition
+   right-aligned on the same line. */
+.panel-title-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 15px;
+}
+
+.panel-title-row .panel-title {
+  margin-bottom: 0;
+}
+
+.panel-title-row-status {
+  font-size: 14px;
+  white-space: nowrap;
+}
+
 .panel-latex {
   font-size: 16px;
   color: var(--text-muted);
@@ -665,6 +684,30 @@ input[type="range"].menubar-speed-slider::-moz-range-thumb {
    .panel-section-title (not instead of it), so every other section header stays muted-gray. */
 .panel-section-title--policy {
   color: var(--accent-teal);
+}
+
+/* Flex-row variant of .panel-section-title - section label left, a right-aligned status
+   (e.g. Convergence's Δ-vs-ε readout) on the same line instead of below it. The row itself
+   carries the border-bottom/spacing .panel-section-title normally owns. */
+.panel-section-title-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 15px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--border-hairline);
+  padding-bottom: 6px;
+}
+
+.panel-section-title-row .panel-section-title {
+  margin: 0;
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.panel-section-title-row .panel-title-row-status {
+  font-size: 11px;
 }
 
 .panel-section-content {
@@ -764,38 +807,6 @@ input[type="range"].menubar-speed-slider::-moz-range-thumb {
   padding: 1px 2px;
   background: var(--surface-btn, var(--bg-white));
   color: var(--text-dark);
-}
-
-.estimate-vs-exact-scroll {
-  overflow-x: auto;
-  max-width: 100%;
-}
-
-.estimate-vs-exact-table {
-  border-collapse: collapse;
-  font-size: 12px;
-  min-width: 100%;
-}
-
-.estimate-vs-exact-table th,
-.estimate-vs-exact-table td {
-  border: 1px solid var(--border-medium);
-  padding: 4px 8px;
-  text-align: center;
-  white-space: nowrap;
-}
-
-.estimate-vs-exact-table thead th {
-  background-color: var(--bg-light);
-  font-weight: 600;
-  color: var(--text-medium);
-}
-
-.estimate-vs-exact-table td:first-child {
-  font-weight: 600;
-  color: var(--text-dark);
-  background-color: var(--bg-card);
-  text-align: left;
 }
 
 /* Policy log (Evaluate pi Phase 2) */
@@ -1178,6 +1189,62 @@ input[type="range"]::-moz-range-thumb {
   font-size: 11px;
 }
 
+/* Time-dependent policy (π_t) pager + strip + per-timestep action display, Policy π section
+   (Evaluate redesign Phase 6). Mirrors .policy-det-random-toggle/.policy-segmented-btn's own
+   sizing/border conventions rather than inventing a new visual language. */
+.policy-pit-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--surface-input, var(--bg-light));
+  border: 1px solid var(--border-input, var(--border-medium));
+  border-radius: var(--radius-btn, 4px);
+  padding: 4px 6px;
+  margin-bottom: 6px;
+}
+
+.policy-pit-pager-btn {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-btn, 4px);
+  border: 1px solid var(--border-input, var(--border-medium));
+  background: var(--surface-btn, var(--bg-white));
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+
+.policy-pit-pager-label {
+  font-family: var(--font-family-mono, monospace);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-medium);
+}
+
+.policy-pit-strip {
+  display: flex;
+  gap: 3px;
+}
+
+.policy-pit-strip-seg {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border-light, var(--border-medium));
+  cursor: pointer;
+}
+
+.policy-pit-strip-seg--current {
+  background: var(--accent-yellow);
+}
+
+.policy-pit-strip-seg--differs {
+  background: var(--accent-gold, var(--accent-yellow));
+  opacity: 0.6;
+}
+
 .panel-explain-step {
   font-size: 13px;
   font-weight: 600;
@@ -1439,16 +1506,6 @@ input[type="range"]::-moz-range-thumb {
   font-family: var(--font-family-mono, var(--font-family));
   font-size: 14px;
   font-weight: 600;
-}
-
-/* Monte Carlo "Estimate" section: big V̂(S0) number, ALWAYS orange regardless of sign - a
-   distinct class from .panel-utility-value above, which colors green/red by sign. This is an
-   estimate of the true value, not a live per-episode reward, so sign-coloring doesn't apply. */
-.panel-estimate-value {
-  font-family: var(--font-family-mono, var(--font-family));
-  font-size: 22px;
-  font-weight: 700;
-  color: var(--accent-orange);
 }
 
 /* Utility G contribution bar: always-visible, one block per non-zero reward step, width
@@ -1804,36 +1861,18 @@ input[type="range"]::-moz-range-thumb {
   background: color-mix(in srgb, currentColor 16%, transparent);
 }
 
-/* ── Floating Values-mode estimator pill + method badge ──────────────── */
-
-.estimator-pill {
-  position: absolute;
-  z-index: 10;
-  transform: translateX(-50%);
-  display: flex;
-  background: var(--surface-card2, var(--bg-card));
-  border: 1px solid var(--border-hairline, var(--border-light));
-  border-radius: 20px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
-  overflow: hidden;
-}
-
-.estimator-pill-btn {
-  border: none;
-  background: transparent;
-  color: var(--text-muted);
-  font-family: var(--font-family);
-  font-size: 13px;
-  font-weight: 600;
-  padding: 8px 16px;
-  cursor: pointer;
-  white-space: nowrap;
-}
+/* ── Floating Values-mode method badge ───────────────────────────────── */
 
 .values-method-badge {
   position: absolute;
   left: 12px;
   z-index: 10;
+  display: flex;
+  align-items: center;
+  /* Matches .vi-sweep-chip's own min-height (see below) so the two share one row height
+     regardless of which quadrant's badge label or the sweep chip's KaTeX formula is tallest. */
+  min-height: 30px;
+  box-sizing: border-box;
   font-family: var(--font-family-mono, var(--font-family));
   font-size: 11px;
   font-weight: 600;
@@ -2255,33 +2294,88 @@ input[type="range"]::-moz-range-thumb {
   border-color: var(--accent-purpleT);
 }
 
-/* ── Value Iteration sweep chip (Values -> Method) ───────────────────────── */
+/* ── Value Iteration stop-condition chip (Values -> Method) ──────────────
+   Docks immediately right of estimatorPill.js's method badge (see viSweepChip.js's
+   _applyLayout()) - same row, same border/padding language as .values-method-badge, just wider
+   to hold three parts (label / formula / live value) instead of one. */
 
 .vi-sweep-chip {
   position: absolute;
   z-index: 10;
   display: flex;
   align-items: center;
-}
-
-.vi-sweep-chip-text {
+  gap: 10px;
+  /* Matches .values-method-badge's own min-height so the two share one row height regardless of
+     which one's content (badge label vs. this chip's KaTeX formula) is naturally taller. */
+  min-height: 30px;
+  box-sizing: border-box;
   background: var(--surface-card2, var(--bg-card));
   border: 1px solid var(--border-hairline, var(--border-light));
-  border-radius: 8px;
-  padding: 4px 10px;
+  border-radius: var(--radius-btn, 6px);
+  padding: 4px 12px;
+  white-space: nowrap;
+  /* No overflow:hidden here - only .vi-sweep-chip-label is ever clamped (see viSweepChip.js's
+     _applyLayout()); the formula/live value must never be clipped, even in the rare case where
+     they alone don't fit before the center [Monte Carlo|Value Iter] pill. */
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.vi-sweep-chip-plain {
+  display: none;
   font-family: var(--font-family-mono, var(--font-family));
   font-size: 11px;
   font-weight: 600;
   color: var(--text-muted);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
-  white-space: nowrap;
 }
 
-.vi-sweep-chip--unconverged .vi-sweep-chip-text {
+.vi-sweep-chip--plain .vi-sweep-chip-plain {
+  display: inline;
+}
+
+.vi-sweep-chip--plain .vi-sweep-chip-label,
+.vi-sweep-chip--plain .vi-sweep-chip-formula,
+.vi-sweep-chip--plain .vi-sweep-chip-value {
+  display: none;
+}
+
+.vi-sweep-chip-label {
+  font-family: var(--font-family-mono, var(--font-family));
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  /* Least essential of the three parts (the formula already says "convergence") - shrinks and
+     truncates first when the chip's own max-width (set live in viSweepChip.js, clamped against
+     the center [Monte Carlo|Value Iter] pill sharing this row) leaves no room for everything. */
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vi-sweep-chip-formula,
+.vi-sweep-chip-value {
+  flex-shrink: 0;
+}
+
+.vi-sweep-chip-formula {
+  font-size: 14px;
+  color: var(--text-medium);
+}
+
+.vi-sweep-chip-value {
+  font-family: var(--font-family-mono, var(--font-family));
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.vi-sweep-chip--unconverged .vi-sweep-chip-value {
   color: var(--accent-yellow);
 }
 
-.vi-sweep-chip--converged .vi-sweep-chip-text {
+.vi-sweep-chip--converged .vi-sweep-chip-value {
   color: var(--reward-positive, var(--accent-teal));
 }
 
@@ -2377,30 +2471,45 @@ input[type="range"]::-moz-range-thumb {
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
+  gap: 14px;
+  padding: 14px;
   overflow-y: auto;
   overflow-x: hidden;
 }
 
 .expectation-chart-view-slot {
-  /* Fixed height, not flex:1 - each chart keeps a legible minimum size instead of shrinking
-     indefinitely to fit both slots into whatever height the left pane happens to have; the
-     container scrolls (overflow-y: auto above) once the two slots don't both fit. */
+  /* Its own distinct rounded card, separated from the other chart and from the canvas
+     background - matches the reference design's individual chart boxes rather than one fused
+     panel with a divider line. */
   flex: 0 0 220px;
   display: flex;
   flex-direction: column;
-  border-top: 1px solid var(--border-hairline, var(--border-light));
+  background: var(--surface-card, var(--bg-white));
+  border: 1px solid var(--border-hairline, var(--border-light));
+  border-radius: var(--radius-panel, 12px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  overflow: hidden;
 }
 
-.expectation-chart-view-slot:first-child {
-  border-top: none;
+.expectation-chart-view-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 8px 8px 2px;
+  flex-shrink: 0;
 }
 
 .expectation-chart-view-caption {
+  font-family: var(--font-family, var(--font-family-mono));
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-dark);
+}
+
+.expectation-chart-view-stat {
   font-family: var(--font-family-mono, var(--font-family));
   font-size: 10px;
   color: var(--text-muted);
-  padding: 6px 8px 2px;
-  flex-shrink: 0;
 }
 
 .expectation-chart-view-body {
@@ -2408,6 +2517,33 @@ input[type="range"]::-moz-range-thumb {
   min-height: 0;
   padding: 0 8px 8px;
   position: relative;
+}
+
+.expectation-chart-view-legend {
+  display: flex;
+  gap: 12px;
+  padding: 0 8px 8px;
+  flex-shrink: 0;
+}
+
+.expectation-chart-view-legend:empty {
+  display: none;
+}
+
+.expectation-chart-view-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-family-mono, var(--font-family));
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.expectation-chart-view-legend-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex-shrink: 0;
 }
 
 /* ── Iteration inline Chart view: Q-table + Convergence (Phase 3b follow-on) ─────────────── */
@@ -2419,27 +2555,44 @@ input[type="range"]::-moz-range-thumb {
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
+  gap: 14px;
+  padding: 14px;
   overflow-y: auto;
   overflow-x: hidden;
 }
 
 .vi-chart-view-slot {
+  /* Its own distinct rounded card, matching expectation-chart-view-slot's own box treatment
+     (Monte Carlo's Chart view) rather than one fused panel with a divider line. */
   flex: 0 0 220px;
   display: flex;
   flex-direction: column;
-  border-top: 1px solid var(--border-hairline, var(--border-light));
+  background: var(--surface-card, var(--bg-white));
+  border: 1px solid var(--border-hairline, var(--border-light));
+  border-radius: var(--radius-panel, 12px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  overflow: hidden;
 }
 
-.vi-chart-view-slot:first-child {
-  border-top: none;
+.vi-chart-view-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 8px 8px 2px;
+  flex-shrink: 0;
 }
 
 .vi-chart-view-caption {
+  font-family: var(--font-family, var(--font-family-mono));
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-dark);
+}
+
+.vi-chart-view-stat {
   font-family: var(--font-family-mono, var(--font-family));
   font-size: 10px;
   color: var(--text-muted);
-  padding: 6px 8px 2px;
-  flex-shrink: 0;
 }
 
 .vi-chart-view-body {
@@ -2483,6 +2636,69 @@ input[type="range"]::-moz-range-thumb {
   flex: 1;
   min-height: 0;
   padding: 4px 8px;
+}
+
+/* ── Iteration right-pane Backward view (Evaluate redesign Phase 6) ─────── */
+
+.vi-backward-view {
+  position: fixed;
+  z-index: 8;
+  background: var(--surface-canvas);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 8px;
+}
+
+.vi-backward-view-header {
+  flex: 0 0 auto;
+  /* Clears viRightViewPill's own floating [Equation|Backward|Chart] toggle, which sits at
+     topOffset+64 relative to the same top-left corner this view's own y-bound starts from -
+     viEquationView.js avoids this by reserving a fixed-height canvas above its own content;
+     this view has no equivalent reserved element, so the padding does the same job explicitly. */
+  padding: 56px 8px 8px;
+  font-size: 15px;
+  text-align: center;
+}
+
+.vi-backward-view-rows {
+  flex: 1;
+  min-height: 0;
+  padding: 4px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.vi-backward-view-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border: 1px solid var(--border-hairline, var(--border-light));
+  border-radius: var(--radius-btn, 6px);
+  font-family: var(--font-family-mono, monospace);
+  font-size: 11.5px;
+}
+
+.vi-backward-view-row-from {
+  color: var(--text-medium);
+  font-weight: 600;
+}
+
+.vi-backward-view-row-via {
+  color: var(--text-muted);
+}
+
+.vi-backward-view-row-p {
+  color: var(--text-muted);
+}
+
+.vi-backward-view-row-r {
+  margin-left: auto;
+  color: var(--text-medium);
 }
 
 /* ── Iteration left-pane States view (Phase 3b) ──────────────────────────── */
@@ -2616,6 +2832,52 @@ input[type="range"]::-moz-range-thumb {
   justify-content: flex-start;
 }
 
+/* Plays while a live card's own reveal is shrinking it down to the pill footprint above (see
+   ViStatesView._collapseCardToPill()) - width/height are pinned to concrete pixel values by JS
+   just before this class is added, so the transition below animates a real, felt shrink instead
+   of an instant class swap. box-sizing:border-box lets those pinned values (raw
+   getBoundingClientRect() totals, padding included) be used directly as animation targets
+   without separately accounting for padding. */
+.vi-states-view-card--diagram.vi-states-view-card--shrinking {
+  box-sizing: border-box;
+  transition-property: width, height;
+  transition-timing-function: ease;
+  overflow: hidden;
+}
+
+.vi-states-view-card--diagram.vi-states-view-card--shrinking canvas {
+  transition: opacity 200ms ease;
+  opacity: 0;
+}
+
+/* Fixed overlay holding "fly the prior value to the triangle" chips (see
+   ViStatesView._flyPriorValue()) - mirrors reward-particle-overlay's own convention. */
+.vi-states-view-fly-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+}
+
+.vi-states-view-fly-value {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform: translate(-50%, -50%);
+  font-family: var(--font-family-mono, var(--font-family));
+  font-size: 13px;
+  font-weight: 700;
+  color: #4CAF50; /* matches VBD_TRIANGLE_COLOR - fixed, independent of theme, same reasoning */
+  white-space: nowrap;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+
+.vi-states-view-fly-value--flying {
+  transition-property: left, top;
+  transition-timing-function: ease-in-out;
+  /* transition-duration set inline per-flight, already speed-scaled by the caller */
+}
+
 .vi-states-view-cards {
   display: flex;
   flex-wrap: wrap;
@@ -2664,7 +2926,10 @@ input[type="range"]::-moz-range-thumb {
 .vi-states-view-card--diagram canvas {
   display: block;
   width: 100%;
-  height: 140px;
+  /* Must stay in sync with viStatesView.js's `canvas.height = 310` (the pixel drawing buffer) -
+     nothing else in the codebase links these two numbers, and a mismatch vertically squishes the
+     drawing since width already stretches dynamically via clientWidth. */
+  height: 310px;
 }
 
 .vi-states-view-card-header {

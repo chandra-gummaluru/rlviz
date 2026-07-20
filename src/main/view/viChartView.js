@@ -20,6 +20,34 @@ class ViChartView {
         this._bounds = null;
     }
 
+    // Builds one card (header row + body) - mirrors expectationChartView.js's own slot markup
+    // exactly, so both Chart views share the same box treatment.
+    _buildSlot(container, captionText) {
+        const slot = document.createElement('div');
+        slot.className = 'vi-chart-view-slot';
+
+        const header = document.createElement('div');
+        header.className = 'vi-chart-view-header';
+
+        const caption = document.createElement('span');
+        caption.className = 'vi-chart-view-caption';
+        caption.textContent = captionText;
+        header.appendChild(caption);
+
+        const stat = document.createElement('span');
+        stat.className = 'vi-chart-view-stat';
+        header.appendChild(stat);
+
+        slot.appendChild(header);
+
+        const body = document.createElement('div');
+        body.className = 'vi-chart-view-body';
+        slot.appendChild(body);
+
+        container.appendChild(slot);
+        return { body, stat };
+    }
+
     setup() {
         if (this.containerEl) return;
 
@@ -28,29 +56,11 @@ class ViChartView {
         document.body.appendChild(container);
         this.containerEl = container;
 
-        const qtableSlot = document.createElement('div');
-        qtableSlot.className = 'vi-chart-view-slot';
-        const qtableCaption = document.createElement('span');
-        qtableCaption.className = 'vi-chart-view-caption';
-        qtableCaption.textContent = 'Greedy action ★';
-        qtableSlot.appendChild(qtableCaption);
-        const qtableBody = document.createElement('div');
-        qtableBody.className = 'vi-chart-view-body';
-        qtableSlot.appendChild(qtableBody);
-        container.appendChild(qtableSlot);
-        this._qtableBodyEl = qtableBody;
+        const qtable = this._buildSlot(container, 'Greedy action ★');
+        this._qtableBodyEl = qtable.body;
 
-        const convergenceSlot = document.createElement('div');
-        convergenceSlot.className = 'vi-chart-view-slot';
-        const convergenceCaption = document.createElement('span');
-        convergenceCaption.className = 'vi-chart-view-caption';
-        convergenceCaption.textContent = 'V̂(S₀) vs V*';
-        convergenceSlot.appendChild(convergenceCaption);
-        const convergenceBody = document.createElement('div');
-        convergenceBody.className = 'vi-chart-view-body';
-        convergenceSlot.appendChild(convergenceBody);
-        container.appendChild(convergenceSlot);
-        this._convergenceBodyEl = convergenceBody;
+        const convergence = this._buildSlot(container, 'V̂(S₀) vs V*');
+        this._convergenceBodyEl = convergence.body;
 
         this.hide();
     }
@@ -156,29 +166,75 @@ class ViChartView {
         }
         if (mcMeans.length > 0) {
             datasets.push({
-                label: 'E[G] (MC)',
+                label: 'estimate',
                 data: mcMeans.map((y, x) => ({ x, y })),
                 borderColor: AppPalette.accent.orange,
-                borderWidth: 1.5, pointRadius: 1, tension: 0.3
+                borderWidth: 2, pointRadius: 0, tension: 0.3,
+                _labelEndpoint: true
             });
         }
         if (vStar !== null) {
             datasets.push({
-                label: 'V*',
+                label: `V* = ${vStar.toFixed(2)}`,
                 data: [{ x: 0, y: vStar }, { x: maxLen - 1, y: vStar }],
                 borderColor: AppPalette.text.muted,
                 borderDash: [4, 4], borderWidth: 1, pointRadius: 0
             });
         }
 
+        // Draws a solid dot + the numeric value next to the final point of whichever dataset(s)
+        // are flagged `_labelEndpoint: true` - see expectationChartView.js's identical plugin
+        // (this is a small, per-chart-instance copy, not a shared module, matching this
+        // codebase's existing one-file-per-view convention for these Chart views).
+        const endpointPlugin = {
+            id: 'convergenceEndpoint',
+            afterDatasetsDraw(chart) {
+                chart.data.datasets.forEach((ds, i) => {
+                    if (!ds._labelEndpoint || !ds.data || ds.data.length === 0) return;
+                    const meta = chart.getDatasetMeta(i);
+                    const points = meta.data;
+                    if (!points || points.length === 0) return;
+                    const last = points[points.length - 1];
+                    const lastValue = ds.data[ds.data.length - 1];
+                    const y = typeof lastValue === 'object' ? lastValue.y : lastValue;
+                    const ctx = chart.ctx;
+                    ctx.save();
+                    ctx.fillStyle = ds.borderColor;
+                    ctx.beginPath();
+                    ctx.arc(last.x, last.y, 3.5, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.font = '600 11px "IBM Plex Mono", Consolas, monospace';
+                    ctx.textBaseline = 'middle';
+                    ctx.textAlign = 'left';
+                    ctx.fillText(y.toFixed(2), last.x + 7, last.y);
+                    ctx.restore();
+                });
+            }
+        };
+
         this._convergenceChartInstance = new Chart(canvas.getContext('2d'), {
             type: 'line',
             data: { datasets },
+            plugins: [endpointPlugin],
             options: {
                 responsive: true, maintainAspectRatio: false, animation: false,
-                plugins: { legend: { display: false } },
+                layout: { padding: { right: 36 } },
+                plugins: {
+                    legend: {
+                        display: true, position: 'top', align: 'end',
+                        labels: {
+                            boxWidth: 16, boxHeight: 2, font: { size: 10 }, color: AppPalette.text.muted,
+                            filter: item => item.text && !item.text.includes('SE')
+                        }
+                    }
+                },
                 scales: {
-                    x: { type: 'linear', ticks: { font: { size: 9 }, color: AppPalette.text.muted, stepSize: 1 }, grid: { color: AppPalette.border.chartGrid } },
+                    x: {
+                        type: 'linear',
+                        ticks: { font: { size: 9 }, color: AppPalette.text.muted, stepSize: 1 },
+                        grid: { color: AppPalette.border.chartGrid },
+                        title: { display: true, text: `${maxLen} episodes`, align: 'end', font: { size: 9 }, color: AppPalette.text.muted }
+                    },
                     y: { ticks: { font: { size: 9 }, color: AppPalette.text.muted }, grid: { color: AppPalette.border.chartGrid } }
                 }
             }

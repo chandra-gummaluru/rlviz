@@ -53,6 +53,10 @@ class EdgeViewModel {
         // Policy log hover-preview takes priority over the live policy - reads the same
         // getPolicyMode()-shaped logic but against the SNAPSHOT, not simulationState itself.
         const previewPolicy = this.interactionViewModel.previewPolicy;
+        const previewTimeDependentPolicy = this.interactionViewModel.previewTimeDependentPolicy;
+        if (previewTimeDependentPolicy) {
+            return this._piTEdgeProbability(previewTimeDependentPolicy, from, to, this.interactionViewModel.piTCursor);
+        }
         if (previewPolicy) {
             const previewWeights = this.interactionViewModel.previewPolicyWeights || {};
             const deterministicAction = previewPolicy[from.id];
@@ -69,6 +73,13 @@ class EdgeViewModel {
             return null; // previewed state has no explicit policy entry - uniform, nothing to highlight
         }
 
+        // Time-dependent (π_t) live policy - edge weights follow the Policy π panel's own pager
+        // position (interactionViewModel.piTCursor), per the handoff's "π edge weights follow the
+        // pager/scrubber."
+        if (this.simulationState.isTimeDependent()) {
+            return this._piTEdgeProbability(this.simulationState.timeDependentPolicy, from, to, this.interactionViewModel.piTCursor);
+        }
+
         const policyMode = this.simulationState.getPolicyMode(from.id);
         if (policyMode === 'deterministic') {
             return this.simulationState.getPolicyAction(from.id) === to.id ? 1.0 : null;
@@ -79,6 +90,18 @@ class EdgeViewModel {
             return probs.get(Number(to.id)) ?? null;
         }
         return null;
+    }
+
+    // Shared resolution for a time-dependent policy snapshot (live or previewed) at a given t -
+    // concrete action gets 1.0 on the matching edge, 'random'/no-entry means uniform across the
+    // state's actions (nothing highlighted, mirroring the stationary 'uniform' case above).
+    _piTEdgeProbability(timeDependentPolicy, from, to, t) {
+        const seq = timeDependentPolicy[from.id];
+        if (!seq || seq.length === 0) return null;
+        const idx = Math.max(0, Math.min(seq.length - 1, t));
+        const action = seq[idx];
+        if (action === 'random' || action === null || action === undefined) return null;
+        return Number(action) === Number(to.id) ? 1.0 : null;
     }
 
     get isBidirectional() {

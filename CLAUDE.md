@@ -107,7 +107,7 @@ Three top-level modes, controlled by `setMode` (`SetModeInteractor.validModes = 
 
 - **Build**: Unified editing + trace-based simulation in one canvas (formerly separate Editor/Simulate modes — merged since editing and running traces share the same graph context). Create/edit/delete nodes and edges, set the start node, run/step/reset a simulation trace, all in the same view.
 - **Policy**: Same canvas as Build in every respect — fully editable (drag/resize/create/delete nodes and edges, right-click to set the start node, double-click to focus-edit), same top bar (Renormalize, Run/Step/Reset with identical labels), same floating tool palette. The **only** difference from Build is the right panel's default (nothing-selected) content: Policy mode shows a fuller Policy π editor (Deterministic/Random toggle, weighted-random sliders per action) where Build shows Utility G. Every Build-only guard in the controller/view layers checks `mode === 'build' || mode === 'policy'` (see `CanvasController._isEditableMode()` / `MainView._isEditableMode()`) rather than `mode === 'build'` alone.
-- **Values**: Estimator mode with a `valuesSubView` of `'mc' | 'vi'` (controlled by `setValuesSubView`; the old `'split'` side-by-side sub-view was dropped — cross-method comparison now lives in the "Estimate vs exact" table and the convergence chart instead of a split canvas). `'vi'` is really a **2×2 method matrix** keyed on `(modelKnown, observability)` — see below.
+- **Values**: Estimator mode with a `valuesSubView` of `'mc' | 'vi'` (controlled by `setValuesSubView`; the old `'split'` side-by-side sub-view was dropped — cross-method comparison now lives in the convergence chart instead of a split canvas). `'vi'` is really a **2×2 method matrix** keyed on `(modelKnown, observability)` — see below.
 
 Mode and sub-view transitions run through `CanvasController`'s mode-lifecycle hook table (`onLeave`/`onEnter`/`onLeaveSubView`/`onEnterSubView`, registered in `main.js`) rather than ad hoc `if` branches — add new per-mode setup/teardown there.
 
@@ -118,7 +118,7 @@ Mode and sub-view transitions run through `CanvasController`'s mode-lifecycle ho
 1. **Trace Generation**: `TraceGenerator` builds a random path from the start state, sampling actions via `selectActionForPolicy(stateNode, policy, policyWeights)` — deterministic match first, then weighted-if-present, then uniform fallback
 2. **Replay State**: `SimulationState` drives a multi-phase animation (`idle` → `highlight` available edges → `transition` to the next node), revealing nodes/edges progressively; it also holds `SimulationState.policy` (a `stateId → actionId` map — a missing entry means "random") and `SimulationState.policyWeights` (`stateId → {actionId: rawWeight}`, for the weighted-random case), the single shared source of truth for Policy π, consumed by Build's simulation, Policy mode's own preview, and Monte Carlo's rollouts. `getPolicyMode(stateId)` returns `'deterministic' | 'weighted' | 'uniform'`.
 3. **Spinning Arrow**: optional visual for probabilistic edge selection
-4. **Policy π**: Policy mode's right panel (`RightPanel._renderPolicyModeSection()`) is the only place π is edited — a per-state Deterministic/Random toggle, an action-segment row when Deterministic, or one independent weighted slider per action when Random (normalized-at-sample-time, not normalized-on-write). The deterministic/weighted policy edge renders bold/width-proportional on canvas (`EdgeViewModel.policyEdgeProbability`, gated to Build/Policy mode).
+4. **Policy π**: Policy mode's right panel (`RightPanel._renderPolicyModeSection()`) is the only place π is edited — a per-state Deterministic/Random toggle, an action-segment row when Deterministic, or one independent weighted slider per action when Random (normalized-at-sample-time, not normalized-on-write). The deterministic/weighted policy edge renders bold/width-proportional on canvas (`EdgeViewModel.policyEdgeProbability`, gated to Build/Policy mode). This is the **Stationary** representation — see "Time-dependent policy (π_t)" below for the additive time-indexed alternative.
 5. **Steps / Utility G** (`RightPanel._renderStepsAndUtility()`): a nested Utility G row (formula left, value right, colored green/red by sign via `_applyRewardColor()`) and an always-visible contribution bar (`_renderContributionBar()`) — one block per non-zero reward step, width ∝ the discounted magnitude `|γᵗ·rₜ|`, opacity fading with `γᵗ`, plus a trailing gray block for the remaining episode tail. A "t" progress bar (div-based, not a native range input — see below) sits in the shared Parameters section instead of a standalone step count.
 
 ### Value Iteration / Learning Iteration / Belief Iteration / PO Q-Learning (Values → vi)
@@ -179,17 +179,38 @@ visual language (`ViBackupDiagram`'s `state`/`action`/`best` colors mirror `AppP
 collapse to a clickable `t = k` pill (`ViStatesView._manuallyExpanded`) - a freshly-expanded
 sweep's cards stage in via `ViBackupDiagram.drawAnimated()` rather than popping in fully drawn.
 Clicking an individual state's card sets `ValueIterationViewModel.activeStateId` and pins that
-sweep, driving the right pane below. Right pane: a new `[Equation | Graph]` toggle
+sweep, driving the right pane below. Right pane: a `[Equation | Backward | Chart]` toggle
 (`viRightViewPill.js`, mirroring `viLeftViewPill.js`'s placement on the opposite inner edge of the
-split) defaults to **Equation** (`viEquationView.js`) - the active state's Bellman equation header
-plus an animated, 4-phase reveal of its Q-value calculation (highlight V → show each outcome's
-reward → show its probability, tweening both into that action's Q → highlight the best action) and
-a Q-table scoped to just that state - replacing the live MDP graph there by default; toggling to
-**Graph** restores exactly today's `ValueIterationView.draw()` rendering, unchanged.
+split — `viLeftViewPill.js` itself is now dead code, kept but unwired, since the left pane no
+longer has its own toggle) defaults to **Equation** (`viEquationView.js`) - the active state's
+Bellman equation header plus an animated, 4-phase reveal of its Q-value calculation (highlight V →
+show each outcome's reward → show its probability, tweening both into that action's Q → highlight
+the best action) and a Q-table scoped to just that state - replacing the live MDP graph there by
+default. **Chart** (`viChartView.js`) shows the Q-table + Convergence chart described below.
+**Backward** (`viBackwardView.js`, Evaluate redesign Phase 6 — see "Time-dependent policy (π_t)"
+below) is offered only in `known:full` while a time-dependent policy is active; it shows, for the
+active state, every other state's `(action, probability, reward)` that transitions into it - a
+pure re-grouping of the same `getBackupDetail()` data `viEquationView.js` already reads, just by
+target state instead of source state, so it needs no new domain math. The original `[Equation |
+Graph]` toggle's **Graph** option (`ValueIterationView.draw()`'s live MDP graph rendering) was
+dropped from the pill entirely in an earlier redesign - the code path is kept, just unreachable
+from the UI (see `mainView.js` draw()'s own comment).
+
+Iteration's stop condition is convergence-based, not sweep-count-based (Evaluate redesign Phase 4):
+`ValueIterationState.epsilon` (user-editable via a slider in the Method panel's Parameters section,
+`RightPanel._renderEpsilonSlider()`, range 0.001–0.5, default 0.01, shown only for the three
+quadrants that run a real Bellman sweep) is compared against each sweep's max-norm delta; `T` (the
+`topBar.js` `T =` input) is a **safety cap** ("stop after N iterations if not converged"), not a
+target sweep count. No UI copy anywhere says "sweep" - the floating status chip
+(`viSweepChip.js`), the Parameters/Convergence sections, and the pre-init canvas placeholder all
+lead with the Δ-vs-ε comparison instead (`k=` is used for the plain iteration index, matching the
+Q-table's own column headers). Epsilon is read once at VI-init time (`main.js`'s
+`ensureVIInitialized()`), same as γ - changing the slider has no retroactive effect on an
+already-running sweep, only on the next Reset + Run.
 
 ### Monte Carlo (Values → mc)
 
-`ExpectationState` generates and stores multiple rollouts from the start state. Values → Monte Carlo's canvas is a persistent **52% left / 48% right split** (Phase 3a of the Evaluate redesign roadmap — see `docs/superpowers/specs/2026-07-16-mc-screen-split-design.md`), not the old mutually-exclusive grid/focused-run modes: the left pane toggles between **Grid** (today's mini-panel grid — `ExpectationViewModel.computeLayout()` lays rollouts into a grid of 16/32/64 panels and computes one shared fit-transform for rendering each rollout's graph into its mini-panel) and **Chart** (`expectationChartView.js` — Convergence + Histogram rendered inline via the same `chartDataBuilders.js` pure functions the bottom `ChartDock` uses, replacing that dock for Monte Carlo specifically; `ChartDock` itself still serves Values → Iteration unchanged) via the floating `[Grid | Chart]` pill (`mcLeftViewPill.js`). The right pane (`ExpectationView._drawGraphPanel()`) is a single always-visible rendering of the MDP graph — bare when nothing is selected, or with the selected run's visited-so-far path highlighted (`ExpectationViewModel.selectedRunIndex`, set by clicking a mini-panel; clicking the same panel again deselects). `expectationScrubber.js` drives a shared `currentT` across both panes. `ExpectationState.getPerStateMeans()` aggregates already-collected rollout data per visited state, feeding the MC column of the "Estimate vs exact" table.
+`ExpectationState` generates and stores multiple rollouts from the start state. Values → Monte Carlo's canvas is a persistent **52% left / 48% right split** (Phase 3a of the Evaluate redesign roadmap — see `docs/superpowers/specs/2026-07-16-mc-screen-split-design.md`), not the old mutually-exclusive grid/focused-run modes: the left pane toggles between **Grid** (today's mini-panel grid — `ExpectationViewModel.computeLayout()` lays rollouts into a grid of 16/32/64 panels and computes one shared fit-transform for rendering each rollout's graph into its mini-panel) and **Chart** (`expectationChartView.js` — Convergence + Histogram rendered inline via the same `chartDataBuilders.js` pure functions the bottom `ChartDock` uses, replacing that dock for Monte Carlo specifically; `ChartDock` itself still serves Values → Iteration unchanged) via the floating `[Grid | Chart]` pill (`mcLeftViewPill.js`). The right pane (`ExpectationView._drawGraphPanel()`) is a single always-visible rendering of the MDP graph — bare when nothing is selected, or with the selected run's visited-so-far path highlighted (`ExpectationViewModel.selectedRunIndex`, set by clicking a mini-panel; clicking the same panel again deselects). `expectationScrubber.js` drives a shared `currentT` across both panes.
 
 ### Evaluate π / Policy log (Build, Policy, Monte Carlo, Iteration — all four modes)
 
@@ -225,9 +246,53 @@ import/export, same as `manualOverrides`/`modelKnown`/`observability`. Reset (in
 clears the log — only `rightPanel.js`'s "clear" link does (`CanvasController.clearPolicyLog()`);
 the log is a cross-run record, not tied to any one simulation's/VI-run's lifecycle.
 
-### Estimate vs exact (Values mode, both sub-views)
+### Time-dependent policy (π_t) (Policy mode's Policy π section, all four modes' sampling/evaluation)
 
-`RightPanel._renderEstimateVsExact()` renders a per-state comparison table (`MC | <method short label>`) after whichever panel (MC or Method) already rendered above it — this is where cross-method comparison lives now that the split canvas view is gone. In the two partial-observability quadrants a hint line clarifies that the "exact" column is really VI's real numbers under an illustrative belief label, not a true POMDP solution.
+Evaluate redesign Phase 6. Policy π (`RightPanel._renderPolicyModeSection()`) has a **Stationary |
+π_t (time-dep)** toggle (`_renderPiModeToggle()`) alongside its existing per-state rows.
+Stationary is exactly what's described in "Simulation System" above, untouched. π_t
+(`_renderTimeDependentPolicySection()`) swaps in:
+
+- a **Max steps** slider (`SimulationState.piHorizon`, 1–20) - the shared horizon episodes run for
+  and backward induction depth;
+- a **time pager** (`‹ t = k / horizon-1 ›`) plus a segment strip marking which timesteps' policy
+  differs from t=0 across any decision state (generalizing the original design reference's
+  single-decision-state demo to arbitrarily many);
+- one row per multi-action state showing/cycling (click: action₀ → action₁ → ... → `'random'` →
+  action₀) that state's action **at the pager's current t** - `SimulationState.timeDependentPolicy`
+  (`stateId -> array[t]` of `actionId | 'random'`), read via `getTimeDependentAction()`/written via
+  `cycleTimeDependentAction()`.
+
+This is additive, not a replacement: `SimulationState.policy`/`.policyWeights` (Stationary) are
+untouched by any of it, so toggling back instantly restores exactly what was there before.
+`SimulationState.piMode` ('stationary' | 'timeDependent') is the single switch every consumer
+reads via `resolvePiTAction(stateId, elapsedT)` (returns `null` when not in π_t mode or the state
+has no entry, so callers fall through to the Stationary logic unchanged):
+
+- **Sampling** (`TraceGenerator.generate()`): threads an `elapsedT` counter (increments once per
+  decision, not per raw trace node) through `selectActionForPolicy()`, which now takes an optional
+  `piTAction` override - a concrete action, the `'random'` sentinel (uniform sample), or `null`
+  (fall through). Both Build/Policy's live simulation (`SimulationAnimator`) and Monte Carlo's
+  rollouts (`RunExpectationInteractor`) pass `simulationState.timeDependentPolicy` through when
+  `isTimeDependent()`.
+- **Exact evaluation** (`PolicyEvaluationState.evaluateTimeIndexed()`): a genuinely different
+  algorithm from `evaluate()`, not a parameterized variant - a time-varying policy has no
+  infinite-horizon fixed point (only `horizon` well-defined actions per state), so "exact" here
+  means the finite-horizon expected return from t=0, via backward induction from
+  `V_horizon(s) = 0` down to `V_0`. `EvaluatePolicyInteractor` branches on `isTimeDependent()`; the
+  Policy log's long-reserved **"t" column** (`rightPanel.js`, previously always an em-dash) is
+  populated with the horizon for these entries specifically - stationary entries are unaffected.
+- **Canvas**: `EdgeViewModel.policyEdgeProbability` reads the time-dependent policy at
+  `InteractionViewModel.piTCursor` (written by the Policy π panel's pager, read here so edge
+  highlighting follows whichever t is being viewed) instead of the stationary map; a small
+  `mainView.js`-drawn badge (`_drawPiBadge()`) reads "π at t = k · `<action>`" in π_t mode, "π ·
+  all t" in Stationary.
+
+See `docs/superpowers/specs/2026-07-19-vi-time-dependent-policy-scoping.md` for the scoping pass
+(including a correction to an earlier misattributed Phase 6 blocker) and
+`docs/superpowers/plans/2026-07-19-vi-time-dependent-policy.md` for the decisions this
+implementation made on the scoping doc's open questions (e.g. Backward ships as a
+`viRightViewPill.js` segment, not by reviving the dead `viLeftViewPill.js`).
 
 ### Command Pattern
 

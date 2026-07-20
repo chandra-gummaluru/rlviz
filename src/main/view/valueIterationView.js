@@ -195,7 +195,7 @@ class ValueIterationView {
         textFont(Typography.sans());
         const leftInset = this.layout.getLeftInset();
         const usableW = windowWidth - this.layout.getPanelWidth() - leftInset;
-        text('Set max sweeps (T) and click Run to start Value Iteration',
+        text('Set ε (convergence threshold) and click Run to start Value Iteration',
             leftInset + usableW / 2, (windowHeight - this.layout.getTopOffset()) / 2);
         pop();
     }

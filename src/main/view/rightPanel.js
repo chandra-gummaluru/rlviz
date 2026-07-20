@@ -50,6 +50,11 @@ class RightPanel {
         // Discount factor (gamma) for MDP - editable
         this.discountFactor = RP_DEFAULT_DISCOUNT;
 
+        // Value Iteration's convergence threshold (ε) - editable, read once by
+        // main.js's ensureVIInitialized() the same way discountFactor is (see _renderEpsilonSlider).
+        this.viEpsilon = 0.01;
+
+
         this.simStatDisplay = {
             steps: 0,
             utility: 0,
@@ -153,7 +158,6 @@ class RightPanel {
             this.renderPolicyModePanel();
         }
 
-        if (isValuesMode) this._renderEstimateVsExact();
     }
 
     // Build mode's default (nothing selected/hovered) inspector content: Parameters, Initial
@@ -264,10 +268,11 @@ class RightPanel {
         this._renderPolicyLog();
     }
 
-    // Policy π section (Policy mode only): per-state Deterministic|Random toggle, where Random
-    // reveals an editable weighted-probability distribution. Reads/writes
-    // simulationState.policy/policyWeights, the shared source of truth also consumed by Build's
-    // simulation and Monte Carlo's rollouts.
+    // Policy π section (Policy mode only): a Stationary | π_t toggle (Evaluate redesign Phase 6)
+    // gates between today's per-state Deterministic|Random rows (Stationary, unchanged below) and
+    // a time-pager-driven per-timestep editor (_renderTimeDependentPolicySection). Reads/writes
+    // simulationState.policy/policyWeights/timeDependentPolicy, the shared source of truth also
+    // consumed by Build's simulation and Monte Carlo's rollouts.
     _renderPolicyModeSection() {
         this.createSection('Policy π', () => {
             const policyDiv = createDiv();
@@ -282,6 +287,13 @@ class RightPanel {
             }
 
             const simulationState = this.viewModel.simulationState;
+            this._renderPiModeToggle(policyDiv, simulationState);
+
+            if (simulationState.isTimeDependent()) {
+                this._renderTimeDependentPolicySection(policyDiv, states, simulationState);
+                return;
+            }
+
             let firstNonTerminal = null;
             let firstNonTerminalMode = null;
 
@@ -373,6 +385,197 @@ class RightPanel {
                 }
             }
         }, { titleClass: 'panel-section-title--policy' });
+    }
+
+    // Stationary | π_t segmented toggle, top of the Policy π section (Evaluate redesign Phase 6).
+    _renderPiModeToggle(parentDiv, simulationState) {
+        const toggle = createDiv();
+        toggle.parent(parentDiv);
+        toggle.addClass('policy-det-random-toggle');
+        toggle.style('margin-bottom', '10px');
+
+        const isTimeDependent = simulationState.isTimeDependent();
+
+        const statBtn = createButton('Stationary');
+        statBtn.parent(toggle);
+        statBtn.addClass('policy-det-random-btn');
+        if (!isTimeDependent) statBtn.addClass('policy-det-random-btn--active');
+        statBtn.mousePressed(() => {
+            if (isTimeDependent) {
+                this.controller.setPiMode('stationary');
+                this.updateContent();
+                redraw();
+            }
+        });
+
+        const piTBtn = createButton('π_t (time-dep)');
+        piTBtn.parent(toggle);
+        piTBtn.addClass('policy-det-random-btn');
+        if (isTimeDependent) piTBtn.addClass('policy-det-random-btn--active');
+        piTBtn.mousePressed(() => {
+            if (!isTimeDependent) {
+                this.controller.setPiMode('timeDependent');
+                this.viewModel.interaction.piTCursor = 0;
+                this.updateContent();
+                redraw();
+            }
+        });
+    }
+
+    // π_t mode's own content: a horizon slider, a time pager + differs-from-t0 segment strip, and
+    // one row per multi-action state showing/cycling that state's action AT THE PAGER'S CURRENT t.
+    // Terminal/single-action states render exactly like the Stationary section's own "— terminal".
+    _renderTimeDependentPolicySection(policyDiv, states, simulationState) {
+        const horizon = simulationState.piHorizon;
+        this.viewModel.interaction.piTCursor = Math.max(0, Math.min(horizon - 1, this.viewModel.interaction.piTCursor));
+        const cursor = this.viewModel.interaction.piTCursor;
+
+        // Horizon slider (deliberately colocated here rather than the shared Parameters section -
+        // see the Phase 6 plan doc's decision #4).
+        const horizonRow = createDiv();
+        horizonRow.parent(policyDiv);
+        horizonRow.addClass('panel-param-row');
+        horizonRow.style('margin-bottom', '10px');
+
+        const horizonLabel = createDiv('Max steps');
+        horizonLabel.parent(horizonRow);
+        horizonLabel.addClass('panel-param-row-label');
+
+        const horizonSlider = createElement('input');
+        horizonSlider.parent(horizonRow);
+        horizonSlider.attribute('type', 'range');
+        horizonSlider.attribute('min', '1');
+        horizonSlider.attribute('max', '20');
+        horizonSlider.attribute('step', '1');
+        horizonSlider.attribute('value', String(horizon));
+        horizonSlider.addClass('panel-param-row-slider');
+        horizonSlider.elt.addEventListener('mousedown', e => e.stopPropagation());
+        horizonSlider.elt.addEventListener('click', e => e.stopPropagation());
+        horizonSlider.elt.style.setProperty('--fill', (horizon - 1) / (20 - 1));
+
+        const horizonValue = createDiv(String(horizon));
+        horizonValue.parent(horizonRow);
+        horizonValue.addClass('panel-param-row-value');
+
+        horizonSlider.elt.addEventListener('change', () => {
+            this.controller.setPiHorizon(parseInt(horizonSlider.value(), 10));
+            this.updateContent();
+            redraw();
+        });
+        horizonSlider.input(() => {
+            const h = parseInt(horizonSlider.value(), 10);
+            horizonValue.html(String(h));
+            horizonSlider.elt.style.setProperty('--fill', (h - 1) / (20 - 1));
+        });
+
+        // Multi-action states only - terminal/single-action states have no time-dependent choice
+        // to page through, exactly like the Stationary section above.
+        const decisionStates = states.filter(s => (s.actions || []).length > 0);
+
+        // Pager row: ‹ t = k / horizon-1 › (0-indexed, matching Phase 4's k= convention).
+        const pagerRow = createDiv();
+        pagerRow.parent(policyDiv);
+        pagerRow.addClass('policy-pit-pager');
+
+        const prevBtn = createButton('‹');
+        prevBtn.parent(pagerRow);
+        prevBtn.addClass('policy-pit-pager-btn');
+        prevBtn.mousePressed(() => {
+            if (this.viewModel.interaction.piTCursor > 0) { this.viewModel.interaction.piTCursor--; this.updateContent(); redraw(); }
+        });
+
+        const pagerLabel = createSpan(`t = ${cursor} / ${horizon - 1}`);
+        pagerLabel.parent(pagerRow);
+        pagerLabel.addClass('policy-pit-pager-label');
+
+        const nextBtn = createButton('›');
+        nextBtn.parent(pagerRow);
+        nextBtn.addClass('policy-pit-pager-btn');
+        nextBtn.mousePressed(() => {
+            if (this.viewModel.interaction.piTCursor < horizon - 1) { this.viewModel.interaction.piTCursor++; this.updateContent(); redraw(); }
+        });
+
+        // Segment strip: one segment per t, current highlighted; a segment is marked "differs"
+        // when ANY decision state's resolved action at that t differs from its own t=0 action -
+        // generalizing the original mock's single-state gold-marking to multiple states.
+        const stripRow = createDiv();
+        stripRow.parent(policyDiv);
+        stripRow.addClass('policy-pit-strip');
+        stripRow.style('margin-bottom', '10px');
+
+        for (let t = 0; t < horizon; t++) {
+            const seg = createDiv();
+            seg.parent(stripRow);
+            seg.addClass('policy-pit-strip-seg');
+            if (t === cursor) seg.addClass('policy-pit-strip-seg--current');
+            const differs = decisionStates.some(s =>
+                simulationState.getTimeDependentAction(s.id, t) !== simulationState.getTimeDependentAction(s.id, 0)
+            );
+            if (differs && t !== 0) seg.addClass('policy-pit-strip-seg--differs');
+            seg.mousePressed(() => { this.viewModel.interaction.piTCursor = t; this.updateContent(); redraw(); });
+        }
+
+        // Per-state rows at the pager's current t.
+        states.forEach(stateNode => {
+            const row = createDiv();
+            row.parent(policyDiv);
+            row.addClass('policy-state-row');
+
+            const label = createDiv(stateNode.name);
+            label.parent(row);
+            label.addClass('policy-state-label');
+
+            const actions = stateNode.actions || [];
+            if (actions.length === 0) {
+                const terminal = createDiv('— terminal');
+                terminal.parent(row);
+                terminal.addClass('policy-terminal-label');
+                return;
+            }
+
+            const current = simulationState.getTimeDependentAction(stateNode.id, cursor);
+            this._renderPiTActionSegments(row, stateNode, actions, current, cursor);
+        });
+
+        const hint = createDiv();
+        hint.parent(policyDiv);
+        hint.addClass('panel-hint');
+        hint.style('margin-top', '8px');
+        hint.html('click an action to set it at this timestep · gold segments differ from t=0');
+    }
+
+    // π_t's per-timestep action selector - visually identical to Stationary's own
+    // _renderPolicyActionSegments (same segmented-button markup/classes), plus a trailing
+    // "Random" segment, since a π_t slot can also hold the 'random' sentinel (Stationary handles
+    // Random via its own separate Deterministic/Random toggle instead).
+    _renderPiTActionSegments(row, stateNode, actions, currentAction, t) {
+        const segRow = createDiv();
+        segRow.parent(row);
+        segRow.addClass('policy-segmented-row');
+
+        actions.forEach(actionId => {
+            const actionNode = this.viewModel.graph.nodes.find(n => n.type === 'action' && n.id === actionId);
+            if (!actionNode) return;
+            const btn = createButton(actionNode.name);
+            btn.parent(segRow);
+            btn.addClass('policy-segmented-btn');
+            if (Number(currentAction) === Number(actionId)) btn.addClass('policy-segmented-btn--active');
+            btn.mousePressed(() => {
+                this.controller.setTimeDependentAction(stateNode.id, t, actionId);
+                this.updateContent();
+                redraw();
+            });
+        });
+
+        const randomBtn = createButton('Random');
+        randomBtn.parent(segRow);
+        randomBtn.addClass('policy-segmented-btn');
+        if (currentAction === 'random' || currentAction === null) randomBtn.addClass('policy-segmented-btn--active');
+        randomBtn.mousePressed(() => {
+            this.controller.setTimeDependentAction(stateNode.id, t, 'random');
+            this.updateContent();
+            redraw();
+        });
     }
 
     // Random-mode weight editor: one independent slider per action (raw weight, not forced to
@@ -764,6 +967,25 @@ class RightPanel {
         const viViewModel = this.viewModel.valueIterationViewModel;
         const modelKnown = this.viewModel.modelKnown;
 
+        // unknown:full (Learning Iteration) is a genuinely separate subsystem: real episodic
+        // Q-learning (algorithm toggle + Q/N table), not VI's Bellman sweep / editable-Q-table -
+        // computed up front so the Parameters section below can gate the ε slider on it too.
+        const liKey = ValuesMethodMatrix.key(modelKnown, this.viewModel.observability);
+
+        // Title/status resolve through the 2x2 method matrix - known:full/unknown:full are the
+        // only quadrants with a real computation difference (Bellman backup vs "P unknown"
+        // notice); the two partial-observability quadrants reuse the same numbers under
+        // illustrative labels (see valueIterationView.js's _beliefFor). matrixKey is also read
+        // later by the Convergence section's per-quadrant copy.
+        const observability = this.viewModel.observability;
+        const matrixEntry = ValuesMethodMatrix.resolve(modelKnown, observability);
+        const matrixKey = ValuesMethodMatrix.key(modelKnown, observability);
+
+        // Header row: title top-left, ε-convergence stop condition right-aligned on the same
+        // line - only for the three quadrants that run a real Bellman sweep; Learning Iteration
+        // renders its own title inside _renderLearningIterationPanel.
+        if (liKey !== 'unknown:full') this._renderMethodPanelHeader(matrixEntry, viState);
+
         // Values mode's own top-of-panel Parameters section (shared γ, used by Simulate/VI) -
         // the Method panel's only access point since Phase 3 retired the old global top-strip.
         // Not duplicated on the MC panel, which already has its own distinct "Discount Factor
@@ -773,13 +995,13 @@ class RightPanel {
             paramsDiv.parent(this.contentContainer);
             paramsDiv.addClass('panel-section-content');
             this._renderGammaSlider(paramsDiv);
+            // ε only makes sense for the three quadrants that run a real Bellman sweep to
+            // convergence - Learning Iteration has no epsilon/convergence concept at all.
+            if (liKey !== 'unknown:full') this._renderEpsilonSlider(paramsDiv);
         });
 
         this.renderInitialStateSection();
 
-        // unknown:full (Learning Iteration) is a genuinely separate subsystem: real episodic
-        // Q-learning (algorithm toggle + Q/N table), not VI's Bellman sweep / editable-Q-table.
-        const liKey = ValuesMethodMatrix.key(modelKnown, this.viewModel.observability);
         if (liKey === 'unknown:full') {
             this._renderLearningIterationPanel();
             this._renderPolicyLog();
@@ -804,115 +1026,97 @@ class RightPanel {
             return;
         }
 
-        // Title, equation, and Convergence copy all resolve through the 2x2 method matrix -
-        // known:full/unknown:full are the only quadrants with a real computation difference
-        // (Bellman backup vs "P unknown" notice); the two partial-observability quadrants reuse
-        // the same numbers under illustrative labels (see valueIterationView.js's _beliefFor).
-        const observability = this.viewModel.observability;
-        const matrixEntry = ValuesMethodMatrix.resolve(modelKnown, observability);
-        const matrixKey = ValuesMethodMatrix.key(modelKnown, observability);
-
-        // Title
-        const title = createDiv(matrixEntry.title);
-        title.parent(this.contentContainer);
-        title.addClass('panel-title');
-
-        // Update-equation header - only the two partial-observability quadrants get one
-        // (matching the design reference); known:full/unknown:full are unchanged.
-        if (matrixKey === 'known:partial' || matrixKey === 'unknown:partial') {
-            const equationTitle = createDiv(matrixKey === 'known:partial' ? 'Belief Update' : 'PO Q-Learning Update');
-            equationTitle.parent(this.contentContainer);
-            equationTitle.addClass('panel-hint');
-            equationTitle.style('font-weight', '600');
-            equationTitle.style('margin-bottom', '4px');
-        }
-
-        // Bellman/update equation (P known) / descriptive copy (P unknown - no learning
-        // algorithm runs, the student edits the Q-table directly)
-        const eqDiv = createDiv();
-        eqDiv.parent(this.contentContainer);
-        eqDiv.addClass('panel-section-content');
-        if (matrixKey === 'known:full') {
-            eqDiv.elt.innerHTML = renderKatex('V^{k}(s) = \\max_a \\sum_{s\'} P(s\'|s,a)[R + \\gamma V^{k-1}(s\')]', true);
-        } else if (matrixKey === 'known:partial') {
-            eqDiv.elt.innerHTML = renderKatex('V^{k}(b) = \\max_a \\sum_{s\'} P(s\'|s,a)[R + \\gamma V^{k-1}(b\')]', true);
-        } else {
-            eqDiv.elt.innerHTML = renderKatex('Q(b,a) \\leftarrow Q + \\alpha[r + \\gamma \\max_{a\'} Q(b\',a\') - Q]', true);
-        }
-
-        // Parameters
-        const paramsDiv = createDiv();
-        paramsDiv.parent(this.contentContainer);
-        paramsDiv.addClass('panel-section-content');
-        paramsDiv.style('margin-top', '10px');
-
+        // Iteration: safety cap + current iteration count.
         if (viState && viState.initialized) {
-            const tLine = createDiv(`<strong>Max sweeps (T):</strong> ${viState.T}`);
-            tLine.parent(paramsDiv);
-            tLine.style('margin-bottom', '4px');
+            this.createSection('Iteration', () => {
+                const iterDiv = createDiv();
+                iterDiv.parent(this.contentContainer);
+                iterDiv.addClass('panel-section-content');
 
-            const progressLine = createDiv(`<strong>Sweep:</strong> ${viState.currentSweepIndex} / ${viState.T}`);
-            progressLine.parent(paramsDiv);
-            progressLine.style('margin-bottom', '4px');
+                const capLine = createDiv(`<strong>Safety cap:</strong> stop after ${viState.T} iterations if not converged`);
+                capLine.parent(iterDiv);
+                capLine.style('margin-bottom', '4px');
+
+                const progressLine = createDiv(`<strong>Iteration:</strong> ${viState.currentSweepIndex}`);
+                progressLine.parent(iterDiv);
+                progressLine.style('margin-bottom', '4px');
+            });
         }
 
         // Convergence - the "converged" check is real (live max-norm delta from the synchronous
         // Bellman sweep); the sweep/episode/vector framing per quadrant is illustrative for
         // LI/BI/PO-L, same precedent as Learning Iteration's existing "no real algorithm" framing.
+        // Status is right-aligned on the section title's own row, mirroring the panel header's
+        // title/status treatment above.
         if (viState && viState.initialized) {
-            this.createSection('Convergence', () => {
-                const convDiv = createDiv();
-                convDiv.parent(this.contentContainer);
-                convDiv.addClass('panel-section-content');
+            const convRow = createDiv();
+            convRow.parent(this.contentContainer);
+            convRow.addClass('panel-section-title-row');
 
-                const perQuadrant = {
-                    'known:full':      `max ${viState.T} sweeps`,
-                    'known:partial':   `belief update · max ${viState.T} sweeps`,
-                    'unknown:partial': 'α = 0.1 · belief memory'
-                };
-                const line1 = createDiv(perQuadrant[matrixKey]);
-                line1.parent(convDiv);
-                line1.style('margin-bottom', '4px');
+            const convLabel = createDiv('Convergence');
+            convLabel.parent(convRow);
+            convLabel.addClass('panel-section-title');
 
-                const delta = viState.getDelta(viState.currentSweepIndex);
-                const line2 = createDiv();
-                line2.parent(convDiv);
-                if (viState.converged) {
-                    line2.html(`✓ converged Δ &lt; ${viState.epsilon.toFixed(2)}`);
-                    line2.style('color', 'var(--reward-positive)');
-                } else if (delta === null) {
-                    line2.html('Δ = — (init)');
-                } else {
-                    line2.html(`Δ = ${delta.toFixed(4)}`);
-                    line2.style('color', 'var(--accent-yellow)');
-                }
-            });
-        }
-
-        // Q*(s,a;t) table
-        if (viState && viState.initialized && viViewModel) {
-            const tableTitle = createDiv('Action Values');
-            tableTitle.parent(this.contentContainer);
-            tableTitle.addClass('panel-section-title');
-            tableTitle.style('margin-top', '15px');
-            if (!modelKnown) {
-                const editHint = createDiv('Click a value to edit it.');
-                editHint.parent(this.contentContainer);
-                editHint.addClass('panel-hint');
+            const delta = viState.getDelta(viState.currentSweepIndex);
+            const convStatus = createDiv();
+            convStatus.parent(convRow);
+            convStatus.addClass('panel-title-row-status');
+            if (viState.converged) {
+                convStatus.html(`✓ converged Δ &lt; ${viState.epsilon.toFixed(2)}`);
+                convStatus.style('color', 'var(--reward-positive)');
+            } else if (delta === null) {
+                convStatus.html('Δ = — (init)');
+            } else {
+                convStatus.html(`Δ = ${delta.toFixed(4)}`);
+                convStatus.style('color', 'var(--accent-yellow)');
             }
 
-            const qTableContainer = createDiv();
-            qTableContainer.parent(this.contentContainer);
-            qTableContainer.addClass('q-table-scroll');
-            this._renderQTable(qTableContainer, viState, viViewModel, modelKnown);
-        } else if (viState && !viState.initialized) {
-            const hint = createDiv('Press Play, Step, or Skip to compute Q-values.');
-            hint.parent(this.contentContainer);
-            hint.addClass('panel-hint');
-            hint.style('margin-top', '10px');
+            const perQuadrant = {
+                'known:partial':   'belief update',
+                'unknown:partial': 'α = 0.1 · belief memory'
+            };
+            const line1Text = perQuadrant[matrixKey];
+            if (line1Text) {
+                const line1 = createDiv(line1Text);
+                line1.parent(this.contentContainer);
+                line1.addClass('panel-hint');
+                line1.style('margin-top', '-4px');
+                line1.style('margin-bottom', '8px');
+            }
         }
 
         this._renderPolicyLog();
+    }
+
+    // Header row for the three real-Bellman quadrants: title top-left, and the ε-convergence
+    // stop condition (Δ vs ε) as compact inline LaTeX, right-aligned on the same line. Replaces
+    // the old separate title/equation/Action-Values blocks - that detail now lives in the
+    // canvas's Equation/Chart views instead of being duplicated here.
+    _renderMethodPanelHeader(matrixEntry, viState) {
+        const headerRow = createDiv();
+        headerRow.parent(this.contentContainer);
+        headerRow.addClass('panel-title-row');
+
+        const title = createDiv(matrixEntry.title);
+        title.parent(headerRow);
+        title.addClass('panel-title');
+
+        if (!viState || !viState.initialized) return;
+
+        const status = createDiv();
+        status.parent(headerRow);
+        status.addClass('panel-title-row-status');
+
+        const delta = viState.getDelta(viState.currentSweepIndex);
+        if (viState.converged) {
+            status.elt.innerHTML = renderKatex('\\Delta < \\epsilon');
+            status.style('color', 'var(--reward-positive)');
+        } else if (delta === null) {
+            status.elt.innerHTML = renderKatex('k = 0');
+        } else {
+            status.elt.innerHTML = renderKatex('\\Delta \\geq \\epsilon');
+            status.style('color', 'var(--accent-yellow)');
+        }
     }
 
     // ===== Learning Iteration (unknown:full): real episodic Q-learning =====
@@ -1184,6 +1388,48 @@ class RightPanel {
         });
     }
 
+    // Same row layout/fill-pct pattern as _renderGammaSlider, but bound to this.viEpsilon -
+    // Value Iteration's convergence threshold. Only rendered for the three quadrants that run a
+    // real Bellman sweep (see renderValueIterationPanel's liKey gate). Like γ, a change here is
+    // read once by main.js's ensureVIInitialized() at the next Reset+Run - it does not retroact
+    // into an already-running sweep (see the Phase 4 design doc's "epsilon slider" decision).
+    _renderEpsilonSlider(parentDiv) {
+        const row = createDiv();
+        row.parent(parentDiv);
+        row.addClass('panel-param-row');
+
+        const label = createDiv('ε');
+        label.parent(row);
+        label.addClass('panel-param-row-label');
+
+        const slider = createElement('input');
+        slider.parent(row);
+        slider.attribute('type', 'range');
+        slider.attribute('min', '0.001');
+        slider.attribute('max', '0.5');
+        slider.attribute('step', '0.001');
+        slider.attribute('value', String(this.viEpsilon));
+        slider.addClass('panel-param-row-slider');
+        slider.elt.addEventListener('mousedown', e => e.stopPropagation());
+        slider.elt.addEventListener('click', e => e.stopPropagation());
+        slider.elt.style.setProperty('--fill', (this.viEpsilon - 0.001) / (0.5 - 0.001));
+
+        const value = createDiv(this.viEpsilon.toFixed(3));
+        value.parent(row);
+        value.addClass('panel-param-row-value');
+
+        slider.input(() => {
+            const eps = parseFloat(slider.value());
+            this.viEpsilon = eps;
+            value.html(eps.toFixed(3));
+            slider.elt.style.setProperty('--fill', (eps - 0.001) / (0.5 - 0.001));
+        });
+        slider.elt.addEventListener('change', () => {
+            this.updateContent();
+            if (typeof redraw === 'function') redraw();
+        });
+    }
+
     // Same row layout/fill-pct pattern as _renderGammaSlider, but bound to
     // expectationState.gamma - Monte Carlo's own discount factor, intentionally distinct
     // from the shared this.discountFactor used by Build/Policy/Value Iteration.
@@ -1391,7 +1637,9 @@ class RightPanel {
                 label.addClass('policy-log-row-label');
                 label.elt.innerHTML = renderKatex(entry.label);
 
-                const tCol = createDiv('—');
+                // "t" column: em-dash for stationary entries, the finite horizon for π_t entries
+                // (Evaluate redesign Phase 6) - populated for the first time here.
+                const tCol = createDiv(entry.horizon !== undefined ? String(entry.horizon) : '—');
                 tCol.parent(row);
                 tCol.addClass('policy-log-row-t');
 
@@ -1401,7 +1649,7 @@ class RightPanel {
                 if (entry.isBest) valueCol.addClass('policy-log-row-value--best');
 
                 row.mouseOver(() => {
-                    this.controller.setPolicyPreview(entry.policySnapshot, entry.policyWeightsSnapshot);
+                    this.controller.setPolicyPreview(entry.policySnapshot, entry.policyWeightsSnapshot, entry.timeDependentPolicySnapshot);
                     if (typeof redraw === 'function') redraw();
                 });
                 row.mouseOut(() => {
@@ -1414,96 +1662,6 @@ class RightPanel {
                     if (typeof redraw === 'function') redraw();
                 });
             });
-        });
-    }
-
-    // "Estimate vs exact" comparison table: MC's per-state estimate alongside the active
-    // method's value, per state. Rendered once in both Values sub-views, after whichever panel
-    // (MC or Method) already rendered above it - comparison lives here (and in the convergence
-    // chart) rather than in a split canvas view.
-    _renderEstimateVsExact() {
-        const modelKnown = this.viewModel.modelKnown;
-        const observability = this.viewModel.observability;
-        const matrixKey = ValuesMethodMatrix.key(modelKnown, observability);
-        const shortLabels = { 'known:full': 'VI', 'unknown:full': 'LI', 'known:partial': 'BI', 'unknown:partial': 'PO-L' };
-        const shortLabel = shortLabels[matrixKey];
-
-        this.createSection('Estimate vs exact', () => {
-            const headerHint = createDiv(`MC | ${shortLabel}`);
-            headerHint.parent(this.contentContainer);
-            headerHint.addClass('panel-hint');
-            headerHint.style('margin-bottom', '6px');
-
-            const states = this.viewModel.graph.nodes.filter(n => n.type === 'state');
-            const viState = this.viewModel.valueIterationState;
-            const expectationState = this.expectationState;
-
-            const mcMeans = (expectationState && expectationState.computed) ? expectationState.getPerStateMeans() : {};
-            const finalCol = (viState && viState.initialized) ? viState.totalSweeps - 1 : -1;
-
-            const table = document.createElement('table');
-            table.className = 'estimate-vs-exact-table';
-
-            const thead = document.createElement('thead');
-            const headerRow = document.createElement('tr');
-            ['state', 'MC', shortLabel].forEach(label => {
-                const th = document.createElement('th');
-                th.textContent = label;
-                headerRow.appendChild(th);
-            });
-            thead.appendChild(headerRow);
-            table.appendChild(thead);
-
-            const tbody = document.createElement('tbody');
-            states.forEach(stateNode => {
-                const tr = document.createElement('tr');
-
-                const tdName = document.createElement('td');
-                tdName.textContent = stateNode.name;
-                tr.appendChild(tdName);
-
-                const tdMC = document.createElement('td');
-                const mcVal = mcMeans[stateNode.id];
-                tdMC.textContent = (mcVal !== undefined) ? mcVal.toFixed(2) : '—';
-                tr.appendChild(tdMC);
-
-                const tdMethod = document.createElement('td');
-                if (matrixKey === 'unknown:full') {
-                    // Learning Iteration's "method" column is the learned V̂ = max_a Q̂(s,a),
-                    // not VI's exact numbers (no Bellman sweep runs in this quadrant).
-                    const qls = this.viewModel.qLearningState;
-                    const actionIds = stateNode.actions || [];
-                    const hasData = qls && actionIds.some(a => qls.getN(stateNode.id, a) > 0);
-                    tdMethod.textContent = hasData
-                        ? Math.max(...actionIds.map(a => qls.getQ(stateNode.id, a))).toFixed(2)
-                        : '—';
-                } else if (finalCol >= 0) {
-                    const methodVal = observability === 'partial'
-                        ? ValuesMethodMatrix.beliefFor(viState, stateNode.id, finalCol).vOfB
-                        : (viState.getValues(finalCol)[stateNode.id] ?? 0);
-                    tdMethod.textContent = methodVal.toFixed(2);
-                } else {
-                    tdMethod.textContent = '—';
-                }
-                tr.appendChild(tdMethod);
-
-                tbody.appendChild(tr);
-            });
-            table.appendChild(tbody);
-
-            const tableContainer = createDiv();
-            tableContainer.parent(this.contentContainer);
-            tableContainer.addClass('estimate-vs-exact-scroll');
-            tableContainer.elt.appendChild(table);
-
-            // Belief/PO quadrants reuse VI's real numbers under an illustrative label - there is
-            // no separate "exact" value for those two quadrants beyond what VI already computes.
-            if (observability === 'partial') {
-                const hint = createDiv('Belief/PO values are illustrative — reuses the exact Value Iteration numbers under a simplified belief label.');
-                hint.parent(this.contentContainer);
-                hint.addClass('panel-hint');
-                hint.style('margin-top', '6px');
-            }
         });
     }
 
@@ -1808,7 +1966,7 @@ class RightPanel {
             'Transitions':  'Each action leads to successor states with probability p and reward r.',
             'Q-Values':     'Q(s,a) sums the weighted future values across all transitions.',
             'Select Max':   'V(s) = max over all Q(s,a). The best action is highlighted green.',
-            'Final Value':  'The new V(s) value is revealed and carried into the next sweep.'
+            'Final Value':  'The new V(s) value is revealed and carried into the next iteration.'
         };
 
         // Header row
@@ -1819,7 +1977,7 @@ class RightPanel {
         headerRow.style('align-items', 'center');
         headerRow.style('padding', '10px 12px 6px');
 
-        const headerText = createDiv(`Explain: ${detail.stateName} at sweep ${detail.timestep}`);
+        const headerText = createDiv(`Explain: ${detail.stateName} at k=${detail.timestep}`);
         headerText.parent(headerRow);
         headerText.addClass('panel-title');
         headerText.style('margin', '0');
@@ -2118,76 +2276,7 @@ class RightPanel {
         this._mcStatsContainer.html('');
         const t = state.currentT;
 
-        this._renderEstimateSection(this._mcStatsContainer, state, t);
-        this._renderEpisodesSection(this._mcStatsContainer, state, t);
         this._renderSelectedRunSection(this._mcStatsContainer, state, t);
-    }
-
-    // Big always-orange V̂(S0) estimate (mean discounted return across ALL rollouts, not
-    // just the displayed slice - see ExpectationState.getMeanAtT/getSEAtT) with a SE subtitle.
-    // Uses a dedicated .panel-estimate-value class rather than .panel-utility-value since this
-    // number is never sign-colored (it's an estimate, not a live positive/negative reward).
-    _renderEstimateSection(parent, state, t) {
-        this._createSectionInto(parent, 'Estimate', (sectionParent) => {
-            const container = createDiv();
-            container.parent(sectionParent);
-            container.addClass('panel-section-content');
-
-            const mean = state.getMeanAtT(t);
-            const se = state.getSEAtT(t);
-            const variance = state.getVarianceAtT(t);
-
-            const valueDiv = createDiv(`V̂(S₀) = ${mean !== null ? mean.toFixed(2) : '—'}`);
-            valueDiv.parent(container);
-            valueDiv.addClass('panel-estimate-value');
-
-            const subtitle = createDiv(
-                `mean of ${state.rollouts.length} returns · SE ± ${se !== null ? se.toFixed(2) : '—'}`);
-            subtitle.parent(container);
-            subtitle.addClass('panel-hint');
-            subtitle.style('margin-top', '2px');
-
-            const varianceSubtitle = createDiv(`Var(G) = ${variance !== null ? variance.toFixed(2) : '—'}`);
-            varianceSubtitle.parent(container);
-            varianceSubtitle.addClass('panel-hint');
-            varianceSubtitle.style('margin-top', '1px');
-        });
-    }
-
-    // Win/loss counts (over the currently DISPLAYED slice, matching what's on screen in the
-    // mini-panel grid - see ExpectationState.getEpisodeStatsAtT) plus the observed return range.
-    _renderEpisodesSection(parent, state, t) {
-        this._createSectionInto(parent, 'Episodes', (sectionParent) => {
-            const container = createDiv();
-            container.parent(sectionParent);
-            container.addClass('panel-section-content');
-
-            const stats = state.getEpisodeStatsAtT(t);
-
-            const countsDiv = createDiv();
-            countsDiv.parent(container);
-            countsDiv.addClass('panel-stat-value');
-
-            const posSpan = document.createElement('span');
-            posSpan.textContent = `${stats.posCount} ✓`;
-            posSpan.style.color = 'var(--reward-positive)';
-            countsDiv.elt.appendChild(posSpan);
-
-            const sepSpan = document.createElement('span');
-            sepSpan.textContent = ' / ';
-            countsDiv.elt.appendChild(sepSpan);
-
-            const negSpan = document.createElement('span');
-            negSpan.textContent = `${stats.negCount} ✗`;
-            negSpan.style.color = 'var(--reward-negative)';
-            countsDiv.elt.appendChild(negSpan);
-
-            const rangeDiv = createDiv(
-                `G ∈ [${stats.min !== null ? stats.min.toFixed(2) : '—'}, ${stats.max !== null ? stats.max.toFixed(2) : '—'}]`);
-            rangeDiv.parent(container);
-            rangeDiv.addClass('panel-hint');
-            rangeDiv.style('margin-top', '4px');
-        });
     }
 
     // Rendered whenever a mini-panel card is selected (expectationViewModel.selectedRunIndex !==

@@ -48,6 +48,14 @@ class SimulationState {
         // exclusive with `policy` per state - see getPolicyMode().
         this.policyWeights = {};
 
+        // Time-dependent policy (π_t, Evaluate redesign Phase 6) - orthogonal to policy/
+        // policyWeights above, which remain the "Stationary" representation. 'timeDependent'
+        // switches every consumer (sampling, exact evaluation, canvas rendering) over to reading
+        // timeDependentPolicy instead, via resolvePiTAction() below.
+        this.piMode = 'stationary';       // 'stationary' | 'timeDependent'
+        this.piHorizon = 8;               // shared horizon: episode length cap + backward-induction depth
+        this.timeDependentPolicy = {};    // stateId -> array[piHorizon] of (actionId | 'random')
+
         // Spinning arrow animation settings
         this.spinningArrowEnabled = true;  // Toggle for spinning arrow animation (on by default)
         this.spinningArrowDuration = 1500;  // Duration in milliseconds (computed dynamically)
@@ -485,6 +493,97 @@ class SimulationState {
         const probs = new Map();
         entries.forEach(([actionId, weight]) => probs.set(actionId, weight / sum));
         return probs;
+    }
+
+    // Time-dependent policy (π_t) methods - see the field comments above for the storage shape.
+    // These are additive: stationary policy/policyWeights are untouched by any of them, so
+    // switching piMode back to 'stationary' instantly restores exactly what was there before.
+
+    // Switches the active representation. Entering 'timeDependent' seeds any multi-action state
+    // not already present in timeDependentPolicy from that state's CURRENT stationary resolution
+    // (deterministic action if set, else the 'random' sentinel) - so a state edited before and
+    // switched away from doesn't lose its time-dependent edits, but a state visited for the first
+    // time starts from something meaningful instead of undefined.
+    setPiMode(mode, graph) {
+        this.piMode = mode;
+        if (mode !== 'timeDependent' || !graph) return;
+        graph.nodes.filter(n => n.type === 'state').forEach(stateNode => {
+            const actions = stateNode.actions || [];
+            if (actions.length === 0 || this.timeDependentPolicy[stateNode.id]) return;
+            const stationaryMode = this.getPolicyMode(stateNode.id);
+            const seed = stationaryMode === 'deterministic' ? this.getPolicyAction(stateNode.id) : 'random';
+            this.timeDependentPolicy[stateNode.id] = Array(this.piHorizon).fill(seed);
+        });
+    }
+
+    isTimeDependent() {
+        return this.piMode === 'timeDependent';
+    }
+
+    // Resizes every existing time-dependent array to the new horizon: truncates if shorter,
+    // extends by repeating the last element if longer (the least surprising default - no new
+    // information exists to fill unedited future timesteps with).
+    setPiHorizon(horizon) {
+        const h = Math.max(1, Math.floor(horizon));
+        this.piHorizon = h;
+        Object.keys(this.timeDependentPolicy).forEach(stateId => {
+            const seq = this.timeDependentPolicy[stateId];
+            if (seq.length === h) return;
+            if (seq.length > h) {
+                this.timeDependentPolicy[stateId] = seq.slice(0, h);
+            } else {
+                const last = seq[seq.length - 1];
+                this.timeDependentPolicy[stateId] = seq.concat(Array(h - seq.length).fill(last));
+            }
+        });
+    }
+
+    // Cycles a0 -> a1 -> ... -> 'random' -> a0 at a single (stateId, t) slot, mirroring the
+    // Stationary section's own deterministic-action-segment click cycling.
+    cycleTimeDependentAction(stateId, t, actions) {
+        if (!actions || actions.length === 0) return;
+        if (!this.timeDependentPolicy[stateId]) {
+            this.timeDependentPolicy[stateId] = Array(this.piHorizon).fill('random');
+        }
+        const seq = this.timeDependentPolicy[stateId];
+        const idx = Math.max(0, Math.min(seq.length - 1, t));
+        const current = seq[idx];
+        const currentActionIdx = actions.findIndex(a => Number(a) === Number(current));
+        const next = currentActionIdx === -1 || currentActionIdx === actions.length - 1
+            ? (current === 'random' ? actions[0] : 'random')
+            : actions[currentActionIdx + 1];
+        seq[idx] = next;
+    }
+
+    // Direct set (vs cycleTimeDependentAction's click-to-cycle) - backs the segmented-button
+    // selector mirroring Stationary's _renderPolicyActionSegments UI. value is a concrete
+    // actionId or the 'random' sentinel.
+    setTimeDependentAction(stateId, t, value) {
+        if (!this.timeDependentPolicy[stateId]) {
+            this.timeDependentPolicy[stateId] = Array(this.piHorizon).fill('random');
+        }
+        const seq = this.timeDependentPolicy[stateId];
+        const idx = Math.max(0, Math.min(seq.length - 1, t));
+        seq[idx] = value;
+    }
+
+    // Clamped read - null if the state has no time-dependent entry at all (terminal/single-action
+    // states never need one; selectActionForPolicy()/evaluateTimeIndexed() already treat "no
+    // entry" as "uniform among available actions", so this deliberately does not synthesize one).
+    getTimeDependentAction(stateId, t) {
+        const seq = this.timeDependentPolicy[stateId];
+        if (!seq || seq.length === 0) return null;
+        const idx = Math.max(0, Math.min(seq.length - 1, t));
+        return seq[idx];
+    }
+
+    // Single read path every consumer (TraceGenerator sampling, PolicyEvaluationState's backward
+    // induction, canvas rendering) should call instead of touching timeDependentPolicy directly -
+    // returns null whenever time-dependent mode isn't active or the state has no entry, so callers
+    // can uniformly fall through to their existing stationary-mode logic unchanged.
+    resolvePiTAction(stateId, elapsedT) {
+        if (this.piMode !== 'timeDependent') return null;
+        return this.getTimeDependentAction(stateId, elapsedT);
     }
 
     // Spinning arrow animation methods

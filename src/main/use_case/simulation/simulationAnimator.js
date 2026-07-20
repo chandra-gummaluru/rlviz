@@ -40,7 +40,8 @@ class SimulationAnimator {
         }
 
         const rawNodeCap = this.simulationState.maxSteps * 2 + 1;
-        const visited = this.traceGenerator.generate(startNode, rawNodeCap, this.simulationState.policy, this.simulationState.policyWeights);
+        const timeDependentPolicy = this.simulationState.isTimeDependent() ? this.simulationState.timeDependentPolicy : null;
+        const visited = this.traceGenerator.generate(startNode, rawNodeCap, this.simulationState.policy, this.simulationState.policyWeights, timeDependentPolicy);
         this.simulationState.setTrace(visited);
         return true;
     }

@@ -72,6 +72,13 @@ class InteractionViewModel {
         // only clicking a row (CanvasController.restorePolicyFromLog) mutates the real policy.
         this.previewPolicy = null;
         this.previewPolicyWeights = null;
+        this.previewTimeDependentPolicy = null; // same preview pair, π_t entries only (Phase 6)
+
+        // Time-dependent policy (π_t, Phase 6): which timestep the Policy π panel's pager
+        // currently shows - written by rightPanel.js, read by EdgeViewModel.policyEdgeProbability
+        // so canvas edge highlighting follows whichever t is paged, per the handoff's "π edge
+        // weights follow the pager/scrubber." Presentation-only, does not affect sampling/eval.
+        this.piTCursor = 0;
 
         // Editor neighborhood focus state
         this.editorFocusNode = null;
@@ -96,6 +103,7 @@ class InteractionViewModel {
         this.hoveredEdge = null;
         this.previewPolicy = null;
         this.previewPolicyWeights = null;
+        this.previewTimeDependentPolicy = null;
         this.clearEditorFocus();
     }
 
