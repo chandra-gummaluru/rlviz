@@ -5,10 +5,11 @@ An interactive web-based tool for creating, editing, and simulating Markov Decis
 ## Features
 
 - **Visual MDP Editor**: Create state and action nodes, connect them with probabilistic transitions, annotate the canvas with text labels
-- **Build & Policy Modes**: Full graph editing plus a dedicated Policy π editor — Stationary (deterministic or weighted-random actions per state) or time-dependent π_t (a per-timestep action, driven by a horizon slider and time pager)
+- **Build & Policy Modes**: Full graph editing plus a dedicated Policy π editor — Stationary (deterministic or weighted-random actions per state) or time-dependent π_t (a per-timestep action — deterministic, weighted-random, or uniform — driven by a horizon slider and time pager, with its own finite-horizon backward-induction evaluation)
 - **Trace Simulation**: Animate a sampled rollout through the graph with Play/Step/Reset and an optional "spinning arrow" visualization of probabilistic edge selection
-- **Monte Carlo & Iteration Modes**: A goal-card entry point into Values mode, each landing on a persistent 52/48 split canvas — Monte Carlo (many parallel rollouts + a Grid/Chart toggle) and Iteration, a 2×2 method matrix (Value Iteration, Learning Iteration, Belief Iteration, PO Q-Learning) selected via the P known/unknown and full/partial observability toggles, with a States/Equation/Backward/Chart view split and a live ε-convergence stop condition (not a fixed sweep count)
-- **Evaluate π**: Compute the exact value of whatever policy is currently configured via the Bellman expectation equation (not the optimal V* from Value Iteration, nor a Monte Carlo estimate) — logged to a shared, cross-run Policy log with hover-preview and click-to-restore
+- **Monte Carlo & Iteration Modes**: A goal-card entry point into Values mode, each landing on a persistent 52/48 split canvas — Monte Carlo (many parallel rollouts + a Grid/Chart toggle) and Iteration, a 2×2 method matrix (Value Iteration, Learning Iteration, Belief Iteration, PO Q-Learning) selected via the P known/unknown and full/partial observability toggles, with a States/Explain/Backward/Chart view split and a live ε-convergence stop condition (not a fixed sweep count)
+- **Find Optimal π**: In the Value Iteration quadrant, a dedicated "★ Find optimal π" run drives the same backup-reveal animation to the true Bellman-optimality (`max_a`) fixed point, with its own ending choreography and a one-click path to log the resulting optimal policy
+- **Evaluate π / Policy log**: Compute the exact value of whatever policy is currently configured via the Bellman expectation equation (not the optimal V* from Value Iteration, nor a Monte Carlo estimate) — named, capped at 6 entries, renamable/removable, with hover-preview and click-to-restore; the Monte Carlo Chart view can overlay any logged policy's exact value-over-time curve and sampled return-distribution histogram for direct comparison
 - **Import/Export**: Full graph export (positions, edges, text labels — reimportable) or MDP-only export (transition/reward matrices), plus PNG export and a recent-files menu
 - **Undo/Redo**: Full command history with a 50-level undo stack
 - **Graph Analysis**: Automatic probability normalization and transition-matrix generation
@@ -46,9 +47,9 @@ There is no automated test suite. `test_schema/` holds example MDP graph JSON fi
 2. **Policy mode** — identical canvas to Build mode, but the right panel's default view is a Policy π editor: toggle each state between Deterministic (pick one action) and Random (weighted sliders per action) under **Stationary**, or switch to **π_t (time-dep)** to set a different action per timestep, up to a max-steps horizon
 
 3. **Monte Carlo / Iteration modes** — clicking either top-bar segment enters Values mode via a goal card ("Want to find V^π(S₀)?"); picking a scene lands on a persistent 52%/48% split canvas:
-   - **Monte Carlo**: left pane toggles Grid (many rollouts at once — 16/32/64 panels via the runs pill) or Chart (Convergence/Histogram); right pane always shows the live MDP graph, highlighting whichever rollout is selected
-   - **Iteration**: left pane shows one State card per computed sweep, right pane toggles Equation (an animated, per-state Bellman-backup reveal) / Backward (grouped by target state — only with an active π_t policy) / Chart (Q-table + Convergence). The stop condition is ε-convergence (`‖V_{t+1} − V_t‖ < ε`, configurable in Parameters), not a fixed sweep count — `T` is just a safety cap
-   - Both modes expose an **Evaluate π** button (top bar) that computes the current policy's exact value and appends it to the shared Policy log (right panel), independent of whatever Monte Carlo/Iteration happen to be showing
+   - **Monte Carlo**: left pane toggles Grid (many rollouts at once — 16/32/64 panels via the runs pill) or Chart (Convergence/Histogram, plus a "+ Log π" chip strip that overlays any logged policy's exact value curve and return histogram); right pane always shows the live MDP graph, highlighting whichever rollout is selected
+   - **Iteration**: left pane shows one dashed-bordered section per computed sweep (only the live one stays expanded) with an animated per-state backup-reveal card (ghost-subtree value marker, edge flare, a live equation zone that substitutes each term into `Q(s,a)`); right pane toggles Explain (a plain-language narration of the same reveal) / Backward (grouped by target state — only with an active π_t policy) / Chart (a per-sweep Q-table + Convergence chart). The stop condition is ε-convergence (`‖V_{t+1} − V_t‖ < ε`, configurable in Parameters), not a fixed sweep count — `T` is just a safety cap. In the real Value Iteration quadrant, a **★ Find optimal π** run replays the same reveal choreography to the true `max_a` fixed point, with its own ending and a one-click way to log the result
+   - Both modes expose an **Evaluate π** button (top bar) that computes the current policy's exact value and, via a name prompt (pre-filled `π1, π2, ...`), appends it to the shared Policy log (right panel — capped at 6 entries, rename by double-click, remove with ×), independent of whatever Monte Carlo/Iteration happen to be showing
 
 ## Architecture
 
@@ -96,14 +97,16 @@ rlviz/
 │   ├── domain/           # Core entities (Graph, Node, Edge, TextLabel, SimulationState, ValueIterationState,
 │   │                     # ExpectationState, PolicyEvaluationState)
 │   ├── use_case/         # Application logic, one folder per use case (Input-Interactor-Presenter pattern),
-│   │                     # incl. valueIteration/, expectation/, evaluatePolicy/, simulation/
+│   │                     # incl. valueIteration/, expectation/, evaluatePolicy/, logOptimalPolicy/, simulation/
 │   ├── adapter/
 │   │   ├── controller/   # CanvasController - entry point for all user input
 │   │   └── viewmodel/    # CanvasViewModel and per-entity/sub-mode view models
-│   ├── view/             # mainView (canvas) + DOM chrome: topBar, toolPalette, goalCard, estimatorPill/
-│   │                     # mcRunsPill/zoomPill/viSweepChip, rightPanel, expectationView + expectationChartView,
+│   ├── view/             # mainView (canvas) + DOM chrome: topBar, toolPalette, goalCard, findOptimalCard,
+│   │                     # namePolicyModal/renormalizeConfirmModal/toast, estimatorPill/mcRunsPill/zoomPill/
+│   │                     # viSweepChip, rightPanel, expectationView + expectationChartView,
 │   │                     # valueIterationView + viStatesView/viChartView/viEquationView/viBackwardView/
-│   │                     # viRightViewPill, treeView + treeViewPill, chartDock, helpers/
+│   │                     # viRightViewPill, treeView + treeViewPill, chartDock,
+│   │                     # helpers/ (incl. viBackupDiagram, RevealTimeline, valuesMethodMatrix, PolicyChartOverlay)
 │   └── app/               # main.js - dependency injection and p5.js bootstrap
 └── test_schema/          # Example MDP graph JSON fixtures for Import/Export
 ```
