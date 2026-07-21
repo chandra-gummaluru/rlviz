@@ -18,6 +18,12 @@ class VIPresenter extends VIOutputBoundary {
         this.chartView = null;
         this.equationView = null;
         this.backwardView = null;
+        // Optional hook for "a Play/continuous-sweep run just finished" (converged OR hit the T
+        // cap) - main.js wires this to detect completion of a run kicked off via the "Find
+        // optimal π" flow (see promptNameOptimalPolicy()) without this presenter needing to know
+        // anything about that flow itself. null by default (no-op) so every other, unrelated
+        // presentComplete() call site stays exactly as before.
+        this.onComplete = null;
     }
 
     get viViewModel() {
@@ -36,6 +42,7 @@ class VIPresenter extends VIOutputBoundary {
     setChartView(chartView) { this.chartView = chartView; }
     setEquationView(equationView) { this.equationView = equationView; }
     setBackwardView(backwardView) { this.backwardView = backwardView; }
+    setOnComplete(fn) { this.onComplete = fn; }
 
     // --- Lifecycle events ---
 
@@ -77,6 +84,7 @@ class VIPresenter extends VIOutputBoundary {
         this._updateButtonStates();
         this._redraw();
         this._updateRightPanel();
+        if (this.onComplete) this.onComplete();
     }
 
     presentPaused() {

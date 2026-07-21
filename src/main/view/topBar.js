@@ -41,7 +41,7 @@ class TopBar {
         this._unknownBtn = null;
         this._fullBtn = null;
         this._partialBtn = null;
-        this._spinCheckbox = null;
+        this._spinSwitch = null;
         this._paramsTriggerLabelEl = null;
 
         // Build mode action buttons
@@ -49,6 +49,11 @@ class TopBar {
         this.playPauseBtn = null;
         this.stepBtn = null;
         this.rerunBtn = null;
+
+        // Evaluate π (Build/Policy) / Find optimal π (Values) - mutually exclusive by mode, see
+        // setMode()'s own show/hide of these two.
+        this.evaluatePiBtn = null;
+        this.findOptimalBtn = null;
 
         // Values -> Monte Carlo
         this.expectationPlayPauseBtn = null;
@@ -58,8 +63,6 @@ class TopBar {
         this.viStepBtn = null;
         this.viSkipBtn = null;
         this.viResetBtn = null;
-        this.viTInput = null;
-        this.viTLabel = null;
     }
 
     setup() {
@@ -350,6 +353,7 @@ class TopBar {
         dropdown.elt.addEventListener('mousedown', e => e.stopPropagation());
 
         this._buildSpeedSection(dropdown);
+        this._buildAnimationsPerModeSection(dropdown);
         this._buildModelKnownSection(dropdown);
         this._buildObservabilitySection(dropdown);
 
@@ -420,16 +424,61 @@ class TopBar {
         const slowLabel = createSpan('Slow');
         slowLabel.parent(endLabels);
 
-        const spinRow = createDiv();
-        spinRow.parent(section);
-        spinRow.addClass('menubar-popover-checkbox-row');
+        this._spinSwitch = this._buildAnimSwitchRow(section, 'Spinning Arrow', 'neutral',
+            () => this._spinningArrowEnabled,
+            () => { if (this.callbacks.onToggleSpinningArrow) this.callbacks.onToggleSpinningArrow(); });
+    }
 
-        this._spinCheckbox = createCheckbox('Spinning Arrow', true);
-        this._spinCheckbox.parent(spinRow);
-        this._spinCheckbox.addClass('menubar-checkbox');
-        this._spinCheckbox.changed(() => {
-            if (this.callbacks.onToggleSpinningArrow) this.callbacks.onToggleSpinningArrow();
-        });
+    // Per-mode on/off switches for the reveal animation - Monte Carlo's rollout scrubber and
+    // Value Iteration's per-state Bellman-backup cards are both slow-by-design; off, the
+    // underlying computation is unaffected (still tick-/sweep-by-sweep), only the reveal becomes
+    // instant (see CanvasViewModel.mcAnimationEnabled/.iterationAnimationEnabled's own comment).
+    _buildAnimationsPerModeSection(dropdown) {
+        const section = createDiv();
+        section.parent(dropdown);
+        section.addClass('menubar-popover-section');
+
+        const title = createDiv('Animations · per mode');
+        title.parent(section);
+        title.addClass('menubar-popover-title');
+
+        this._mcAnimSwitch = this._buildAnimSwitchRow(section, 'Monte Carlo', 'mc',
+            () => (this.viewModel ? this.viewModel.mcAnimationEnabled : true),
+            (enabled) => { if (this.callbacks.onSetMcAnimationEnabled) this.callbacks.onSetMcAnimationEnabled(enabled); });
+
+        this._iterationAnimSwitch = this._buildAnimSwitchRow(section, 'Iteration', 'iteration',
+            () => (this.viewModel ? this.viewModel.iterationAnimationEnabled : true),
+            (enabled) => { if (this.callbacks.onSetIterationAnimationEnabled) this.callbacks.onSetIterationAnimationEnabled(enabled); });
+    }
+
+    // One "<label>  [switch]" row. `modeKey` ('mc'|'iteration') selects the label/switch accent
+    // color modifier class (menubar-anim-label--<modeKey>/menubar-anim-switch--<modeKey>).
+    // Returns the switch element so _refreshParamsPopover() can toggle its --on class from the
+    // live viewModel state, same "click sends intent, refresh re-derives visuals" pattern as
+    // _knownBtn/_unknownBtn above.
+    _buildAnimSwitchRow(section, label, modeKey, getEnabled, onToggle) {
+        const row = createDiv();
+        row.parent(section);
+        row.addClass('menubar-anim-row');
+
+        const labelEl = createSpan(label);
+        labelEl.parent(row);
+        labelEl.addClass('menubar-anim-label');
+        labelEl.addClass(`menubar-anim-label--${modeKey}`);
+
+        const switchBtn = createDiv();
+        switchBtn.parent(row);
+        switchBtn.addClass('menubar-anim-switch');
+        switchBtn.addClass(`menubar-anim-switch--${modeKey}`);
+        switchBtn.attribute('role', 'switch');
+
+        const thumb = createDiv();
+        thumb.parent(switchBtn);
+        thumb.addClass('menubar-anim-switch-thumb');
+
+        switchBtn.mousePressed(() => onToggle(!getEnabled()));
+
+        return switchBtn;
     }
 
     _buildModelKnownSection(dropdown) {
@@ -500,7 +549,21 @@ class TopBar {
         }
         if (this._speedValueEl) this._speedValueEl.html(this._speedLabelForT(this._currentSpeed));
 
-        if (this._spinCheckbox) this._spinCheckbox.checked(this._spinningArrowEnabled);
+        if (this._spinSwitch) {
+            if (this._spinningArrowEnabled) this._spinSwitch.addClass('menubar-anim-switch--on');
+            else this._spinSwitch.removeClass('menubar-anim-switch--on');
+        }
+
+        const mcAnimEnabled = this.viewModel ? this.viewModel.mcAnimationEnabled : true;
+        if (this._mcAnimSwitch) {
+            if (mcAnimEnabled) this._mcAnimSwitch.addClass('menubar-anim-switch--on');
+            else this._mcAnimSwitch.removeClass('menubar-anim-switch--on');
+        }
+        const iterationAnimEnabled = this.viewModel ? this.viewModel.iterationAnimationEnabled : true;
+        if (this._iterationAnimSwitch) {
+            if (iterationAnimEnabled) this._iterationAnimSwitch.addClass('menubar-anim-switch--on');
+            else this._iterationAnimSwitch.removeClass('menubar-anim-switch--on');
+        }
 
         const known = this.viewModel ? this.viewModel.modelKnown : true;
         if (this._knownBtn) {
@@ -559,16 +622,6 @@ class TopBar {
     _createActionButtons() {
         this.renormalizeBtn = this._createBtn('⟳ Renormalize', () => this.callbacks.onRenormalize(), 'toolbar-btn--renormalize');
 
-        // Evaluate pi: unlike every other button in this cluster, this one is ALWAYS visible in
-        // all four modes (Build/Policy/Monte Carlo/Iteration) - it's never hidden by setMode()'s
-        // per-mode show/hide dance the way playPauseBtn/renormalizeBtn etc. are, only ever
-        // enabled/disabled via setEvaluatePolicyEnabled() (see main.js's onModelKnownToggle
-        // wiring). Shown once here at creation time and never hidden again.
-        this.evaluatePiBtn = this._createBtn('Evaluate π', () => {
-            if (this.callbacks.onEvaluatePolicy) this.callbacks.onEvaluatePolicy();
-        }, 'toolbar-btn--evaluate-pi');
-        this.evaluatePiBtn.show();
-
         this.playPauseBtn = this._createBtn('▶ Run', () => this.handlePlayPauseClick(), 'toolbar-btn--play');
         this.playPauseBtn.elt.dataset.mode = 'play';
         this.stepBtn = this._createBtn('Step', () => this.callbacks.onStep(), 'toolbar-btn--step');
@@ -595,17 +648,22 @@ class TopBar {
             if (this.callbacks.onVIReset) this.callbacks.onVIReset();
         }, 'toolbar-btn--rerun');
 
-        this.viTLabel = createSpan('T =');
-        this.viTLabel.parent(this.rightSection);
-        this.viTLabel.addClass('toolbar-t-label');
+        // Evaluate π (Build/Policy only) and Find optimal π (Monte Carlo/Iteration only) share
+        // the same rightmost "top right" slot, mutually exclusive by mode - setMode() below
+        // shows/hides whichever one applies, unlike playPauseBtn/renormalizeBtn etc. above which
+        // are shown/hidden inline right where they're created. Both created here, LAST (after
+        // every mode-specific button above), so whichever is visible stays the rightmost element
+        // of this cluster regardless of which mode-specific buttons happen to be shown - DOM/flex
+        // order is fixed at creation time, hide()/show() never reorders. Evaluate π is further
+        // gated on modelKnown via setEvaluatePolicyEnabled() (see main.js's onModelKnownToggle
+        // wiring); Find optimal π has no such gate - see rightPanel.js's identical button for why.
+        this.evaluatePiBtn = this._createBtn('Evaluate π', () => {
+            if (this.callbacks.onEvaluatePolicy) this.callbacks.onEvaluatePolicy();
+        }, 'toolbar-btn--evaluate-pi');
 
-        this.viTInput = createInput('8', 'number');
-        this.viTInput.parent(this.rightSection);
-        this.viTInput.addClass('toolbar-t-input');
-        this.viTInput.attribute('min', '0');
-        this.viTInput.attribute('max', '100');
-        this.viTInput.attribute('title', 'Safety cap — Iteration stops here even if it has not converged');
-        this.viTInput.size(50);
+        this.findOptimalBtn = this._createBtn('★ Find optimal π', () => {
+            if (this.callbacks.onFindOptimalPolicy) this.callbacks.onFindOptimalPolicy();
+        }, 'toolbar-btn--find-optimal');
     }
 
     _createBtn(label, onClick, modifierClass) {
@@ -630,13 +688,18 @@ class TopBar {
         if (!this.expectationPlayPauseBtn) return;
         this.expectationPlayPauseBtn.elt.dataset.mode = mode;
         if (mode === 'play') {
-            // Use the current display-run count in the label
-            const displayRuns = (this.viewModel && this.viewModel.expectationState) ? this.viewModel.expectationState.displayRuns : 24;
-            this.expectationPlayPauseBtn.html(`▶ Run ${displayRuns} episodes`);
+            // Same Play/Pause logic/click-handling as every other Play button in this cluster
+            // (handleExpectationPlayPauseClick() is unchanged) - only the label/color read
+            // "Evaluate π" (blue, matching Build/Policy's own Evaluate π button) instead of a
+            // Run-with-episode-count label, since running Monte Carlo rollouts to estimate a
+            // policy's value IS this app's own version of "evaluating" it.
+            this.expectationPlayPauseBtn.html('▶ Evaluate π');
             this.expectationPlayPauseBtn.removeClass('toolbar-btn--pause');
-            this.expectationPlayPauseBtn.addClass('toolbar-btn--play');
+            this.expectationPlayPauseBtn.removeClass('toolbar-btn--play');
+            this.expectationPlayPauseBtn.addClass('toolbar-btn--evaluate-pi');
         } else {
             this.expectationPlayPauseBtn.html('⏸ Pause');
+            this.expectationPlayPauseBtn.removeClass('toolbar-btn--evaluate-pi');
             this.expectationPlayPauseBtn.removeClass('toolbar-btn--play');
             this.expectationPlayPauseBtn.addClass('toolbar-btn--pause');
         }
@@ -649,11 +712,6 @@ class TopBar {
         } else {
             if (this.callbacks.onVIPause) this.callbacks.onVIPause();
         }
-    }
-
-    getVIT() {
-        const v = parseInt(this.viTInput.value());
-        return (Number.isFinite(v) && v >= 0) ? v : 8;
     }
 
     handlePlayPauseClick() {
@@ -684,8 +742,6 @@ class TopBar {
         this.viStepBtn.hide();
         this.viSkipBtn.hide();
         this.viResetBtn.hide();
-        this.viTLabel.hide();
-        this.viTInput.hide();
 
         // Monte Carlo/Iteration toolbar segments only show their tint while actually the current
         // sub-view (matching Build/Policy's own .toolbar-toggle--active convention) - clear both
@@ -707,8 +763,6 @@ class TopBar {
             this.viStepBtn.show();
             this.viSkipBtn.show();
             this.viResetBtn.show();
-            this.viTLabel.show();
-            this.viTInput.show();
             this.setVIPlayPauseMode('play');
             if (this.iterationToggleBtn) this.iterationToggleBtn.addClass('toolbar-toggle--active');
         }
@@ -724,6 +778,8 @@ class TopBar {
         this.playPauseBtn.hide();
         this.stepBtn.hide();
         this.rerunBtn.hide();
+        if (this.evaluatePiBtn) this.evaluatePiBtn.hide();
+        if (this.findOptimalBtn) this.findOptimalBtn.hide();
         this._applyValuesSubViewButtons(null);
 
         this.buildToggleBtn.removeClass('toolbar-toggle--active');
@@ -734,6 +790,7 @@ class TopBar {
             this.stepBtn.show();
             this.rerunBtn.show();
             this.renormalizeBtn.show();
+            if (this.evaluatePiBtn) this.evaluatePiBtn.show();
             this.setPlayPauseMode('play');
             this.setPlayPauseEnabled(true);
             this.setStepEnabled(true);
@@ -745,6 +802,10 @@ class TopBar {
                 this.policyToggleBtn.addClass('toolbar-toggle--active');
             }
         } else if (mode === 'values') {
+            // Find optimal π (not Evaluate π) is the top-right button for BOTH Values sub-views
+            // (Monte Carlo and Iteration) - unlike playPauseBtn/etc. above, this doesn't vary by
+            // subView, so it's set once here rather than inside _applyValuesSubViewButtons().
+            if (this.findOptimalBtn) this.findOptimalBtn.show();
             // Monte Carlo/Iteration's own .toolbar-toggle--active is applied inside
             // _applyValuesSubViewButtons() based on subView, same as Build/Policy above.
             const subView = (this.viewModel && this.viewModel.valuesSubView) || 'mc';
@@ -832,17 +893,30 @@ class TopBar {
         this.viPlayPauseBtn.elt.dataset.mode = mode;
 
         if (mode === 'play') {
-            // Resolve the current VI quadrant's runLabel through ValuesMethodMatrix
+            // Resolve the current VI quadrant's runLabel through ValuesMethodMatrix - except
+            // known:full (real Value Iteration), whose own runLabel ('▶ Find Optimal') is
+            // overridden to read "▶ Evaluate π" in blue instead, matching Monte Carlo's own Play
+            // button's identical relabeling (setExpectationPlayMode) - same underlying logic
+            // (still runs the real Bellman-sweep animation), just the label/color.
             const modelKnown = this.viewModel ? this.viewModel.modelKnown : true;
             const observability = (this.viewModel && this.viewModel.observability) || 'full';
-            const entry = ValuesMethodMatrix.resolve(modelKnown, observability);
-            const label = (entry && entry.runLabel) ? entry.runLabel : '▶ Play';
-            this.viPlayPauseBtn.html(label);
+            const isKnownFull = ValuesMethodMatrix.key(modelKnown, observability) === 'known:full';
             this.viPlayPauseBtn.removeClass('toolbar-btn--pause');
-            this.viPlayPauseBtn.addClass('toolbar-btn--play');
+            this.viPlayPauseBtn.removeClass('toolbar-btn--play');
+            this.viPlayPauseBtn.removeClass('toolbar-btn--evaluate-pi');
+            if (isKnownFull) {
+                this.viPlayPauseBtn.html('▶ Evaluate π');
+                this.viPlayPauseBtn.addClass('toolbar-btn--evaluate-pi');
+            } else {
+                const entry = ValuesMethodMatrix.resolve(modelKnown, observability);
+                const label = (entry && entry.runLabel) ? entry.runLabel : '▶ Play';
+                this.viPlayPauseBtn.html(label);
+                this.viPlayPauseBtn.addClass('toolbar-btn--play');
+            }
         } else {
             this.viPlayPauseBtn.html('⏸ Pause');
             this.viPlayPauseBtn.removeClass('toolbar-btn--play');
+            this.viPlayPauseBtn.removeClass('toolbar-btn--evaluate-pi');
             this.viPlayPauseBtn.addClass('toolbar-btn--pause');
         }
     }

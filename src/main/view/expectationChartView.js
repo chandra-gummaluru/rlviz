@@ -6,13 +6,23 @@
 // ChartDataBuilders' existing pure data-shaping functions verbatim - no new chart math here,
 // only a new render target.
 class ExpectationChartView {
-    constructor(canvasViewModel, expectationState, expectationViewModel, valueIterationState) {
+    // policyLogDeps (policy-logging.md - Phase 3/4 of the policy-log chart overlays): optional,
+    // everything in it defaults to a no-op so this class still works standalone if a caller omits
+    // it. `onLogPolicy` is the SAME handler the top bar's dedicated "Evaluate π" button already
+    // calls (main.js's onEvaluatePolicy) - the chip strip's own "+ Log π" reuses it verbatim
+    // rather than duplicating the naming-modal/cap-check flow.
+    constructor(canvasViewModel, expectationState, expectationViewModel, valueIterationState, policyLogDeps = {}) {
         this.viewModel = canvasViewModel;
         this.expectationState = expectationState;
         this.expectationViewModel = expectationViewModel;
         this.valueIterationState = valueIterationState;
+        this.policyEvaluationState = policyLogDeps.policyEvaluationState || null;
+        this.traceGenerator = policyLogDeps.traceGenerator || null;
+        this.startNodeProvider = policyLogDeps.startNodeProvider || (() => null);
+        this.onLogPolicy = policyLogDeps.onLogPolicy || null;
 
         this.containerEl = null;
+        this._chipStripEl = null;
         this._slotBodyEls = [null, null];
         this._statEls = [null, null];
         this._legendEls = [null, null];
@@ -28,7 +38,16 @@ class ExpectationChartView {
         document.body.appendChild(container);
         this.containerEl = container;
 
-        const labels = ['V̂(S₀) vs V*', 'Return distribution'];
+        // Policy log chip strip (policy-logging.md §3's "shared strip above the cards") - lives
+        // above both chart cards, built fresh on every refresh() (see _renderChipStrip()) since
+        // its content is exactly `policyEvaluationState.entries`, same "just re-render, don't
+        // diff" convention every other DOM view in this codebase already uses.
+        const chipStrip = document.createElement('div');
+        chipStrip.className = 'policy-chip-strip';
+        container.appendChild(chipStrip);
+        this._chipStripEl = chipStrip;
+
+        const labels = ['Value over Time for a Given Policy and Initial State', 'Return distribution'];
         for (let i = 0; i < 2; i++) {
             const slot = document.createElement('div');
             slot.className = 'expectation-chart-view-slot';
@@ -88,8 +107,68 @@ class ExpectationChartView {
 
     refresh() {
         if (!this.containerEl || this.containerEl.style.display === 'none') return;
+        this._renderChipStrip();
         this._renderConvergence();
         this._renderHistogram();
+    }
+
+    // Best entry renders green (policy-logging.md §1/§3's "★ = best, green"); every other entry
+    // cycles through AppPalette.expectation.runColors by log order - an 8-color array already
+    // built for exactly this "N distinct series" need, previously unused anywhere in the app.
+    _policyColor(entry) {
+        if (entry.isBest) return AppPalette.accent.green;
+        const colors = AppPalette.expectation.runColors;
+        return colors[entry.id % colors.length];
+    }
+
+    _renderChipStrip() {
+        const strip = this._chipStripEl;
+        if (!strip) return;
+        strip.innerHTML = '';
+
+        const logBtn = document.createElement('button');
+        logBtn.type = 'button';
+        logBtn.className = 'policy-chip-strip-log-btn';
+        logBtn.textContent = '+ Log π';
+        logBtn.addEventListener('click', () => {
+            if (this.onLogPolicy) this.onLogPolicy();
+        });
+        strip.appendChild(logBtn);
+
+        const entries = this.policyEvaluationState ? this.policyEvaluationState.entries : [];
+        const hiddenIds = this.expectationViewModel ? this.expectationViewModel.hiddenPolicyIds : new Set();
+
+        entries.forEach(entry => {
+            const chip = document.createElement('button');
+            chip.type = 'button';
+            chip.className = 'policy-chip';
+            if (hiddenIds.has(entry.id)) chip.classList.add('policy-chip--hidden');
+            chip.style.setProperty('--policy-chip-color', this._policyColor(entry));
+            chip.textContent = entry.name || entry.label;
+
+            chip.addEventListener('click', () => {
+                if (!this.expectationViewModel) return;
+                const set = this.expectationViewModel.hiddenPolicyIds;
+                if (set.has(entry.id)) set.delete(entry.id); else set.add(entry.id);
+                this.refresh();
+            });
+            // Deliberately NOT this.refresh() - that tears down and rebuilds the WHOLE chip strip
+            // (see rightPanel.js's rename-input dblclick fix for the identical DOM-swap-mid-
+            // interaction bug this would otherwise reintroduce here: a hover-triggered strip
+            // rebuild replaces this very chip's DOM node while the pointer is still over it,
+            // which can strand a click that lands right after the hover). Hover only needs the
+            // convergence chart's line thickening/dimming to update, so re-render just that.
+            chip.addEventListener('mouseenter', () => {
+                if (this.expectationViewModel) this.expectationViewModel.hoveredPolicyId = entry.id;
+                this._renderConvergence();
+            });
+            chip.addEventListener('mouseleave', () => {
+                if (this.expectationViewModel) this.expectationViewModel.hoveredPolicyId = null;
+                this._renderConvergence();
+            });
+
+            strip.appendChild(chip);
+        });
     }
 
     _renderConvergence() {
@@ -105,11 +184,43 @@ class ExpectationChartView {
         const { mcMeans, mcSEs, viValues, vStar } = ChartDataBuilders.buildConvergenceData(
             this.expectationState, this.valueIterationState);
 
+        const policyEntries = this.policyEvaluationState ? this.policyEvaluationState.entries : [];
+        const hiddenPolicyIds = this.expectationViewModel ? this.expectationViewModel.hiddenPolicyIds : new Set();
+        const hoveredPolicyId = this.expectationViewModel ? this.expectationViewModel.hoveredPolicyId : null;
+        const visiblePolicyEntries = policyEntries.filter(e =>
+            !hiddenPolicyIds.has(e.id) && e.valueCurve && e.valueCurve.length > 1);
+
         const canvas = document.createElement('canvas');
         body.appendChild(canvas);
-        const maxLen = Math.max(mcMeans.length, viValues.length, 1);
+        const maxLen = Math.max(
+            mcMeans.length, viValues.length, 1,
+            ...visiblePolicyEntries.map(e => e.valueCurve.length)
+        );
 
         const datasets = [];
+
+        // One dashed line per visible logged policy (policy-logging.md §3) - the exact
+        // E[G]-vs-horizon curve PolicyEvaluationState.evaluateCurve() computed at log time.
+        visiblePolicyEntries.forEach(entry => {
+            const color = this._policyColor(entry);
+            const isHovered = hoveredPolicyId === entry.id;
+            datasets.push({
+                label: entry.name || entry.label,
+                data: entry.valueCurve.map((y, x) => ({ x, y })),
+                borderColor: color,
+                borderDash: [5, 3],
+                borderWidth: isHovered ? 3 : 1.5,
+                pointRadius: 0, tension: 0,
+                // Marked for ConvergenceEndpointPlugin below, same as the MC "estimate" line -
+                // _policyId (unlike the generic _labelEndpoint-only datasets) routes it through
+                // the plugin's separate de-overlapping/right-aligned label pass instead of that
+                // line's own "draw right next to the point" behavior.
+                _labelEndpoint: true,
+                _endpointLabel: entry.name || '',
+                _policyId: entry.id,
+                _policyHovered: isHovered
+            });
+        });
 
         // +-SE shaded band around the MC line - see chartDock.js's _renderConvergence for the
         // fill-target rationale (lower bound first with fill:false, upper bound right after with
@@ -179,9 +290,20 @@ class ExpectationChartView {
         // support without an extra plugin dependency (none is vendored here), so this is a small
         // inline plugin scoped to just this chart instance (passed via `plugins:` below, not
         // Chart.register()'d globally) rather than affecting chartDock's/viChartView's own charts.
+        //
+        // Two label styles coexist here: the original single-dataset one (the MC "estimate" line,
+        // `_policyId` unset) draws right next to its own point, completely unchanged from before
+        // policy-log curves existed. Policy curves (`_policyId` set) go through a SEPARATE pass
+        // below that de-overlaps and right-aligns at the plot edge with a leader line back to the
+        // true endpoint (policy-logging.md §3) - kept as two passes, not unified, so multiple
+        // policy curves never disturb the pre-existing MC/VI line's own established look.
         const endpointPlugin = {
             id: 'convergenceEndpoint',
             afterDatasetsDraw(chart) {
+                const ctx = chart.ctx;
+                const chartArea = chart.chartArea;
+                const policyLabels = [];
+
                 chart.data.datasets.forEach((ds, i) => {
                     if (!ds._labelEndpoint || !ds.data || ds.data.length === 0) return;
                     const meta = chart.getDatasetMeta(i);
@@ -190,16 +312,74 @@ class ExpectationChartView {
                     const last = points[points.length - 1];
                     const lastValue = ds.data[ds.data.length - 1];
                     const y = typeof lastValue === 'object' ? lastValue.y : lastValue;
-                    const ctx = chart.ctx;
+
+                    if (ds._policyId == null) {
+                        ctx.save();
+                        ctx.fillStyle = ds.borderColor;
+                        ctx.beginPath();
+                        ctx.arc(last.x, last.y, 3.5, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.font = '600 11px "IBM Plex Mono", Consolas, monospace';
+                        ctx.textBaseline = 'middle';
+                        ctx.textAlign = 'left';
+                        ctx.fillText(y.toFixed(2), last.x + 7, last.y);
+                        ctx.restore();
+                        return;
+                    }
+
+                    policyLabels.push({
+                        anchorX: last.x, anchorY: last.y, labelY: last.y,
+                        text: `${ds._endpointLabel || ''} ${y.toFixed(2)}`.trim(),
+                        color: ds.borderColor, hovered: !!ds._policyHovered
+                    });
+                });
+
+                if (policyLabels.length === 0) return;
+
+                // De-overlap: sort by natural Y, greedily separate by >=13px (policy-logging.md
+                // §3's own spacing spec), then pull the whole stack back up if it overflowed the
+                // chart's bottom edge - keeps relative order intact either way.
+                policyLabels.sort((a, b) => a.labelY - b.labelY);
+                const MIN_GAP = 13;
+                for (let i = 1; i < policyLabels.length; i++) {
+                    if (policyLabels[i].labelY - policyLabels[i - 1].labelY < MIN_GAP) {
+                        policyLabels[i].labelY = policyLabels[i - 1].labelY + MIN_GAP;
+                    }
+                }
+                const overflow = policyLabels[policyLabels.length - 1].labelY - chartArea.bottom;
+                if (overflow > 0) policyLabels.forEach(e => { e.labelY -= overflow; });
+
+                const labelX = chartArea.right + 7;
+                const anyHovered = policyLabels.some(e => e.hovered);
+
+                policyLabels.forEach(e => {
+                    const nudged = Math.abs(e.labelY - e.anchorY) > 1;
                     ctx.save();
-                    ctx.fillStyle = ds.borderColor;
+                    ctx.globalAlpha = (anyHovered && !e.hovered) ? 0.35 : 1;
+
+                    // Leader line back to the curve's TRUE endpoint - only drawn once the label
+                    // has actually been nudged away from it (an isolated curve's label sits right
+                    // on its own endpoint, no line needed).
+                    if (nudged) {
+                        ctx.strokeStyle = e.color;
+                        ctx.lineWidth = 1;
+                        ctx.setLineDash([2, 2]);
+                        ctx.beginPath();
+                        ctx.moveTo(e.anchorX, e.anchorY);
+                        ctx.lineTo(labelX - 4, e.labelY);
+                        ctx.stroke();
+                        ctx.setLineDash([]);
+                    }
+
+                    ctx.fillStyle = e.color;
                     ctx.beginPath();
-                    ctx.arc(last.x, last.y, 3.5, 0, Math.PI * 2);
+                    ctx.arc(e.anchorX, e.anchorY, 3.5, 0, Math.PI * 2);
                     ctx.fill();
-                    ctx.font = '600 11px "IBM Plex Mono", Consolas, monospace';
+
+                    ctx.font = `${e.hovered ? '700' : '600'} 11px "IBM Plex Mono", Consolas, monospace`;
                     ctx.textBaseline = 'middle';
                     ctx.textAlign = 'left';
-                    ctx.fillText(y.toFixed(2), last.x + 7, last.y);
+                    ctx.fillText(e.text, labelX, e.labelY);
                     ctx.restore();
                 });
             }
@@ -211,15 +391,25 @@ class ExpectationChartView {
             plugins: [endpointPlugin],
             options: {
                 responsive: true, maintainAspectRatio: false, animation: false,
-                layout: { padding: { right: 36 } }, // room for the endpoint plugin's value callout
+                // Room for the endpoint plugin's value callouts - wider than the original 36px
+                // now that policy curves' labels carry a name prefix too ("renamed1 -158.85"),
+                // not just a bare number.
+                layout: { padding: { right: visiblePolicyEntries.length > 0 ? 100 : 36 } },
                 plugins: {
                     legend: {
                         display: true, position: 'top', align: 'end',
                         labels: {
                             boxWidth: 16, boxHeight: 2, font: { size: 10 }, color: AppPalette.text.muted,
                             // Hides the invisible +-SE fill-boundary datasets - they exist purely
-                            // to shade the band between them, not meaningful legend entries.
-                            filter: item => item.text && !item.text.includes('SE')
+                            // to shade the band between them, not meaningful legend entries - and
+                            // policy curves, which already have their own color-coded chip in the
+                            // strip above (a second legend entry here would just be duplicate,
+                            // narrower real estate in an already-tight 52%-width pane).
+                            filter: (item, data) => {
+                                if (!item.text || item.text.includes('SE')) return false;
+                                const ds = data.datasets[item.datasetIndex];
+                                return !ds || ds._policyId == null;
+                            }
                         }
                     }
                 },
@@ -228,9 +418,13 @@ class ExpectationChartView {
                         type: 'linear',
                         ticks: { font: { size: 9 }, color: AppPalette.text.muted, stepSize: 1 },
                         grid: { color: AppPalette.border.chartGrid },
-                        title: { display: true, text: `${maxLen} episodes`, align: 'end', font: { size: 9 }, color: AppPalette.text.muted }
+                        title: { display: true, text: 'Time', align: 'center', font: { size: 9 }, color: AppPalette.text.muted }
                     },
-                    y: { ticks: { font: { size: 9 }, color: AppPalette.text.muted }, grid: { color: AppPalette.border.chartGrid } }
+                    y: {
+                        ticks: { font: { size: 9 }, color: AppPalette.text.muted },
+                        grid: { color: AppPalette.border.chartGrid },
+                        title: { display: true, text: 'Utility', align: 'center', font: { size: 9 }, color: AppPalette.text.muted }
+                    }
                 }
             }
         });
@@ -306,23 +500,139 @@ class ExpectationChartView {
             }
         }
 
+        // Per-policy translucent overlay (policy-logging.md §4) - each visible logged policy gets
+        // its own stepped outline + dashed E[G] marker, binned into the SAME bin edges the live
+        // MC population above already established (not its own [min,max] range), so every overlay
+        // shares one comparable x-axis with the base histogram and with each other.
+        const policyEntries = this.policyEvaluationState ? this.policyEvaluationState.entries : [];
+        const hiddenPolicyIds = this.expectationViewModel ? this.expectationViewModel.hiddenPolicyIds : new Set();
+        const visiblePolicyEntries = policyEntries.filter(e => !hiddenPolicyIds.has(e.id));
+
+        const overlayDatasets = [];
+        const markers = [];
+        visiblePolicyEntries.forEach(entry => {
+            const samples = this._getPolicyHistogramSamples(entry);
+            if (!samples) return;
+            const color = this._policyColor(entry);
+            overlayDatasets.push({
+                type: 'line',
+                label: entry.name || entry.label,
+                data: this._binReturnsInto(samples, bins),
+                borderColor: color,
+                backgroundColor: ColorUtils.applyAlpha(color, 30),
+                borderWidth: 1.5,
+                stepped: true,
+                fill: true,
+                pointRadius: 0
+            });
+            markers.push({ value: entry.valueAtStart, color, label: entry.name || entry.label });
+        });
+
+        // Vertical dashed E[G] marker + name label per visible policy - Chart.js has no built-in
+        // annotation support without an extra plugin (none vendored here), same rationale as
+        // ConvergenceEndpointPlugin above. Snaps to the containing bin's center rather than a
+        // continuous sub-bin pixel position - this chart is already discretized into `binCount`
+        // buckets, so bin-level placement is exactly as precise as the histogram itself.
+        const histogramMarkerPlugin = {
+            id: 'policyHistogramMarkers',
+            afterDatasetsDraw(chart) {
+                const xScale = chart.scales.x;
+                const yScale = chart.scales.y;
+                if (!xScale || !yScale || markers.length === 0) return;
+                const ctx = chart.ctx;
+                markers.forEach(m => {
+                    let idx = bins.findIndex(b => m.value >= b.low && m.value <= b.high);
+                    if (idx === -1) idx = m.value < bins[0].low ? 0 : bins.length - 1;
+                    const x = xScale.getPixelForValue(idx);
+                    ctx.save();
+                    ctx.strokeStyle = m.color;
+                    ctx.lineWidth = 1.5;
+                    ctx.setLineDash([4, 3]);
+                    ctx.beginPath();
+                    ctx.moveTo(x, yScale.top);
+                    ctx.lineTo(x, yScale.bottom);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                    ctx.fillStyle = m.color;
+                    ctx.font = '600 10px "IBM Plex Mono", Consolas, monospace';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'bottom';
+                    ctx.fillText(m.label, x, yScale.top - 3);
+                    ctx.restore();
+                });
+            }
+        };
+
         const canvas = document.createElement('canvas');
         body.appendChild(canvas);
         this._chartInstances[1] = new Chart(canvas.getContext('2d'), {
             type: 'bar',
             data: {
                 labels: bins.map(b => b.label),
-                datasets: [{ data: counts, backgroundColor: bgColors }]
+                datasets: [{ data: counts, backgroundColor: bgColors }, ...overlayDatasets]
             },
+            plugins: [histogramMarkerPlugin],
             options: {
                 responsive: true, maintainAspectRatio: false, animation: false,
+                layout: { padding: { top: markers.length > 0 ? 14 : 0 } },
                 plugins: { legend: { display: false } },
                 scales: {
-                    x: { ticks: { font: { size: 8 }, color: AppPalette.text.muted }, grid: { display: false } },
-                    y: { ticks: { font: { size: 9 }, color: AppPalette.text.muted }, grid: { color: AppPalette.border.chartGrid }, beginAtZero: true }
+                    x: {
+                        ticks: { font: { size: 8 }, color: AppPalette.text.muted },
+                        grid: { display: false },
+                        title: { display: true, text: 'Utility', align: 'center', font: { size: 9 }, color: AppPalette.text.muted }
+                    },
+                    y: {
+                        ticks: { font: { size: 9 }, color: AppPalette.text.muted },
+                        grid: { color: AppPalette.border.chartGrid },
+                        beginAtZero: true,
+                        title: { display: true, text: 'Count', align: 'center', font: { size: 9 }, color: AppPalette.text.muted }
+                    }
                 }
             }
         });
+    }
+
+    // Lazily samples + caches 64 discounted returns for one logged policy's histogram overlay
+    // (policy-logging.md §4) - computed once per entry, on first reveal, then cached directly on
+    // the entry object (entry._histogramSamples) so toggling its chip or scrubbing t never
+    // resamples. Uses the entry's OWN frozen (gamma, maxSteps), not whatever's live now - see
+    // PolicyEvaluationState.addEntry()'s own comment on why those are stored per-entry.
+    _getPolicyHistogramSamples(entry) {
+        if (entry._histogramSamples) return entry._histogramSamples;
+        if (!this.traceGenerator || !this.traceGenerator.graph) return null;
+        const startNode = this.startNodeProvider();
+        if (!startNode) return null;
+
+        const samples = PolicyMcSampler.sampleReturns(this.traceGenerator.graph, this.traceGenerator, startNode, {
+            policy: entry.policySnapshot,
+            policyWeights: entry.policyWeightsSnapshot,
+            timeDependentPolicy: entry.timeDependentPolicySnapshot || null,
+            maxSteps: entry.maxSteps,
+            gamma: entry.gamma,
+            numRuns: 64
+        });
+        entry._histogramSamples = samples;
+        return samples;
+    }
+
+    // Bins raw returns into caller-supplied bin edges (the live MC histogram's own bins, so every
+    // overlay shares one x-axis) - deliberately NOT ChartDataBuilders.buildHistogramData(), which
+    // derives its OWN [min,max] range from expectationState's rollouts; a policy overlay needs to
+    // land in the SAME buckets the base histogram already drew, not its own independent range.
+    _binReturnsInto(returns, bins) {
+        const counts = new Array(bins.length).fill(0);
+        if (bins.length === 0) return counts;
+        const lastIdx = bins.length - 1;
+        const low0 = bins[0].low;
+        const binWidth = (bins[lastIdx].high - low0) / bins.length || 1;
+        returns.forEach(v => {
+            let idx = Math.floor((v - low0) / binWidth);
+            if (idx < 0) idx = 0;
+            if (idx > lastIdx) idx = lastIdx;
+            counts[idx]++;
+        });
+        return counts;
     }
 
     show() {

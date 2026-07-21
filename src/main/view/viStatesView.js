@@ -508,10 +508,27 @@ class ViStatesView {
     _prepareLiveSection(cardsEl, cardEntries, sweepIndex) {
         if (!cardEntries || cardEntries.length === 0) return;
 
-        const shouldAnimate = !this._animatedSweeps.has(sweepIndex);
+        // "Animations · per mode" (Iteration) off forces every sweep down the same static
+        // render path already used for historical/already-seen sweeps - computation still
+        // proceeds sweep-by-sweep (VIAnimator/getPauseMs untouched), only the per-card
+        // Bellman-arithmetic tween is skipped. Read live so toggling mid-run takes effect
+        // starting the next sweep.
+        const shouldAnimate = !this._animatedSweeps.has(sweepIndex) && this.viewModel.iterationAnimationEnabled;
         if (!shouldAnimate) {
             cardEntries.forEach(({ card }) => cardsEl.appendChild(card));
             cardEntries.forEach(({ job }) => { if (job) this._drawJobStatic(job); });
+            // Still the live section's bookkeeping (canRevealNextState()/canSkipCurrentState()
+            // and playRemainingLiveSweep() all read _live*) even though nothing needs revealing -
+            // previously this branch only ever ran for OLDER, non-live sweeps (which never
+            // touched _live* at all), but with animation off the CURRENT live sweep takes this
+            // path too. Mark it fully-revealed rather than leaving _live* stale/unset, so Step/
+            // Skip correctly report "nothing left in this sweep" (same as after a normal reveal
+            // finishes - crossing into a new sweep stays Play's job alone) instead of drifting
+            // out of sync with whatever sweep is actually live.
+            this._liveCardsEl = cardsEl;
+            this._liveCardEntries = cardEntries;
+            this._liveSweepIndex = sweepIndex;
+            this._liveCursor = cardEntries.length;
             return;
         }
 

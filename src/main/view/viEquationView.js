@@ -171,7 +171,13 @@ class ViEquationView {
         const s = KatexRenderer.escapeText(stateName);
         const accentNs = ValuesMethodMatrix.resolve(this.viewModel.modelKnown, this.viewModel.observability).paletteNamespace;
         const accent = (AppPalette[accentNs] && AppPalette[accentNs].result) || AppPalette.text.medium;
-        return `V^{${sweepIndex}}(\\text{${s}}) = \\max_a \\sum_{s'} P(s'|s,a)\\bigl[R + \\gamma \\textcolor{${accent}}{V^{${sweepIndex - 1}}(s')}\\bigr]`;
+        // 'expectation' mode (the default outside the Find Optimal π flow) evaluates whatever
+        // Policy π is currently configured - sum_a pi(a|s)*Q(s,a), no max_a anywhere - vs.
+        // 'optimal' mode's true Bellman optimality backup. See ValueIterationState.runMode.
+        const backupTerm = this.viState.runMode === 'optimal'
+            ? '\\max_a \\sum_{s\'} P(s\'|s,a)'
+            : '\\sum_a \\pi(a|s) \\sum_{s\'} P(s\'|s,a)';
+        return `V^{${sweepIndex}}(\\text{${s}}) = ${backupTerm}\\bigl[R + \\gamma \\textcolor{${accent}}{V^{${sweepIndex - 1}}(s')}\\bigr]`;
     }
 
     // --- Reveal engine ---

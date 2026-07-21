@@ -22,6 +22,18 @@ class ExpectationViewModel {
         // the viewport, so 32/64-run layouts scroll instead of squeezing into illegibly small
         // cards. Clamped to [0, panelLayout.maxScrollY] at the end of every computeLayout() call.
         this.gridScrollY = 0;
+
+        // Policy log chart overlays (policy-logging.md §3/§4), Chart view only. Set(entry.id) of
+        // policies the user has toggled OFF via the chip strip - presentation-only, excluded from
+        // serialization, mirrors the hoveredRun/selectedRunIndex pair below rather than the
+        // Grid's own hover/pin split, since a chip only has one interaction (toggle), not two.
+        this.hiddenPolicyIds = new Set();
+        // entry.id of whichever policy is currently hovered - either the chip strip's own hover
+        // or rightPanel.js's Policy log row hover (both write here directly, same "view mutates
+        // the viewmodel's presentation field without going through the controller" pattern
+        // expectationView.js's own hoveredRun already uses). Thickens that policy's curve/leader
+        // line in the value-over-time chart. null when nothing is hovered.
+        this.hoveredPolicyId = null;
     }
 
     // topOffset (default 0): pixels to push the grid's own viewport down by, e.g. to clear a

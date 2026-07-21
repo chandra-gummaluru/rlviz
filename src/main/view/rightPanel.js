@@ -5,6 +5,7 @@ const RP_REWARD_SLIDER_MIN   = -100;
 const RP_REWARD_SLIDER_MAX   = 100;
 const RP_PROB_SLIDER_STEP    = 0.01;
 const RP_VI_TABLE_MAX_H      = 400;    // px max height of the V(s) table
+const RP_VI_T_MAX            = 20;     // max value of the T (sweep safety cap) slider
 // --- End constants ---
 
 // Right panel displaying MDP information and node editing
@@ -54,6 +55,13 @@ class RightPanel {
         // main.js's ensureVIInitialized() the same way discountFactor is (see _renderEpsilonSlider).
         this.viEpsilon = 0.01;
 
+        // Value Iteration's safety cap (T, "Max steps") - stop after this many sweeps even if not
+        // converged. Used to live as a number input in the top bar ("T = [8]"); moved into the
+        // Method panel's Parameters section alongside γ/ε (see _renderTSlider) so every VI
+        // parameter lives in one place. Same "read once by ensureVIInitialized() at the next
+        // Reset+Run" semantics as viEpsilon/discountFactor.
+        this.viT = 8;
+
 
         this.simStatDisplay = {
             steps: 0,
@@ -63,6 +71,10 @@ class RightPanel {
         this.simStatAnimationFrame = null;
         this.expectationViewModel = null;
         this.expectationState = null;
+        // Which Policy log row (by entry.id) is mid-rename, if any - survives across an
+        // updateContent() re-render triggered by something else while the inline input is open
+        // (see _renderPolicyLog()'s own rename handling). null outside of an active rename.
+        this._renamingPolicyEntryId = null;
         // Scoped subtree holding the Estimate/Episodes/Selected Run sections (see
         // renderExpectationPanel()/updateExpectationData()) - re-rendered on its own by
         // updateExpectationData() without rebuilding the whole panel (which would tear down and
@@ -231,8 +243,11 @@ class RightPanel {
     }
 
     // Deterministic-mode action-segment row (one button per action, active = current policy
-    // choice) - used by Policy mode's fuller Policy π section (_renderPolicyModeSection).
-    _renderPolicyActionSegments(row, stateNode, actions, currentAction) {
+    // choice) - shared by Stationary's Policy π section AND π_t's per-timestep editor
+    // (_renderTimeDependentPolicySection), which is why the write itself is an injected
+    // onSelect(actionId) callback rather than a hardcoded controller.setPolicyAction call -
+    // Stationary writes to policy[stateId], π_t writes to timeDependentPolicy[stateId][t].
+    _renderPolicyActionSegments(row, stateNode, actions, currentAction, onSelect) {
         const segRow = createDiv();
         segRow.parent(row);
         segRow.addClass('policy-segmented-row');
@@ -243,9 +258,9 @@ class RightPanel {
             const btn = createButton(actionNode.name);
             btn.parent(segRow);
             btn.addClass('policy-segmented-btn');
-            if (currentAction === actionId) btn.addClass('policy-segmented-btn--active');
+            if (Number(currentAction) === Number(actionId)) btn.addClass('policy-segmented-btn--active');
             btn.mousePressed(() => {
-                this.controller.setPolicyAction(stateNode.id, actionId);
+                onSelect(actionId);
                 this.updateContent();
                 redraw();
             });
@@ -356,7 +371,8 @@ class RightPanel {
                 });
 
                 if (isDeterministic) {
-                    this._renderPolicyActionSegments(row, stateNode, actions, currentAction);
+                    this._renderPolicyActionSegments(row, stateNode, actions, currentAction,
+                        actionId => this.controller.setPolicyAction(stateNode.id, actionId));
                 } else if (isWeighted) {
                     this._renderPolicyWeightSliders(row, stateNode, actions);
                 }
@@ -396,7 +412,7 @@ class RightPanel {
 
         const isTimeDependent = simulationState.isTimeDependent();
 
-        const statBtn = createButton('Stationary');
+        const statBtn = createButton('π(s) Stationary');
         statBtn.parent(toggle);
         statBtn.addClass('policy-det-random-btn');
         if (!isTimeDependent) statBtn.addClass('policy-det-random-btn--active');
@@ -408,7 +424,7 @@ class RightPanel {
             }
         });
 
-        const piTBtn = createButton('π_t (time-dep)');
+        const piTBtn = createButton('π(s, t) Time Dep');
         piTBtn.parent(toggle);
         piTBtn.addClass('policy-det-random-btn');
         if (isTimeDependent) piTBtn.addClass('policy-det-random-btn--active');
@@ -458,7 +474,15 @@ class RightPanel {
         horizonValue.addClass('panel-param-row-value');
 
         horizonSlider.elt.addEventListener('change', () => {
-            this.controller.setPiHorizon(parseInt(horizonSlider.value(), 10));
+            const h = parseInt(horizonSlider.value(), 10);
+            this.controller.setPiHorizon(h);
+            // Linked with VI's own T (safety cap) slider while π_t is the active representation -
+            // a time-dependent policy's horizon IS the sweep count a matching VI run needs (same
+            // 1-20 range on both sliders), so keep them equal rather than requiring the user to
+            // separately set both. See _renderTSlider's own half of this link.
+            this.viT = h;
+            const viState = this.viewModel.valueIterationState;
+            if (viState && viState.initialized) viState.T = h;
             this.updateContent();
             redraw();
         });
@@ -509,13 +533,21 @@ class RightPanel {
             seg.addClass('policy-pit-strip-seg');
             if (t === cursor) seg.addClass('policy-pit-strip-seg--current');
             const differs = decisionStates.some(s =>
-                simulationState.getTimeDependentAction(s.id, t) !== simulationState.getTimeDependentAction(s.id, 0)
+                !this._timeDependentSlotsEqual(
+                    simulationState.getTimeDependentAction(s.id, t),
+                    simulationState.getTimeDependentAction(s.id, 0)
+                )
             );
             if (differs && t !== 0) seg.addClass('policy-pit-strip-seg--differs');
             seg.mousePressed(() => { this.viewModel.interaction.piTCursor = t; this.updateContent(); redraw(); });
         }
 
-        // Per-state rows at the pager's current t.
+        // Per-state rows at the pager's current t - same Deterministic|Random toggle shape as the
+        // Stationary section above (_renderPolicyModeSection), just scoped to the (stateId,
+        // cursor) slot instead of the whole state: Deterministic shows the action-segment row,
+        // Random shows the weighted-slider editor once actually weighted (clicking "Random" seeds
+        // equal weights immediately, exactly like Stationary's own initPolicyWeightsUniform) or
+        // nothing extra while still the plain 'random' (uniform, untouched) sentinel.
         states.forEach(stateNode => {
             const row = createDiv();
             row.parent(policyDiv);
@@ -533,49 +565,74 @@ class RightPanel {
                 return;
             }
 
+            const slotMode = simulationState.getTimeDependentActionMode(stateNode.id, cursor);
+            const isDeterministic = slotMode === 'deterministic';
+            const isWeighted = slotMode === 'weighted';
             const current = simulationState.getTimeDependentAction(stateNode.id, cursor);
-            this._renderPiTActionSegments(row, stateNode, actions, current, cursor);
+
+            const drToggle = createDiv();
+            drToggle.parent(row);
+            drToggle.addClass('policy-det-random-toggle');
+
+            const detBtn = createButton('Deterministic');
+            detBtn.parent(drToggle);
+            detBtn.addClass('policy-det-random-btn');
+            if (isDeterministic) detBtn.addClass('policy-det-random-btn--active');
+            detBtn.mousePressed(() => {
+                if (!isDeterministic) {
+                    this.controller.setTimeDependentAction(stateNode.id, cursor, actions[0]);
+                    this.updateContent();
+                    redraw();
+                }
+            });
+
+            const randBtn = createButton('Random');
+            randBtn.parent(drToggle);
+            randBtn.addClass('policy-det-random-btn');
+            if (!isDeterministic) randBtn.addClass('policy-det-random-btn--active');
+            randBtn.mousePressed(() => {
+                if (!isWeighted) {
+                    this.controller.initTimeDependentWeightsUniform(stateNode.id, cursor, actions);
+                    this.updateContent();
+                    redraw();
+                }
+            });
+
+            if (isDeterministic) {
+                this._renderPolicyActionSegments(row, stateNode, actions, current,
+                    actionId => this.controller.setTimeDependentAction(stateNode.id, cursor, actionId));
+            } else if (isWeighted) {
+                this._renderPolicyWeightSliders(row, stateNode, actions, {
+                    getWeights: () => simulationState.getTimeDependentWeights(stateNode.id, cursor),
+                    setWeight: (actionId, value) => this.controller.setTimeDependentWeight(stateNode.id, cursor, actionId, value)
+                });
+            }
+            // else: plain 'random' sentinel, untouched uniform - no extra content, matching
+            // Stationary's own untouched-uniform case.
         });
 
         const hint = createDiv();
         hint.parent(policyDiv);
         hint.addClass('panel-hint');
         hint.style('margin-top', '8px');
-        hint.html('click an action to set it at this timestep · gold segments differ from t=0');
+        hint.html('gold segments differ from t=0');
     }
 
-    // π_t's per-timestep action selector - visually identical to Stationary's own
-    // _renderPolicyActionSegments (same segmented-button markup/classes), plus a trailing
-    // "Random" segment, since a π_t slot can also hold the 'random' sentinel (Stationary handles
-    // Random via its own separate Deterministic/Random toggle instead).
-    _renderPiTActionSegments(row, stateNode, actions, currentAction, t) {
-        const segRow = createDiv();
-        segRow.parent(row);
-        segRow.addClass('policy-segmented-row');
-
-        actions.forEach(actionId => {
-            const actionNode = this.viewModel.graph.nodes.find(n => n.type === 'action' && n.id === actionId);
-            if (!actionNode) return;
-            const btn = createButton(actionNode.name);
-            btn.parent(segRow);
-            btn.addClass('policy-segmented-btn');
-            if (Number(currentAction) === Number(actionId)) btn.addClass('policy-segmented-btn--active');
-            btn.mousePressed(() => {
-                this.controller.setTimeDependentAction(stateNode.id, t, actionId);
-                this.updateContent();
-                redraw();
-            });
-        });
-
-        const randomBtn = createButton('Random');
-        randomBtn.parent(segRow);
-        randomBtn.addClass('policy-segmented-btn');
-        if (currentAction === 'random' || currentAction === null) randomBtn.addClass('policy-segmented-btn--active');
-        randomBtn.mousePressed(() => {
-            this.controller.setTimeDependentAction(stateNode.id, t, 'random');
-            this.updateContent();
-            redraw();
-        });
+    // Loose equality for a single time-dependent slot's raw value, used by the segment-strip
+    // "differs from t=0" marker above - a plain === would treat two DIFFERENT weight-object
+    // instances holding the SAME ratios (e.g. both freshly seeded to equal weights by
+    // setPiMode()/setPiHorizon(), which always clone per-index rather than share one reference -
+    // see their own comments) as "differing", permanently gold-marking segments nothing actually
+    // touched.
+    _timeDependentSlotsEqual(a, b) {
+        if (a === b) return true;
+        if (a && b && typeof a === 'object' && typeof b === 'object') {
+            const aKeys = Object.keys(a);
+            const bKeys = Object.keys(b);
+            if (aKeys.length !== bKeys.length) return false;
+            return aKeys.every(k => Number(a[k]) === Number(b[k]));
+        }
+        return false;
     }
 
     // Random-mode weight editor: one independent slider per action (raw weight, not forced to
@@ -584,9 +641,17 @@ class RightPanel {
     // one being dragged) without a full panel rebuild, matching the established
     // commit-on-input/redraw-live pattern; a full refresh happens naturally on the next
     // updateContent() (e.g. switching states or the Deterministic|Random toggle).
-    _renderPolicyWeightSliders(row, stateNode, actions) {
+    //
+    // getWeights/setWeight are optional and default to Stationary's own
+    // simulationState.getPolicyWeights(stateId)/controller.setPolicyWeight(stateId, ...) - π_t's
+    // per-timestep editor (_renderTimeDependentPolicySection) passes its own pair scoped to a
+    // single (stateId, t) slot instead, so this one slider-row renderer serves both
+    // representations without duplicating the paired-readout/live-refresh logic below.
+    _renderPolicyWeightSliders(row, stateNode, actions, { getWeights, setWeight } = {}) {
         const simulationState = this.viewModel.simulationState;
-        const weights = simulationState.getPolicyWeights(stateNode.id) || {};
+        getWeights = getWeights || (() => simulationState.getPolicyWeights(stateNode.id));
+        setWeight = setWeight || ((actionId, value) => this.controller.setPolicyWeight(stateNode.id, actionId, value));
+        const weights = getWeights() || {};
 
         const sliderContainer = createDiv();
         sliderContainer.parent(row);
@@ -599,7 +664,7 @@ class RightPanel {
         const isPaired = actions.length === 2;
 
         const refreshReadouts = () => {
-            const currentWeights = simulationState.getPolicyWeights(stateNode.id) || {};
+            const currentWeights = getWeights() || {};
             const sum = actions.reduce((s, id) => s + (currentWeights[id] ?? 0), 0);
             const pcts = actions.map(id => {
                 const w = currentWeights[id] ?? 0;
@@ -643,7 +708,7 @@ class RightPanel {
 
             slider.input(() => {
                 const newValue = parseFloat(slider.value());
-                this.controller.setPolicyWeight(stateNode.id, actionId, newValue);
+                setWeight(actionId, newValue);
                 refreshReadouts();
                 redraw();
             });
@@ -995,12 +1060,33 @@ class RightPanel {
             paramsDiv.parent(this.contentContainer);
             paramsDiv.addClass('panel-section-content');
             this._renderGammaSlider(paramsDiv);
-            // ε only makes sense for the three quadrants that run a real Bellman sweep to
-            // convergence - Learning Iteration has no epsilon/convergence concept at all.
-            if (liKey !== 'unknown:full') this._renderEpsilonSlider(paramsDiv);
+            // ε/T only make sense for the three quadrants that run a real Bellman sweep to
+            // convergence - Learning Iteration has no epsilon/convergence/sweep-cap concept at
+            // all (it runs Q-learning episodes instead).
+            if (liKey !== 'unknown:full') {
+                this._renderEpsilonSlider(paramsDiv);
+                this._renderTSlider(paramsDiv);
+            }
         });
 
         this.renderInitialStateSection();
+
+        // Explanation mode: show explanation + Q-table only (not the full VI panel)
+        const explanationDetail = viViewModel?.explanationDetail;
+
+        // Iteration/Convergence sit above Policy π (moved up per explicit request) - both are
+        // skipped for unknown:full (Learning Iteration has no sweep/convergence concept, see
+        // _renderLearningIterationPanel instead) and while an explanation is active (that panel
+        // replaces this content entirely, same as before this reordering).
+        if (liKey !== 'unknown:full' && !explanationDetail) {
+            this._renderIterationSection(viState);
+            this._renderConvergenceSection(viState, matrixKey);
+        }
+
+        // Full Policy π editor - see renderExpectationPanel()'s identical call for why this now
+        // also lives outside Policy mode. Shown in all four method-matrix quadrants, same as
+        // _renderPolicyLog() below is already shown in all of them.
+        this._renderPolicyModeSection();
 
         if (liKey === 'unknown:full') {
             this._renderLearningIterationPanel();
@@ -1008,8 +1094,6 @@ class RightPanel {
             return;
         }
 
-        // Explanation mode: show explanation + Q-table only (not the full VI panel)
-        const explanationDetail = viViewModel?.explanationDetail;
         if (explanationDetail) {
             this._renderExplanationPanel(explanationDetail);
             if (viState && viState.initialized && viViewModel) {
@@ -1026,66 +1110,71 @@ class RightPanel {
             return;
         }
 
-        // Iteration: safety cap + current iteration count.
-        if (viState && viState.initialized) {
-            this.createSection('Iteration', () => {
-                const iterDiv = createDiv();
-                iterDiv.parent(this.contentContainer);
-                iterDiv.addClass('panel-section-content');
-
-                const capLine = createDiv(`<strong>Safety cap:</strong> stop after ${viState.T} iterations if not converged`);
-                capLine.parent(iterDiv);
-                capLine.style('margin-bottom', '4px');
-
-                const progressLine = createDiv(`<strong>Iteration:</strong> ${viState.currentSweepIndex}`);
-                progressLine.parent(iterDiv);
-                progressLine.style('margin-bottom', '4px');
-            });
-        }
-
-        // Convergence - the "converged" check is real (live max-norm delta from the synchronous
-        // Bellman sweep); the sweep/episode/vector framing per quadrant is illustrative for
-        // LI/BI/PO-L, same precedent as Learning Iteration's existing "no real algorithm" framing.
-        // Status is right-aligned on the section title's own row, mirroring the panel header's
-        // title/status treatment above.
-        if (viState && viState.initialized) {
-            const convRow = createDiv();
-            convRow.parent(this.contentContainer);
-            convRow.addClass('panel-section-title-row');
-
-            const convLabel = createDiv('Convergence');
-            convLabel.parent(convRow);
-            convLabel.addClass('panel-section-title');
-
-            const delta = viState.getDelta(viState.currentSweepIndex);
-            const convStatus = createDiv();
-            convStatus.parent(convRow);
-            convStatus.addClass('panel-title-row-status');
-            if (viState.converged) {
-                convStatus.html(`✓ converged Δ &lt; ${viState.epsilon.toFixed(2)}`);
-                convStatus.style('color', 'var(--reward-positive)');
-            } else if (delta === null) {
-                convStatus.html('Δ = — (init)');
-            } else {
-                convStatus.html(`Δ = ${delta.toFixed(4)}`);
-                convStatus.style('color', 'var(--accent-yellow)');
-            }
-
-            const perQuadrant = {
-                'known:partial':   'belief update',
-                'unknown:partial': 'α = 0.1 · belief memory'
-            };
-            const line1Text = perQuadrant[matrixKey];
-            if (line1Text) {
-                const line1 = createDiv(line1Text);
-                line1.parent(this.contentContainer);
-                line1.addClass('panel-hint');
-                line1.style('margin-top', '-4px');
-                line1.style('margin-bottom', '8px');
-            }
-        }
-
         this._renderPolicyLog();
+    }
+
+    // Safety cap + current iteration count. Split out of _renderMethodPanel() so it can be
+    // rendered above Policy π instead of below it, without duplicating the unknown:full/
+    // explanation-mode guards that gate it.
+    _renderIterationSection(viState) {
+        if (!viState || !viState.initialized) return;
+        this.createSection('Iteration', () => {
+            const iterDiv = createDiv();
+            iterDiv.parent(this.contentContainer);
+            iterDiv.addClass('panel-section-content');
+
+            const capLine = createDiv(`<strong>Safety cap:</strong> stop after ${viState.T} iterations if not converged`);
+            capLine.parent(iterDiv);
+            capLine.style('margin-bottom', '4px');
+
+            const progressLine = createDiv(`<strong>Iteration:</strong> ${viState.currentSweepIndex}`);
+            progressLine.parent(iterDiv);
+            progressLine.style('margin-bottom', '4px');
+        });
+    }
+
+    // Convergence - the "converged" check is real (live max-norm delta from the synchronous
+    // Bellman sweep); the sweep/episode/vector framing per quadrant is illustrative for
+    // LI/BI/PO-L, same precedent as Learning Iteration's existing "no real algorithm" framing.
+    // Status is right-aligned on the section title's own row, mirroring the panel header's
+    // title/status treatment above. Split out of _renderMethodPanel() for the same reason as
+    // _renderIterationSection() above.
+    _renderConvergenceSection(viState, matrixKey) {
+        if (!viState || !viState.initialized) return;
+        const convRow = createDiv();
+        convRow.parent(this.contentContainer);
+        convRow.addClass('panel-section-title-row');
+
+        const convLabel = createDiv('Convergence');
+        convLabel.parent(convRow);
+        convLabel.addClass('panel-section-title');
+
+        const delta = viState.getDelta(viState.currentSweepIndex);
+        const convStatus = createDiv();
+        convStatus.parent(convRow);
+        convStatus.addClass('panel-title-row-status');
+        if (viState.converged) {
+            convStatus.html(`✓ converged Δ &lt; ${viState.epsilon.toFixed(2)}`);
+            convStatus.style('color', 'var(--reward-positive)');
+        } else if (delta === null) {
+            convStatus.html('Δ = — (init)');
+        } else {
+            convStatus.html(`Δ = ${delta.toFixed(4)}`);
+            convStatus.style('color', 'var(--accent-yellow)');
+        }
+
+        const perQuadrant = {
+            'known:partial':   'belief update',
+            'unknown:partial': 'α = 0.1 · belief memory'
+        };
+        const line1Text = perQuadrant[matrixKey];
+        if (line1Text) {
+            const line1 = createDiv(line1Text);
+            line1.parent(this.contentContainer);
+            line1.addClass('panel-hint');
+            line1.style('margin-top', '-4px');
+            line1.style('margin-bottom', '8px');
+        }
     }
 
     // Header row for the three real-Bellman quadrants: title top-left, and the ε-convergence
@@ -1430,6 +1519,54 @@ class RightPanel {
         });
     }
 
+    // Same row layout/fill-pct pattern as _renderEpsilonSlider, but bound to this.viT - Value
+    // Iteration's sweep safety cap (formerly the top bar's "T = [8]" number input, moved here so
+    // every VI parameter lives in one place - see this.viT's own comment). Same "read once by
+    // ensureVIInitialized() at the next Reset+Run" semantics as γ/ε.
+    _renderTSlider(parentDiv) {
+        const row = createDiv();
+        row.parent(parentDiv);
+        row.addClass('panel-param-row');
+
+        const label = createDiv('T');
+        label.parent(row);
+        label.addClass('panel-param-row-label');
+        label.attribute('title', 'Safety cap — Iteration stops here even if it has not converged');
+
+        const slider = createElement('input');
+        slider.parent(row);
+        slider.attribute('type', 'range');
+        slider.attribute('min', '1');
+        slider.attribute('max', String(RP_VI_T_MAX));
+        slider.attribute('step', '1');
+        slider.attribute('value', String(this.viT));
+        slider.addClass('panel-param-row-slider');
+        slider.elt.addEventListener('mousedown', e => e.stopPropagation());
+        slider.elt.addEventListener('click', e => e.stopPropagation());
+        slider.elt.style.setProperty('--fill', (this.viT - 1) / (RP_VI_T_MAX - 1));
+
+        const value = createDiv(String(this.viT));
+        value.parent(row);
+        value.addClass('panel-param-row-value');
+
+        slider.input(() => {
+            const t = parseInt(slider.value(), 10);
+            this.viT = t;
+            value.html(String(t));
+            slider.elt.style.setProperty('--fill', (t - 1) / (RP_VI_T_MAX - 1));
+        });
+        slider.elt.addEventListener('change', () => {
+            // Linked with the time-dependent Policy π's own "Max steps" (piHorizon) slider while
+            // π_t is active - see _renderTimeDependentPolicySection's matching half of this link.
+            const simulationState = this.viewModel.simulationState;
+            if (simulationState && simulationState.isTimeDependent()) {
+                this.controller.setPiHorizon(this.viT);
+            }
+            this.updateContent();
+            if (typeof redraw === 'function') redraw();
+        });
+    }
+
     // Same row layout/fill-pct pattern as _renderGammaSlider, but bound to
     // expectationState.gamma - Monte Carlo's own discount factor, intentionally distinct
     // from the shared this.discountFactor used by Build/Policy/Value Iteration.
@@ -1624,45 +1761,189 @@ class RightPanel {
                 const empty = createDiv('Click Evaluate π to log the current policy\'s exact value.');
                 empty.parent(container);
                 empty.addClass('panel-hint');
-                return;
+            } else {
+                const headerRow = createDiv();
+                headerRow.parent(container);
+                headerRow.addClass('policy-log-header');
+
+                const labelHeader = createDiv('');
+                labelHeader.parent(headerRow);
+                labelHeader.addClass('policy-log-row-label');
+
+                const tHeader = createDiv('t');
+                tHeader.parent(headerRow);
+                tHeader.addClass('policy-log-row-t');
+
+                // Shortened from "VI estimate"/"MC estimate" - the header text (not the narrower
+                // numeric data below it) was the actual width driver for these two `auto` grid
+                // columns, and there are now two MORE columns (sparkline, remove) sharing this
+                // same ~240px-wide panel, so the full words no longer fit without clipping the
+                // remove "×" off the panel's right edge.
+                const valueHeader = createDiv('VI');
+                valueHeader.parent(headerRow);
+                valueHeader.addClass('policy-log-row-value');
+
+                const mcHeader = createDiv('MC');
+                mcHeader.parent(headerRow);
+                mcHeader.addClass('policy-log-row-mc');
+
+                const removeHeader = createDiv('');
+                removeHeader.parent(headerRow);
+                removeHeader.addClass('policy-log-row-remove');
+
+                entries.forEach(entry => {
+                    const row = createDiv();
+                    row.parent(container);
+                    row.addClass('policy-log-row');
+
+                    // Click/dblclick disambiguation: a native double-click delivers two separate
+                    // `click` events before its own `dblclick` fires, so restoring the policy on
+                    // every single click (as this row used to) would tear down and rebuild this
+                    // row's DOM (via updateContent()) between the two clicks - the label element
+                    // the second click needs to land on no longer exists, so the browser's
+                    // dblclick event never fires at all. Delaying the restore by one dblclick
+                    // window, and having the label's own dblclick handler cancel a still-pending
+                    // one, fixes it: click 1 schedules the restore, click 2 (within the window)
+                    // cancels it and lets the label's dblclick handler open the rename input.
+                    let restoreTimer = null;
+
+                    const label = createDiv();
+                    label.parent(row);
+                    label.addClass('policy-log-row-label');
+
+                    if (this._renamingPolicyEntryId === entry.id) {
+                        this._renderPolicyLogRenameInput(label, entry);
+                    } else {
+                        label.elt.innerHTML = renderKatex(entry.label);
+                        label.elt.addEventListener('dblclick', (e) => {
+                            e.stopPropagation();
+                            if (restoreTimer) {
+                                clearTimeout(restoreTimer);
+                                restoreTimer = null;
+                            }
+                            this._renamingPolicyEntryId = entry.id;
+                            this.updateContent();
+                        });
+                    }
+
+                    // "t" column: em-dash for stationary entries, the finite horizon for π_t entries
+                    // (Evaluate redesign Phase 6) - populated for the first time here.
+                    const tCol = createDiv(entry.horizon !== undefined ? String(entry.horizon) : '—');
+                    tCol.parent(row);
+                    tCol.addClass('policy-log-row-t');
+
+                    const valueCol = createDiv(entry.valueAtStart.toFixed(2) + (entry.isBest ? ' ★' : ''));
+                    valueCol.parent(row);
+                    valueCol.addClass('policy-log-row-value');
+                    if (entry.isBest) valueCol.addClass('policy-log-row-value--best');
+
+                    const mcCol = createDiv(entry.mcEstimate != null ? entry.mcEstimate.toFixed(2) : '—');
+                    mcCol.parent(row);
+                    mcCol.addClass('policy-log-row-mc');
+
+                    // "×" remove (policy-logging.md §2) - stopPropagation on mousedown so it
+                    // doesn't also trigger the row's own mousePressed (restore-this-policy) below.
+                    const removeBtn = createSpan('×');
+                    removeBtn.parent(row);
+                    removeBtn.addClass('policy-log-row-remove');
+                    removeBtn.elt.addEventListener('mousedown', (e) => e.stopPropagation());
+                    removeBtn.mousePressed(() => {
+                        this.controller.removePolicyLogEntry(entry.id);
+                        this.updateContent();
+                        if (typeof redraw === 'function') redraw();
+                    });
+
+                    row.mouseOver(() => {
+                        this.controller.setPolicyPreview(entry.policySnapshot, entry.policyWeightsSnapshot, entry.timeDependentPolicySnapshot);
+                        if (this.expectationViewModel) this.expectationViewModel.hoveredPolicyId = entry.id;
+                        if (typeof redraw === 'function') redraw();
+                    });
+                    row.mouseOut(() => {
+                        this.controller.clearPolicyPreview();
+                        if (this.expectationViewModel) this.expectationViewModel.hoveredPolicyId = null;
+                        if (typeof redraw === 'function') redraw();
+                    });
+                    row.mousePressed(() => {
+                        // Second click of a double-click: cancel the pending single-click restore
+                        // and let the label's own dblclick handler (which fires right after this)
+                        // open the rename input instead. See restoreTimer's own comment above.
+                        if (restoreTimer) {
+                            clearTimeout(restoreTimer);
+                            restoreTimer = null;
+                            return;
+                        }
+                        restoreTimer = setTimeout(() => {
+                            restoreTimer = null;
+                            this.controller.restorePolicyFromLog(entry);
+                            this.updateContent();
+                            if (typeof redraw === 'function') redraw();
+                        }, 280);
+                    });
+                });
+
+                // "n / 6" counter (policy-logging.md §1).
+                const counter = createDiv(`${entries.length} / ${PolicyEvaluationState.MAX_ENTRIES}`);
+                counter.parent(container);
+                counter.addClass('policy-log-counter');
             }
 
-            entries.forEach(entry => {
-                const row = createDiv();
-                row.parent(container);
-                row.addClass('policy-log-row');
-
-                const label = createDiv();
-                label.parent(row);
-                label.addClass('policy-log-row-label');
-                label.elt.innerHTML = renderKatex(entry.label);
-
-                // "t" column: em-dash for stationary entries, the finite horizon for π_t entries
-                // (Evaluate redesign Phase 6) - populated for the first time here.
-                const tCol = createDiv(entry.horizon !== undefined ? String(entry.horizon) : '—');
-                tCol.parent(row);
-                tCol.addClass('policy-log-row-t');
-
-                const valueCol = createDiv(entry.valueAtStart.toFixed(2) + (entry.isBest ? ' ★' : ''));
-                valueCol.parent(row);
-                valueCol.addClass('policy-log-row-value');
-                if (entry.isBest) valueCol.addClass('policy-log-row-value--best');
-
-                row.mouseOver(() => {
-                    this.controller.setPolicyPreview(entry.policySnapshot, entry.policyWeightsSnapshot, entry.timeDependentPolicySnapshot);
-                    if (typeof redraw === 'function') redraw();
-                });
-                row.mouseOut(() => {
-                    this.controller.clearPolicyPreview();
-                    if (typeof redraw === 'function') redraw();
-                });
-                row.mousePressed(() => {
-                    this.controller.restorePolicyFromLog(entry);
-                    this.updateContent();
-                    if (typeof redraw === 'function') redraw();
-                });
+            // "Find optimal π" - always visible/enabled (unlike the top bar's Evaluate π, which
+            // is modelKnown-gated), since clicking it force-switches into the known:full quadrant
+            // itself rather than requiring the user to already be there. See main.js's
+            // rightPanel.callbacks.onFindOptimalPolicy for the full flow.
+            const findOptimalBtn = createButton('★ Find optimal π');
+            findOptimalBtn.parent(container);
+            findOptimalBtn.addClass('panel-btn');
+            findOptimalBtn.addClass('panel-btn--find-optimal');
+            findOptimalBtn.mousePressed(() => {
+                if (this.callbacks.onFindOptimalPolicy) this.callbacks.onFindOptimalPolicy();
             });
         });
+    }
+
+    // Swaps a Policy log row's label cell for an inline rename input (policy-logging.md §1's
+    // double-click-to-rename), prefilled with the entry's current plain name. Enter/blur commits
+    // via CanvasController.renamePolicyLogEntry; Escape cancels without renaming. stopPropagation
+    // on mousedown/click so interacting with the input doesn't also trigger the row's own
+    // mousePressed (restore-this-policy).
+    _renderPolicyLogRenameInput(container, entry) {
+        const input = createElement('input');
+        input.parent(container);
+        input.addClass('panel-input');
+        input.addClass('policy-log-rename-input');
+        input.elt.type = 'text';
+        input.elt.maxLength = 12;
+        input.elt.value = entry.name || '';
+
+        // updateContent() below tears down and rebuilds this whole section, removing `input`
+        // itself from the DOM - which the browser treats as a focus loss and fires a SECOND
+        // 'blur' on, re-entering commit() a second time against an already-detached element
+        // (removeChild throws). `settled` makes both commit()/cancel() one-shot so Enter (which
+        // calls commit() directly, then blurs as a side effect of the DOM swap) can't double-fire.
+        let settled = false;
+        const commit = () => {
+            if (settled) return;
+            settled = true;
+            this.controller.renamePolicyLogEntry(entry.id, input.elt.value);
+            this._renamingPolicyEntryId = null;
+            this.updateContent();
+        };
+        const cancel = () => {
+            if (settled) return;
+            settled = true;
+            this._renamingPolicyEntryId = null;
+            this.updateContent();
+        };
+
+        input.elt.addEventListener('mousedown', (e) => e.stopPropagation());
+        input.elt.addEventListener('click', (e) => e.stopPropagation());
+        input.elt.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); commit(); }
+            else if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+        });
+        input.elt.addEventListener('blur', commit);
+
+        setTimeout(() => { input.elt.focus(); input.elt.select(); }, 0);
     }
 
     // Q*(s,a) per sweep. One column per computed sweep k=0..totalSweeps-1 (sweep 0 = the V=0
@@ -1901,11 +2182,18 @@ class RightPanel {
         const posHex = AppPalette.reward.positive;
         const negHex = AppPalette.reward.negative;
         const vPrev = `\\textcolor{${accent}}{V^{${k - 1}}(s')}`;
+        // 'expectation' mode (the default outside the Find Optimal π flow) evaluates whatever
+        // Policy π is currently configured - no max_a anywhere - vs. 'optimal' mode's true
+        // Bellman optimality backup. See ValueIterationState.runMode.
+        const viState = this.viewModel.valueIterationState;
+        const backupTerm = (viState && viState.runMode === 'optimal')
+            ? '\\max_a \\sum_{s\'} P(s\'|s,a)'
+            : '\\sum_a \\pi(a|s) \\sum_{s\'} P(s\'|s,a)';
 
         if (detail.stepIndex <= 0) {
             return [{
                 type: 'header',
-                text: `V^{${k}}(\\text{${s}}) = \\max_a \\sum_{s'} P(s'|s,a)\\bigl[R + ${g}\\,${vPrev}\\bigr]`
+                text: `V^{${k}}(\\text{${s}}) = ${backupTerm}\\bigl[R + ${g}\\,${vPrev}\\bigr]`
             }];
         }
 
@@ -1934,7 +2222,7 @@ class RightPanel {
             if (!clicked) {
                 return [{
                     type: 'header',
-                    text: `V^{${k}}(\\text{${s}}) = \\max_a \\sum_{s'} P(s'|s,a)\\bigl[R + ${g}\\,${vPrev}\\bigr]`
+                    text: `V^{${k}}(\\text{${s}}) = ${backupTerm}\\bigl[R + ${g}\\,${vPrev}\\bigr]`
                 }];
             }
             const a = latexEscapeText(clicked.actionName);
@@ -2205,6 +2493,15 @@ class RightPanel {
 
         this.renderInitialStateSection();
 
+        // Full Policy π editor (Deterministic|Random per-state rows, Stationary|π_t toggle) -
+        // previously Policy mode's own exclusive section, now also surfaced here (and in the
+        // Method panel below) so π can be edited without leaving Monte Carlo/Values mode. Reads/
+        // writes the exact same simulationState.policy/policyWeights/timeDependentPolicy Policy
+        // mode edits, MC's own rollouts sample from, and Build's simulation renders - editing it
+        // here is not a separate/preview copy. Shown regardless of whether rollouts have been
+        // computed yet, unlike the stats sections below.
+        this._renderPolicyModeSection();
+
         if (!state || !state.computed || !startNode) {
             const msg = createDiv('Set an Initial State above to compute rollouts.');
             msg.parent(this.contentContainer);
@@ -2213,37 +2510,6 @@ class RightPanel {
             this._renderPolicyLog();
             return;
         }
-
-        this.createSection('Policy', () => {
-            const container = createDiv();
-            container.parent(this.contentContainer);
-            container.addClass('panel-section-content');
-
-            const policy = this.viewModel.simulationState ? this.viewModel.simulationState.policy : {};
-            const graph = this.viewModel.graph;
-            let detCount = 0, randomCount = 0;
-            for (const node of graph.nodes) {
-                if (node.type !== 'state' || !node.actions || node.actions.length === 0) continue;
-                if (policy[node.id] !== undefined && policy[node.id] !== null) { detCount++; }
-                else { randomCount++; }
-            }
-            let summaryText = detCount === 0
-                ? 'all Random'
-                : `${detCount} det. action(s), ${randomCount} Random`;
-            const staleCount = state.policyFallbacks ? state.policyFallbacks.length : 0;
-            if (staleCount > 0) summaryText += ` (⚠ ${staleCount} stale)`;
-
-            const summaryDiv = createDiv(summaryText);
-            summaryDiv.parent(container);
-            summaryDiv.style('font-size', '11px');
-            summaryDiv.style('color', AppPalette.text.secondary);
-
-            const hintDiv = createDiv('To change π, switch to Build mode.');
-            hintDiv.parent(container);
-            hintDiv.style('font-size', '10px');
-            hintDiv.style('color', AppPalette.text.muted);
-            hintDiv.style('margin-top', '2px');
-        });
 
         // Estimate/Episodes/Selected Run all depend on expectationState.currentT and
         // expectationViewModel.selectedRunIndex, both of which change on every scrubber tick/play

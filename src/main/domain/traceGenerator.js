@@ -79,8 +79,9 @@ class TraceGenerator {
     /**
      * Select an action from a state using a deterministic policy when available, else a
      * weighted-random policy when configured, else uniform random. `piTAction` (a concrete
-     * actionId, the 'random' sentinel, or null), when non-null, overrides policy/policyWeights
-     * entirely for this call - see the time-dependent-policy param on generate() above.
+     * actionId, the 'random' sentinel, a {actionId: rawWeight} weighted-random object, or null),
+     * when non-null/undefined, overrides policy/policyWeights entirely for this call - see the
+     * time-dependent-policy param on generate() above.
      */
     selectActionForPolicy(stateNode, policy = {}, policyWeights = {}, piTAction = null) {
         if (!stateNode.actions || stateNode.actions.length === 0) {
@@ -90,6 +91,12 @@ class TraceGenerator {
         if (piTAction !== null && piTAction !== undefined) {
             if (piTAction === 'random') {
                 return this.selectRandomAction(stateNode);
+            }
+            if (typeof piTAction === 'object') {
+                // Weighted-random π_t slot - reuses the exact same weighted sampler Stationary's
+                // policyWeights already goes through below, just handed this slot's weights
+                // directly instead of policyWeights[stateNode.id].
+                return this.selectRandomAction(stateNode, piTAction);
             }
             const normalizedId = Number(piTAction);
             const matchingActionId = stateNode.actions.find(actionId => Number(actionId) === normalizedId);

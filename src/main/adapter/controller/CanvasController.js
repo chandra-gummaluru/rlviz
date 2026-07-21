@@ -534,6 +534,19 @@ class CanvasController {
     enterValuesScene(subView) {
         this.setMode('values');
         this.setValuesSubView(subView);
+        // A leftover 'optimal' run from a previous Find-Optimal excursion (enterFindOptimalScene()
+        // below, which never resets this itself) must not keep silently animating once the user
+        // comes back through this NORMAL entry point - reset so the next Play/Step/Skip
+        // reinitializes fresh in 'expectation' mode via ensureVIInitialized()'s own default.
+        // Belief Iteration / PO Q-Learning (observability 'partial') always run 'optimal' anyway,
+        // so this never fires a reset for those two quadrants.
+        if (subView === 'vi') {
+            const viState = this.viewModel.valueIterationState;
+            if (viState && viState.initialized && this.viewModel.observability !== 'partial'
+                && viState.runMode !== 'expectation') {
+                viState.reset();
+            }
+        }
         this.showGoalCardIfNotMuted();
     }
 
@@ -550,6 +563,21 @@ class CanvasController {
     muteGoalCard() {
         this.viewModel.goalCardMuted = true;
         this.viewModel.goalCardVisible = false;
+    }
+
+    // "Find optimal π" entry point (Policy log's own button, distinct from enterValuesScene's
+    // Monte Carlo/Iteration picker path above): always lands on Iteration and shows
+    // findOptimalCard.js's focused V* card instead of the generic goal card - deliberately does
+    // NOT call showGoalCardIfNotMuted(), since the two overlays are mutually exclusive entry
+    // points into the same 'vi' sub-view.
+    enterFindOptimalScene() {
+        this.setMode('values');
+        this.setValuesSubView('vi');
+        this.viewModel.findOptimalCardVisible = true;
+    }
+
+    dismissFindOptimalCard() {
+        this.viewModel.findOptimalCardVisible = false;
     }
 
     // Toggles the VI pane between "Value Iteration" (P known) and "Learning Iteration"
@@ -606,6 +634,16 @@ class CanvasController {
         this.interactors.setQLAlgorithm.execute(new SetQLAlgorithmInputData(algorithm, param));
     }
 
+    // "Animations · per mode" (top bar Parameters popover, presentation-only flags) - see
+    // CanvasViewModel.mcAnimationEnabled/.iterationAnimationEnabled's own comment.
+    setMcAnimationEnabled(enabled) {
+        this.viewModel.mcAnimationEnabled = !!enabled;
+    }
+
+    setIterationAnimationEnabled(enabled) {
+        this.viewModel.iterationAnimationEnabled = !!enabled;
+    }
+
     // 'graph' | 'tree' canvas view for the Learning Iteration quadrant (presentation-only flag).
     setLearningIterationCanvasView(view) {
         this.viewModel.learningIterationCanvasView = view === 'tree' ? 'tree' : 'graph';
@@ -659,36 +697,63 @@ class CanvasController {
     // Carlo's policy snapshot - simulationState.policy remains the single source of truth.
     setPolicyAction(stateId, actionId) {
         this.viewModel.simulationState.setPolicyAction(stateId, actionId);
+        this._invalidateActivePolicyLabel();
     }
 
     // Seeds a state's weighted-random policy with equal starting weights across actionIds -
     // called once when a state is first switched to Random mode in Policy mode's inspector.
     initPolicyWeightsUniform(stateId, actionIds) {
         this.viewModel.simulationState.initPolicyWeightsUniform(stateId, actionIds);
+        this._invalidateActivePolicyLabel();
     }
 
     // Sets one action's raw weight within a state's weighted-random policy (Policy mode's
     // per-action sliders) - see SimulationState.setPolicyWeight for normalization semantics.
     setPolicyWeight(stateId, actionId, value) {
         this.viewModel.simulationState.setPolicyWeight(stateId, actionId, value);
+        this._invalidateActivePolicyLabel();
     }
 
     // Time-dependent policy (π_t, Evaluate redesign Phase 6) passthroughs - thin delegation to
     // SimulationState, mirroring setPolicyAction/setPolicyWeight's own shape exactly.
     setPiMode(mode) {
         this.viewModel.simulationState.setPiMode(mode, this.viewModel.graph);
+        this._invalidateActivePolicyLabel();
     }
 
     setPiHorizon(horizon) {
         this.viewModel.simulationState.setPiHorizon(horizon);
+        this._invalidateActivePolicyLabel();
     }
 
     cycleTimeDependentAction(stateId, t, actionIds) {
         this.viewModel.simulationState.cycleTimeDependentAction(stateId, t, actionIds);
+        this._invalidateActivePolicyLabel();
     }
 
     setTimeDependentAction(stateId, t, value) {
         this.viewModel.simulationState.setTimeDependentAction(stateId, t, value);
+        this._invalidateActivePolicyLabel();
+    }
+
+    // Weighted-random π_t passthroughs - mirror initPolicyWeightsUniform/setPolicyWeight above,
+    // just scoped to a single (stateId, t) slot instead of the Stationary stateId-only map.
+    initTimeDependentWeightsUniform(stateId, t, actionIds) {
+        this.viewModel.simulationState.initTimeDependentWeightsUniform(stateId, t, actionIds);
+        this._invalidateActivePolicyLabel();
+    }
+
+    setTimeDependentWeight(stateId, t, actionId, value) {
+        this.viewModel.simulationState.setTimeDependentWeight(stateId, t, actionId, value);
+        this._invalidateActivePolicyLabel();
+    }
+
+    // goalCard.js's equation shows V^{whichever named policy is active} - any direct hand-edit to
+    // the live policy means it may no longer match the log entry it was last restored from, so
+    // every mutator above (everything except restorePolicyFromLog itself) clears it back to null,
+    // which goalCard.js's own refresh() falls back to a generic V^pi for.
+    _invalidateActivePolicyLabel() {
+        this.viewModel.activePolicyLabel = null;
     }
 
     // Policy log hover-preview (Evaluate pi Phase 2) - sets/clears the preview pair
@@ -724,17 +789,37 @@ class CanvasController {
         if (entry.timeDependentPolicySnapshot) {
             const timeDependentPolicy = {};
             Object.entries(entry.timeDependentPolicySnapshot).forEach(([stateId, seq]) => {
-                timeDependentPolicy[stateId] = seq.slice();
+                // seq.slice() alone only copies the ARRAY - a weighted-random slot's element is
+                // itself an object, so a shallow slice would still share that object's reference
+                // with the log entry's own frozen snapshot; editing the restored live policy
+                // would then silently mutate the logged entry too. Clone each object element.
+                timeDependentPolicy[stateId] = seq.map(v => (v && typeof v === 'object') ? { ...v } : v);
             });
             this.viewModel.simulationState.timeDependentPolicy = timeDependentPolicy;
             this.viewModel.simulationState.piMode = 'timeDependent';
             this.viewModel.simulationState.piHorizon = entry.horizon;
         }
+
+        // goalCard.js's "Want to find" equation reads this to show V^{this named policy} instead
+        // of a generic V^pi once the user has explicitly picked one from the log.
+        this.viewModel.activePolicyLabel = entry.label;
     }
 
     // Empties the Policy log (rightPanel.js's "clear" link).
     clearPolicyLog() {
         this.viewModel.policyEvaluationState.clear();
+    }
+
+    // Removes/renames a single Policy log row (policy-logging.md §1/§2's rename-on-double-click
+    // and "×" remove) - same lightweight "controller calls the domain object directly" shape as
+    // clearPolicyLog() above, not a dedicated use-case pair, for the same reason: no Bellman math,
+    // no snapshotting, just a list mutation.
+    removePolicyLogEntry(id) {
+        this.viewModel.policyEvaluationState.removeEntry(id);
+    }
+
+    renamePolicyLogEntry(id, name) {
+        this.viewModel.policyEvaluationState.renameEntry(id, name);
     }
 
     /**

@@ -21,7 +21,7 @@ class RunVIInteractor extends RunVIInputBoundary {
 
         // Fresh start: clear any prior state (including manual Q overrides), then seed sweep 0.
         this.viState.reset();
-        this.viState.initialize(this.graph, inputData.T, inputData.gamma, inputData.epsilon);
+        this.viState.initialize(this.graph, inputData.T, inputData.gamma, inputData.epsilon, inputData.runMode);
 
         this.outputBoundary.presentInitialized();
     }

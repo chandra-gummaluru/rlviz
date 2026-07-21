@@ -105,6 +105,10 @@ let mcRunsPill;
 let viSweepChip;
 let learningTreePill;
 let treeViewPill;
+let namePolicyModal;
+let noStartNodeModal;
+let toast;
+let renormalizeConfirmModal;
 let traceScrubber;
 // Build/Policy's own TraceScrubber callbacks (Task 3) - kept as a named reference so the
 // onEnter.build/policy mode-lifecycle hooks below can re-assert ownership of the single shared
@@ -134,6 +138,7 @@ let viSkipInteractor;
 // Evaluate Policy (created in setup)
 let policyEvaluationState;
 let evaluatePolicyInteractor;
+let logOptimalPolicyInteractor;
 
 // Callbacks
 const onStateClick = () => {
@@ -291,6 +296,19 @@ const onObservabilityToggle = (value) => {
     redraw();
 };
 
+// "Animations · per mode" switches (Parameters popover) - purely presentation, no cascading
+// re-renders needed beyond the popover's own switch visuals (the flag is read live wherever the
+// next reveal happens: viStatesView.js's _prepareLiveSection(), expectationView.js's startPlay()).
+const onSetMcAnimationEnabled = (enabled) => {
+    canvasController.setMcAnimationEnabled(enabled);
+    if (topBar) topBar.refreshParameters();
+};
+
+const onSetIterationAnimationEnabled = (enabled) => {
+    canvasController.setIterationAnimationEnabled(enabled);
+    if (topBar) topBar.refreshParameters();
+};
+
 // True when the resolved Values-mode quadrant is unknown:full (Learning Iteration) - the only
 // quadrant driven by the real Q-learning subsystem rather than VI's Bellman sweep.
 function _isLearningIterationActive() {
@@ -351,33 +369,31 @@ function enterMCSubView() {
         viPauseInteractor.execute(new VIPauseInputData());
     }
 
-    if (!checkAndRenormalizeIfNeeded(true)) {
+    checkAndRenormalizeIfNeeded(true, () => {
+        const startNode = canvasViewModel.startNode;
+        if (startNode && runExpectationInteractor) {
+            runExpectationInteractor.execute(new RunExpectationInputData(
+                startNode.id,
+                Object.assign({}, simulationState.policy),
+                expectationState.displayRuns,
+                expectationState.maxSteps,
+                expectationState.gamma,
+                Object.assign({}, simulationState.policyWeights),
+                simulationState.isTimeDependent() ? simulationState.timeDependentPolicy : null
+            ));
+        }
+
+        if (mainView && mainView.expectationView) {
+            const topOffset = mainView.TOP_BARS_HEIGHT;
+            const panelW = rightPanel ? rightPanel.getWidth() : 272;
+            const fullCanvasW = windowWidth - panelW;
+            const canvasH = windowHeight - topOffset - mainView.getDockHeight();
+            const canvasW = mainView._valuesPaneWidths(fullCanvasW).mc;
+            mainView.expectationView.setupScrubber(canvasW, canvasH, topOffset);
+        }
+        if (mainView && mainView.chartDock) mainView.chartDock.refresh();
         redraw();
-        return;
-    }
-
-    const startNode = canvasViewModel.startNode;
-    if (startNode && runExpectationInteractor) {
-        runExpectationInteractor.execute(new RunExpectationInputData(
-            startNode.id,
-            Object.assign({}, simulationState.policy),
-            expectationState.displayRuns,
-            expectationState.maxSteps,
-            expectationState.gamma,
-            Object.assign({}, simulationState.policyWeights),
-            simulationState.isTimeDependent() ? simulationState.timeDependentPolicy : null
-        ));
-    }
-
-    if (mainView && mainView.expectationView) {
-        const topOffset = mainView.TOP_BARS_HEIGHT;
-        const panelW = rightPanel ? rightPanel.getWidth() : 272;
-        const fullCanvasW = windowWidth - panelW;
-        const canvasH = windowHeight - topOffset - mainView.getDockHeight();
-        const canvasW = mainView._valuesPaneWidths(fullCanvasW).mc;
-        mainView.expectationView.setupScrubber(canvasW, canvasH, topOffset);
-    }
-    if (mainView && mainView.chartDock) mainView.chartDock.refresh();
+    });
 }
 
 // View/animation-layer teardown only, run on every within-Values-mode sub-view switch (mc<->vi).
@@ -736,10 +752,215 @@ const onRenormalize = () => {
     redraw();
 };
 
+// After Evaluate π logs an entry, take the user into Values mode with the generic goal card up
+// (offering both Monte Carlo and Iteration, per the handoff's "should go to Monte Carlo and
+// Value Iteration") so they can see how the exact value just logged compares. Mirrors
+// topBar.js's own enterValuesScene() click handler (topBar.setMode('values') BEFORE the
+// controller/goal-card side effects) - this flow doesn't go through that click handler, so it
+// has to do the same setup itself (same pattern onFindOptimalPolicy already uses below).
+// Preserves whichever sub-view was last active rather than forcing one, defaulting to 'mc' only
+// if Values mode has never been entered this session.
+const goToValuesSceneAfterEvaluate = () => {
+    const subView = canvasViewModel.valuesSubView || 'mc';
+    if (topBar) topBar.setMode('values');
+    canvasController.enterValuesScene(subView);
+    if (topBar) topBar.refreshValuesSubView(subView);
+    if (estimatorPill) estimatorPill.refresh();
+    if (mainView && mainView.goalCard) mainView.goalCard.refresh();
+    redraw();
+};
+
+// Runs evaluatePolicyInteractor, marks whatever entry it actually logged as "the active policy"
+// (so goalCard.js's equation shows V^{that name} instead of a generic V^pi - mirrors
+// CanvasController.restorePolicyFromLog()'s identical assignment, just for a freshly-logged
+// entry instead of a restored older one), then navigates to the Values scene. Guards on the
+// entries array actually growing rather than assuming success, so a presentError() path (e.g.
+// evaluatePolicyInteractor declining internally) can't leave activePolicyLabel pointing at a
+// stale, unrelated older entry.
+// Extracted so the MC/Iteration "▶ Evaluate π" Play buttons' own name-gate (_withPolicyNameGate
+// below) can reuse the exact same logging step without also triggering
+// goToValuesSceneAfterEvaluate()'s scene-entry side effects - those buttons name-gate IN PLACE
+// (the user already clicked from the scene they want to stay on), unlike the dedicated Evaluate π
+// button which always navigates.
+const _evaluatePolicyAndLabel = (gamma, name) => {
+    const beforeCount = policyEvaluationState ? policyEvaluationState.entries.length : 0;
+    const inputData = name !== undefined
+        ? new EvaluatePolicyInputData(gamma, 0.01, name)
+        : new EvaluatePolicyInputData(gamma);
+    evaluatePolicyInteractor.execute(inputData);
+    if (policyEvaluationState && policyEvaluationState.entries.length > beforeCount) {
+        const entry = policyEvaluationState.entries[policyEvaluationState.entries.length - 1];
+        canvasViewModel.activePolicyLabel = entry.label;
+    }
+};
+
+const _evaluatePolicyAndNavigate = (gamma, name) => {
+    _evaluatePolicyAndLabel(gamma, name);
+    goToValuesSceneAfterEvaluate();
+};
+
+// Gate for Monte Carlo's and Value Iteration's OWN "▶ Evaluate π" Play buttons: unlike the
+// dedicated Evaluate π button (Build/Policy), these run the real MC rollout / VI Bellman sweep
+// directly, never evaluatePolicyInteractor - but per an explicit request, the first click with no
+// policy currently named prompts for one (and actually logs it, same as the dedicated button)
+// before letting the real action proceed. Confirming logs AND runs; "Don't Log" (the modal's own
+// cancel action here, relabeled - see namePolicyModal.js's cancelLabel) still runs the real
+// action, just skips evaluatePolicyInteractor entirely, so nothing is added to the Policy log
+// and activePolicyLabel stays unset (this same gate fires again next Play click, since there's
+// still no active name). Once activePolicyLabel IS set, later clicks skip straight to runAction -
+// naming only gates the first evaluation of a given policy, not every Play click.
+const _withPolicyNameGate = (runAction) => {
+    if (canvasViewModel.activePolicyLabel) { runAction(); return; }
+    // No start node: neither MC nor VI actually needs one to gate naming on (VI computes every
+    // state's value regardless; MC already shows its own "set a start state" placeholder) - skip
+    // straight to the real action rather than blocking on something naming can't do anything
+    // about anyway. Same for the (never-expected-in-practice) missing-modal fallback.
+    if (!evaluatePolicyInteractor || !canvasViewModel.startNode || !namePolicyModal) {
+        runAction();
+        return;
+    }
+    // Policy log full (policy-logging.md §1's 6-entry cap): show the toast in place of the
+    // naming prompt, but still run the real action - same "logging is refused, the action isn't"
+    // shape as this same gate's own "Don't Log" cancel path below.
+    if (policyEvaluationState && policyEvaluationState.entries.length >= PolicyEvaluationState.MAX_ENTRIES) {
+        if (toast) toast.show('Policy log full — remove one first');
+        runAction();
+        return;
+    }
+    const existingCount = policyEvaluationState ? policyEvaluationState.entries.length : 0;
+    namePolicyModal.show(`policy-${existingCount + 1}`, {
+        title: 'Name this policy evaluation',
+        cancelLabel: "Don't Log",
+        confirmLabel: 'Log',
+        onConfirm: (name) => {
+            namePolicyModal.hide();
+            const gamma = rightPanel ? rightPanel.discountFactor : 0.9;
+            _evaluatePolicyAndLabel(gamma, name);
+            runAction();
+        },
+        onCancel: () => {
+            namePolicyModal.hide();
+            runAction();
+        }
+    });
+};
+
 const onEvaluatePolicy = () => {
     if (!evaluatePolicyInteractor) return;
-    const gamma = rightPanel ? rightPanel.discountFactor : 0.9;
-    evaluatePolicyInteractor.execute(new EvaluatePolicyInputData(gamma));
+    if (!canvasViewModel.startNode) {
+        alert('Please select a start node first (right-click a state in editor mode, or use the s₀ dropdown)');
+        return;
+    }
+    if (!namePolicyModal) {
+        // Fallback for the (never-expected-in-practice) case namePolicyModal failed to
+        // construct - keeps Evaluate π functional with the old auto \pi_k label instead of
+        // hard-failing the button entirely.
+        const gamma = rightPanel ? rightPanel.discountFactor : 0.9;
+        _evaluatePolicyAndNavigate(gamma);
+        return;
+    }
+    // Policy log full (policy-logging.md §1's 6-entry cap): this button's whole purpose is
+    // logging, so a full log refuses outright - toast instead of the naming prompt, no navigation.
+    if (policyEvaluationState && policyEvaluationState.entries.length >= PolicyEvaluationState.MAX_ENTRIES) {
+        if (toast) toast.show('Policy log full — remove one first');
+        return;
+    }
+    const existingCount = policyEvaluationState ? policyEvaluationState.entries.length : 0;
+    namePolicyModal.show(`policy-${existingCount + 1}`, {
+        title: 'Name this policy evaluation',
+        cancelLabel: "Don't Log",
+        confirmLabel: 'Log',
+        onConfirm: (name) => {
+            const gamma = rightPanel ? rightPanel.discountFactor : 0.9;
+            namePolicyModal.hide();
+            _evaluatePolicyAndNavigate(gamma, name);
+        },
+        // "Don't Log" - same shape as MC/VI's own name-gate (_withPolicyNameGate): still does
+        // the real thing (navigate to the Values scene), just skips evaluatePolicyInteractor/
+        // the Policy log entry/activePolicyLabel entirely, unlike a true Cancel which would stay
+        // put and do nothing.
+        onCancel: () => {
+            namePolicyModal.hide();
+            goToValuesSceneAfterEvaluate();
+        }
+    });
+};
+
+// ===== Find optimal π (Policy log's own button - forces the known:full quadrant, navigates to
+// Iteration, runs VI to convergence, then logs the resulting greedy policy under a user-given
+// name via logOptimalPolicyInteractor). See CanvasController.enterFindOptimalScene()/
+// dismissFindOptimalCard() and findOptimalCard.js/namePolicyModal.js for the rest of the flow. =====
+let findOptimalPending = false;
+
+const promptNameOptimalPolicy = () => {
+    if (!namePolicyModal) return;
+    // Policy log full (policy-logging.md §1's 6-entry cap) - same refusal as
+    // onEvaluatePolicy()/_withPolicyNameGate() above, this log is shared across all three entry
+    // points.
+    if (policyEvaluationState && policyEvaluationState.entries.length >= PolicyEvaluationState.MAX_ENTRIES) {
+        if (toast) toast.show('Policy log full — remove one first');
+        return;
+    }
+    const existingOptimalCount = policyEvaluationState
+        ? policyEvaluationState.entries.filter(e => e.label && e.label.indexOf('\\pi^{*}') === 0).length
+        : 0;
+    namePolicyModal.show(`optimal-${existingOptimalCount + 1}`, {
+        onConfirm: (name) => {
+            if (logOptimalPolicyInteractor) {
+                logOptimalPolicyInteractor.execute(new LogOptimalPolicyInputData(name));
+            }
+            namePolicyModal.hide();
+            redraw();
+        },
+        onCancel: () => namePolicyModal.hide()
+    });
+};
+
+const onRunFindOptimalBackups = () => {
+    canvasController.dismissFindOptimalCard();
+    if (mainView && mainView.findOptimalCard) mainView.findOptimalCard.refresh();
+    // onVIPlay() always leads to VIPlayInteractor.execute(), which calls
+    // outputBoundary.presentComplete() unconditionally - either synchronously (already
+    // converged, or already at the T cap: the "!canAdvance()||converged" guard branch) or later,
+    // once a genuinely new animated run finishes - so findOptimalPending is always eventually
+    // consumed by viPresenter's onComplete hook (see its own wiring above) either way, with no
+    // special-casing needed here for "already done".
+    findOptimalPending = true;
+    onVIPlay('optimal');
+    redraw();
+};
+
+const onSkipFindOptimalCard = () => {
+    canvasController.dismissFindOptimalCard();
+    if (mainView && mainView.findOptimalCard) mainView.findOptimalCard.refresh();
+    redraw();
+};
+
+const onFindOptimalPolicy = () => {
+    if (!canvasViewModel.startNode) {
+        alert('Please select a start node first (right-click a state in editor mode, or use the s₀ dropdown)');
+        return;
+    }
+    // Force known:full - the only quadrant a real optimum is computed in - by reusing the
+    // existing Parameters-popover toggle handlers, so their entire established refresh cascade
+    // (topBar labels, estimator pill, chart dock, states view rebuild, ...) runs correctly
+    // instead of only flipping canvasViewModel.modelKnown/.observability directly.
+    if (!canvasViewModel.modelKnown) onModelKnownToggle(true);
+    if (canvasViewModel.observability !== 'full') onObservabilityToggle('full');
+
+    canvasController.enterFindOptimalScene();
+    // topBar.js keeps its OWN currentMode/button-visibility state, separate from
+    // canvasController's - topBar.js's own enterValuesScene() (the Monte Carlo/Iteration toolbar
+    // segments' click handler) always calls topBar.setMode('values') before delegating to the
+    // controller; this flow bypasses that click handler entirely (going through the Policy log's
+    // button instead), so it must call the same topBar.setMode('values') itself or the top bar
+    // stays stuck showing Build's own Play/Step/Reset/Renormalize buttons with "Build" still
+    // highlighted as active.
+    if (topBar) topBar.setMode('values');
+    if (topBar) topBar.refreshValuesSubView('vi');
+    if (estimatorPill) estimatorPill.refresh();
+    if (mainView && mainView.findOptimalCard) mainView.findOptimalCard.refresh();
+    redraw();
 };
 
 const onResetZoom = () => {
@@ -791,22 +1012,20 @@ const onToggleSpinningArrow = () => {
 };
 
 /**
- * Check for unnormalized action nodes before simulation starts.
- * If found, prompt user to confirm auto-renormalization.
- * Returns true if simulation should proceed, false otherwise.
+ * Check for unnormalized action nodes before simulation starts. If found, shows the themed
+ * renormalizeConfirmModal and only calls onProceed if the user confirms - unlike the native
+ * confirm() this replaced, a DOM modal is inherently async, so callers no longer get a synchronous
+ * true/false: onProceed() IS "proceed", simply not calling it IS "abort".
  */
-function checkAndRenormalizeIfNeeded(forceCheck = false) {
-    if (!forceCheck && simulationState.replayInitialized) return true;
+function checkAndRenormalizeIfNeeded(forceCheck, onProceed) {
+    if (!forceCheck && simulationState.replayInitialized) { onProceed(); return; }
     const names = canvasController.getUnnormalizedActionNames();
-    if (names.length === 0) return true;
-    const proceed = confirm(
-        `Action node(s) [${names.join(', ')}] have probabilities that don't sum to 1.\n\n` +
-        `Continuing will renormalize these probabilities. Proceed?`
-    );
-    if (proceed) {
+    if (names.length === 0) { onProceed(); return; }
+    if (!renormalizeConfirmModal) { onProceed(); return; }
+    renormalizeConfirmModal.show(names, () => {
         canvasController.renormalizeProbabilities();
-    }
-    return proceed;
+        onProceed();
+    });
 }
 
 // Value Iteration callbacks
@@ -834,12 +1053,27 @@ const refreshVIButtons = () => {
     topBar.updateVIButtonStates(valueIterationState.isPlaying, enablement.canStep, enablement.canPlay);
 };
 
-const ensureVIInitialized = () => {
-    if (valueIterationState.initialized) return;
-    const T = topBar ? topBar.getVIT() : 8;
+// forcedMode is only ever passed by onRunFindOptimalBackups ('optimal') - every other Play/
+// Step/Skip click passes nothing, so an already-initialized run just continues in whichever
+// mode is currently active (never silently switched back). If forcedMode disagrees with the
+// currently active runMode, the accumulated history is invalid under the new rule (max_a and
+// the configured-policy expectation backup aren't interchangeable sweep-to-sweep), so this
+// resets and reinitializes fresh under forcedMode instead of continuing it.
+const ensureVIInitialized = (forcedMode) => {
+    if (valueIterationState.initialized) {
+        if (forcedMode && valueIterationState.runMode !== forcedMode) {
+            valueIterationState.reset();
+        } else {
+            return;
+        }
+    }
+    const T = rightPanel ? rightPanel.viT : 8;
     const gamma = rightPanel ? rightPanel.discountFactor : 0.9;
     const epsilon = rightPanel ? rightPanel.viEpsilon : 0.01;
-    runVIInteractor.execute(new RunVIInputData(T, gamma, epsilon));
+    // Belief Iteration / PO Q-Learning (partial observability) always run the true optimality
+    // sweep, untouched by the expectation-mode change - only known:full defaults to 'expectation'.
+    const defaultMode = canvasViewModel.observability === 'partial' ? 'optimal' : 'expectation';
+    runVIInteractor.execute(new RunVIInputData(T, gamma, epsilon, forcedMode || defaultMode));
 };
 
 // The VI Play/Step/Skip/Reset buttons are shared by all four Values-mode Method quadrants. In
@@ -853,14 +1087,16 @@ function _afterQLChange() {
     redraw();
 }
 
-const onVIPlay = () => {
+// The actual Play/"Find Optimal" logic, unconditional - see onVIPlay below for the name-gate
+// wrapped around this for known:full's own "▶ Evaluate π" click specifically.
+const _runVIPlay = (forcedMode) => {
     if (_isLearningIterationActive()) {
         canvasController.runQLearning(10);   // "▶ Run learning": 10 episodes
         _afterQLChange();
         return;
     }
     if (!runVIInteractor || !viPlayInteractor) return;
-    ensureVIInitialized();
+    ensureVIInitialized(forcedMode);
     viPlayInteractor.execute(new VIPlayInputData());
     // Resume takes priority over refresh() - if a reveal was paused mid-animation, this
     // continues it exactly where it was; refresh() alone only covers the very first frame of
@@ -880,6 +1116,21 @@ const onVIPlay = () => {
     refreshVIButtons();
 };
 
+// known:full's Play button reads "▶ Evaluate π" (topBar.js's setVIPlayPauseMode) - per an
+// explicit request, name-gate it exactly like Monte Carlo's own Play button (_withPolicyNameGate)
+// whenever no policy is currently named. Find Optimal (forcedMode === 'optimal', called only from
+// onRunFindOptimalBackups) and the other 3 quadrants are unaffected - this button doesn't read
+// "Evaluate π" for them, so there's nothing to gate.
+const onVIPlay = (forcedMode) => {
+    const isEvaluatePiButton = !forcedMode
+        && ValuesMethodMatrix.key(canvasViewModel.modelKnown, canvasViewModel.observability) === 'known:full';
+    if (isEvaluatePiButton) {
+        _withPolicyNameGate(() => _runVIPlay(forcedMode));
+        return;
+    }
+    _runVIPlay(forcedMode);
+};
+
 const onVIPause = () => {
     // No continuous playback in Q-learning (Run is synchronous) - nothing to pause.
     if (_isLearningIterationActive()) return;
@@ -895,20 +1146,20 @@ const onVIPause = () => {
     refreshVIButtons();
 };
 
-const onVIStep = () => {
+const onVIStep = (forcedMode) => {
     if (_isLearningIterationActive()) {
         canvasController.stepQLearning();    // exactly one episode
         _afterQLChange();
         return;
     }
     if (!viStepInteractor) return;
-    ensureVIInitialized();
+    ensureVIInitialized(forcedMode);
     viStepInteractor.execute(new VIStepInputData());
     refreshVIButtons();
     if (mainView && mainView.viStatesView) mainView.viStatesView.refresh();
 };
 
-const onVISkip = () => {
+const onVISkip = (forcedMode) => {
     if (_isLearningIterationActive()) {
         // Skip has no distinct meaning here yet - behave like Run (10 episodes) as an interim
         // stopgap rather than a dead button.
@@ -917,7 +1168,7 @@ const onVISkip = () => {
         return;
     }
     if (!viSkipInteractor) return;
-    ensureVIInitialized();
+    ensureVIInitialized(forcedMode);
     viSkipInteractor.execute(new VISkipInputData());
     refreshVIButtons();
     if (mainView && mainView.viStatesView) mainView.viStatesView.refresh();
@@ -945,20 +1196,25 @@ const onPlay = () => {
 
     // Check if start node is selected
     if (!canvasViewModel.interaction.startNode && !simulationState.replayInitialized) {
-        alert('Please select a start node first (right-click a state in editor mode, or use the s₀ dropdown)');
+        if (noStartNodeModal) {
+            noStartNodeModal.show();
+        } else {
+            alert('Please select a start node first (right-click a state in editor mode, or use the s₀ dropdown)');
+        }
         return;
     }
 
     // Check for unnormalized probabilities before first initialization
-    if (!checkAndRenormalizeIfNeeded()) return;
+    checkAndRenormalizeIfNeeded(false, () => {
+        const inputData = new PlayInputData();
+        playInteractor.execute(inputData);
 
-    const inputData = new PlayInputData();
-    playInteractor.execute(inputData);
-
-    // Update button states
-    if (topBar) {
-        topBar.updateButtonStates(simulationState.isPlaying, simulationState.canAdvance());
-    }
+        // Update button states
+        if (topBar) {
+            topBar.updateButtonStates(simulationState.isPlaying, simulationState.canAdvance());
+        }
+        redraw();
+    });
 };
 
 const onPause = () => {
@@ -983,18 +1239,19 @@ const onStep = () => {
     }
 
     // Check for unnormalized probabilities before first initialization
-    if (!checkAndRenormalizeIfNeeded()) return;
-
-    // Pause if playing
-    if (simulationState.isPlaying) {
-        simulationState.pause();
-        if (topBar) {
-            topBar.updateButtonStates(false, simulationState.canAdvance());
+    checkAndRenormalizeIfNeeded(false, () => {
+        // Pause if playing
+        if (simulationState.isPlaying) {
+            simulationState.pause();
+            if (topBar) {
+                topBar.updateButtonStates(false, simulationState.canAdvance());
+            }
         }
-    }
 
-    const inputData = new StepInputData();
-    stepInteractor.execute(inputData);
+        const inputData = new StepInputData();
+        stepInteractor.execute(inputData);
+        redraw();
+    });
 };
 
 const onSkip = () => {
@@ -1053,8 +1310,11 @@ function setup() {
         onToggleSpinningArrow: onToggleSpinningArrow,
         onModelKnownToggle: onModelKnownToggle,
         onObservabilityToggle: onObservabilityToggle,
+        onSetMcAnimationEnabled: onSetMcAnimationEnabled,
+        onSetIterationAnimationEnabled: onSetIterationAnimationEnabled,
         onRenormalize: onRenormalize,
         onEvaluatePolicy: onEvaluatePolicy,
+        onFindOptimalPolicy: onFindOptimalPolicy,
         onPlay: onPlay,
         onPause: onPause,
         onStep: onStep,
@@ -1066,7 +1326,9 @@ function setup() {
         onVISkip: onVISkip,
         onVIReset: onVIReset,
         onExpectationPlay: () => {
-            if (mainView && mainView.expectationView) mainView.expectationView.startPlay();
+            _withPolicyNameGate(() => {
+                if (mainView && mainView.expectationView) mainView.expectationView.startPlay();
+            });
         },
         onExpectationPause: () => {
             if (mainView && mainView.expectationView) mainView.expectationView.stopPlay();
@@ -1233,6 +1495,34 @@ function setup() {
     }, canvasViewModel);
     mainView.goalCard.setup();
 
+    // "Find optimal π" flow's own focused goal card (findOptimalCard.js) - a sibling overlay to
+    // goalCard.js above, shown instead of it (see CanvasController.enterFindOptimalScene()).
+    mainView.findOptimalCard = new FindOptimalCard({
+        onRun: onRunFindOptimalBackups,
+        onSkip: onSkipFindOptimalCard
+    }, canvasViewModel);
+    mainView.findOptimalCard.setup();
+
+    // "Name this policy" modal (namePolicyModal.js) - shared by both Evaluate π (onEvaluatePolicy)
+    // and Find Optimal π (promptNameOptimalPolicy/onRunFindOptimalBackups); each supplies its own
+    // onConfirm/onCancel per show() call rather than being bound here at construction time.
+    namePolicyModal = new NamePolicyModal();
+    namePolicyModal.setup();
+
+    // Themed replacement for the native alert() previously used by onPlay() when Build/Policy's
+    // "▶ Run" button is clicked with no start state set.
+    noStartNodeModal = new NoStartNodeModal();
+    noStartNodeModal.setup();
+
+    // Single-instance toast (toast.js) - backs the Policy log's "log full, remove one first"
+    // notification (see onEvaluatePolicy()/_withPolicyNameGate() below).
+    toast = new Toast();
+    toast.setup();
+
+    // Themed replacement for the native confirm() previously used by checkAndRenormalizeIfNeeded().
+    renormalizeConfirmModal = new RenormalizeConfirmModal({});
+    renormalizeConfirmModal.setup();
+
     AppPalette._onThemeChange = () => {
         mainView.invalidateDotGrid();
         rightPanel.updateContent();
@@ -1282,6 +1572,15 @@ function setup() {
     viPresenter.setRightPanel(rightPanel);
     viPresenter.setChartDock(mainView.chartDock);
     viPresenter.setSweepChip(viSweepChip);
+    // Detects "a Play/continuous-sweep run just finished" for the "Find optimal π" flow -
+    // findOptimalPending is only ever true while a run kicked off via onRunFindOptimalBackups is
+    // in flight, so a manually-clicked Play/Step/Skip elsewhere never triggers the naming modal.
+    viPresenter.setOnComplete(() => {
+        if (findOptimalPending) {
+            findOptimalPending = false;
+            promptNameOptimalPolicy();
+        }
+    });
 
     // Between-sweep pause AND the beat's own pulse duration both track the animation-speed
     // slider (fast .. slow). Beat range (150-450ms) is centered on the old fixed 300ms default.
@@ -1301,11 +1600,11 @@ function setup() {
         skipCurrentState: () => (viStatesView ? viStatesView.skipCurrentState() : false)
     };
     runVIInteractor = new RunVIInteractor(graph, valueIterationState, viPresenter);
-    viPlayInteractor = new VIPlayInteractor(valueIterationState, viPresenter, graph, viAnimOptions);
+    viPlayInteractor = new VIPlayInteractor(valueIterationState, viPresenter, graph, simulationState, viAnimOptions);
     viPauseInteractor = new VIPauseInteractor(valueIterationState, viPresenter);
-    viStepInteractor = new VIStepInteractor(valueIterationState, viPresenter, graph, viAnimOptions);
+    viStepInteractor = new VIStepInteractor(valueIterationState, viPresenter, graph, simulationState, viAnimOptions);
     viResetInteractor = new VIResetInteractor(valueIterationState, viPresenter);
-    viSkipInteractor = new VISkipInteractor(valueIterationState, viPresenter, graph, viAnimOptions);
+    viSkipInteractor = new VISkipInteractor(valueIterationState, viPresenter, graph, simulationState, viAnimOptions);
 
     // Create Evaluate Policy presenter and interactor (Policy log - shared across all four modes)
     policyEvaluationState = new PolicyEvaluationState();
@@ -1316,9 +1615,19 @@ function setup() {
 
     evaluatePolicyInteractor = new EvaluatePolicyInteractor(
         graph, simulationState, policyEvaluationState, evaluatePolicyPresenter,
-        () => canvasViewModel.startNode
+        () => canvasViewModel.startNode, traceGenerator
     );
     topBar.setEvaluatePolicyEnabled(canvasViewModel.modelKnown);
+
+    // "Find optimal π" (Policy log's own button, always enabled - see rightPanel.callbacks.
+    // onFindOptimalPolicy below) logs Value Iteration's real greedy policy into this SAME log,
+    // reusing LogOptimalPolicyPresenter's identical setRightPanel() wiring.
+    const logOptimalPolicyPresenter = new LogOptimalPolicyPresenter(canvasViewModel);
+    logOptimalPolicyPresenter.setRightPanel(rightPanel);
+    logOptimalPolicyInteractor = new LogOptimalPolicyInteractor(
+        valueIterationState, policyEvaluationState, logOptimalPolicyPresenter,
+        () => canvasViewModel.startNode, traceGenerator, simulationState
+    );
 
     // Create Value Iteration view
     const valueIterationView = new ValueIterationView(canvasViewModel, {
@@ -1482,6 +1791,8 @@ function setup() {
 
     rightPanel.callbacks.onVICellClick = onVICellClick;
 
+    rightPanel.callbacks.onFindOptimalPolicy = onFindOptimalPolicy;
+
     rightPanel.callbacks.onManualQOverride = (stateId, actionId, value) => {
         canvasController.setManualQOverride(stateId, actionId, value);
         rightPanel.updateContent();
@@ -1549,7 +1860,8 @@ function setup() {
     mainView.expectationView = expectationView;
 
     const expectationChartView = new ExpectationChartView(
-        canvasViewModel, expectationState, expectationViewModel, valueIterationState);
+        canvasViewModel, expectationState, expectationViewModel, valueIterationState,
+        { policyEvaluationState, traceGenerator, startNodeProvider, onLogPolicy: onEvaluatePolicy });
     expectationChartView.setup();
     mainView.expectationChartView = expectationChartView;
     expectationView.setExpectationChartView(expectationChartView);

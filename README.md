@@ -1,13 +1,14 @@
 # RLViz - MDP Graph Editor and Simulator
 
-An interactive web-based tool for creating, editing, and simulating Markov Decision Processes (MDPs). Build state-action-state graphs visually, run animated Monte Carlo rollouts, and step through Value Iteration / a manually-edited "Learning Iteration" Q-table — all in a theme-aware (light/dark) UI.
+An interactive web-based tool for creating, editing, and simulating Markov Decision Processes (MDPs). Build state-action-state graphs visually, run animated Monte Carlo rollouts, step through Value Iteration to ε-convergence (or a manually-edited "Learning Iteration" Q-table when P is unknown), and exactly evaluate whatever policy — stationary or time-dependent — you've configured, all in a theme-aware (light/dark) UI.
 
 ## Features
 
 - **Visual MDP Editor**: Create state and action nodes, connect them with probabilistic transitions, annotate the canvas with text labels
-- **Build & Policy Modes**: Full graph editing plus a dedicated Policy π editor (deterministic or weighted-random actions per state)
+- **Build & Policy Modes**: Full graph editing plus a dedicated Policy π editor — Stationary (deterministic or weighted-random actions per state) or time-dependent π_t (a per-timestep action, driven by a horizon slider and time pager)
 - **Trace Simulation**: Animate a sampled rollout through the graph with Play/Step/Reset and an optional "spinning arrow" visualization of probabilistic edge selection
-- **Values Mode**: A Monte Carlo sub-view (many parallel rollouts with per-state aggregate stats) and a 2×2 Value Iteration method matrix — Value Iteration, Learning Iteration, Belief Iteration, and PO Q-Learning — selected via the P known/unknown and full/partial observability toggles
+- **Monte Carlo & Iteration Modes**: A goal-card entry point into Values mode, each landing on a persistent 52/48 split canvas — Monte Carlo (many parallel rollouts + a Grid/Chart toggle) and Iteration, a 2×2 method matrix (Value Iteration, Learning Iteration, Belief Iteration, PO Q-Learning) selected via the P known/unknown and full/partial observability toggles, with a States/Equation/Backward/Chart view split and a live ε-convergence stop condition (not a fixed sweep count)
+- **Evaluate π**: Compute the exact value of whatever policy is currently configured via the Bellman expectation equation (not the optimal V* from Value Iteration, nor a Monte Carlo estimate) — logged to a shared, cross-run Policy log with hover-preview and click-to-restore
 - **Import/Export**: Full graph export (positions, edges, text labels — reimportable) or MDP-only export (transition/reward matrices), plus PNG export and a recent-files menu
 - **Undo/Redo**: Full command history with a 50-level undo stack
 - **Graph Analysis**: Automatic probability normalization and transition-matrix generation
@@ -42,12 +43,12 @@ There is no automated test suite. `test_schema/` holds example MDP graph JSON fi
    - Select an element and press Delete/Backspace to remove it
    - Use Run/Step/Reset to play a sampled trace through the graph
 
-2. **Policy mode** — identical canvas to Build mode, but the right panel's default view is a Policy π editor: toggle each state between Deterministic (pick one action) and Random (weighted sliders per action)
+2. **Policy mode** — identical canvas to Build mode, but the right panel's default view is a Policy π editor: toggle each state between Deterministic (pick one action) and Random (weighted sliders per action) under **Stationary**, or switch to **π_t (time-dep)** to set a different action per timestep, up to a max-steps horizon
 
-3. **Values mode** — estimator sub-views, switched via the floating pill at top-center:
-   - **Monte Carlo**: generate and display many rollouts at once (4/8/16/32/64 panels), with a shared scrubber and per-state aggregate stats
-   - **Method** (Value Iteration / Learning Iteration / Belief Iteration / PO Q-Learning): step through the real Bellman-backup computation, or — when P is marked "unknown" — edit the Q-table directly. Which of the four quadrants you see depends on the P known/unknown and full/partial observability toggles in the Parameters popover
-   - Both sub-views show an "Estimate vs exact" comparison table per state
+3. **Monte Carlo / Iteration modes** — clicking either top-bar segment enters Values mode via a goal card ("Want to find V^π(S₀)?"); picking a scene lands on a persistent 52%/48% split canvas:
+   - **Monte Carlo**: left pane toggles Grid (many rollouts at once — 16/32/64 panels via the runs pill) or Chart (Convergence/Histogram); right pane always shows the live MDP graph, highlighting whichever rollout is selected
+   - **Iteration**: left pane shows one State card per computed sweep, right pane toggles Equation (an animated, per-state Bellman-backup reveal) / Backward (grouped by target state — only with an active π_t policy) / Chart (Q-table + Convergence). The stop condition is ε-convergence (`‖V_{t+1} − V_t‖ < ε`, configurable in Parameters), not a fixed sweep count — `T` is just a safety cap
+   - Both modes expose an **Evaluate π** button (top bar) that computes the current policy's exact value and appends it to the shared Policy log (right panel), independent of whatever Monte Carlo/Iteration happen to be showing
 
 ## Architecture
 
@@ -77,11 +78,12 @@ The simulator generates a random trace through the MDP by:
 3. Sampling the next state based on transition probabilities
 4. Repeating until no more actions are available
 
-### Monte Carlo & Value Iteration
+### Three ways to get a "value"
 
-- **Monte Carlo** generates many independent rollouts from the start state and aggregates per-state statistics across them
-- **Value Iteration** runs the real Bellman-backup computation and animates it column by column; when P is marked "unknown" the computed Q-values become directly editable ("Learning Iteration") instead of being recomputed by an algorithm
-- The two partial-observability quadrants (Belief Iteration, PO Q-Learning) are illustrative relabelings of Value Iteration's real numbers, not true POMDP algorithms
+- **Monte Carlo** samples many independent rollouts from the start state under the current policy and averages the discounted return — an *approximate*, policy-specific estimate
+- **Value Iteration** runs the real Bellman *optimality* backup (`max_a` over actions) and animates it column by column, stopping once the max-norm delta between sweeps drops below ε (a safety cap `T` bounds it if it never converges); when P is marked "unknown" the computed Q-values become directly editable ("Learning Iteration") instead of being recomputed by an algorithm. The two partial-observability quadrants (Belief Iteration, PO Q-Learning) are illustrative relabelings of Value Iteration's real numbers, not true POMDP algorithms — Value Iteration solves for the *optimal* policy, independent of whatever π is currently configured
+- **Evaluate π** runs the Bellman *expectation* equation (`sum_a π(a|s) * ...`, no `max_a`) to convergence for the exact policy currently configured — the same policy Monte Carlo is sampling — giving an *exact*, policy-specific value instead of an optimal or a sampled one. Each click appends an entry to the shared Policy log; hovering a log entry previews that policy on the canvas without changing it, clicking restores it for real
+- **π_t** (Policy mode's Stationary | π_t toggle) is a separate, additive policy representation: an action per timestep instead of one fixed action per state, with its own finite-horizon backward-induction evaluation (a time-varying policy has no infinite-horizon fixed point)
 
 ## File Structure
 
@@ -91,13 +93,17 @@ rlviz/
 ├── style.css            # Styling, incl. CSS custom properties mirrored from AppPalette
 ├── libraries/            # p5.js and other vendored libraries
 ├── src/main/
-│   ├── domain/           # Core entities (Graph, Node, Edge, TextLabel, SimulationState, ValueIterationState, ExpectationState)
-│   ├── use_case/         # Application logic, one folder per use case (Input-Interactor-Presenter pattern)
+│   ├── domain/           # Core entities (Graph, Node, Edge, TextLabel, SimulationState, ValueIterationState,
+│   │                     # ExpectationState, PolicyEvaluationState)
+│   ├── use_case/         # Application logic, one folder per use case (Input-Interactor-Presenter pattern),
+│   │                     # incl. valueIteration/, expectation/, evaluatePolicy/, simulation/
 │   ├── adapter/
 │   │   ├── controller/   # CanvasController - entry point for all user input
 │   │   └── viewmodel/    # CanvasViewModel and per-entity/sub-mode view models
-│   ├── view/             # mainView (canvas), topBar, toolPalette, estimatorPill/mcRunsPill/zoomPill,
-│   │                     # rightPanel, expectationView, valueIterationView, chartDock, helpers/
+│   ├── view/             # mainView (canvas) + DOM chrome: topBar, toolPalette, goalCard, estimatorPill/
+│   │                     # mcRunsPill/zoomPill/viSweepChip, rightPanel, expectationView + expectationChartView,
+│   │                     # valueIterationView + viStatesView/viChartView/viEquationView/viBackwardView/
+│   │                     # viRightViewPill, treeView + treeViewPill, chartDock, helpers/
 │   └── app/               # main.js - dependency injection and p5.js bootstrap
 └── test_schema/          # Example MDP graph JSON fixtures for Import/Export
 ```

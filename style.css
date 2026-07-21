@@ -287,16 +287,72 @@ canvas {
   margin-bottom: 6px;
 }
 
-.menubar-popover-checkbox-row {
+/* Parameters-popover pill switches (Spinning Arrow, "Animations · per mode"). Pill-shaped track
+   + sliding circular thumb (this codebase's other toggles are all either icon buttons or flush
+   segmented-pill button groups - no track/thumb switch existed before this). Reuses the
+   track/thumb radius tokens (AppPalette.shape.segTrack/segThumb, --radius-seg-track/
+   --radius-seg-thumb) already used by the Build/Policy/Values mode toggle, so the "track padding
+   + independently-rounded thumb" geometry stays consistent app-wide. */
+.menubar-anim-row {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-top: 8px;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 0;
 }
 
-.menubar-checkbox {
-  color: var(--text-dark);
+.menubar-anim-label {
   font-size: 12px;
+  font-weight: 600;
+}
+
+.menubar-anim-label--mc {
+  color: var(--accent-orange);
+}
+
+.menubar-anim-label--iteration {
+  color: var(--accent-teal);
+}
+
+.menubar-anim-switch {
+  position: relative;
+  flex-shrink: 0;
+  width: 36px;
+  height: 20px;
+  box-sizing: border-box;
+  padding: 2px;
+  border-radius: var(--radius-seg-track, 10px);
+  background: var(--border-input, rgba(255, 255, 255, 0.25));
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.menubar-anim-switch--on.menubar-anim-switch--mc {
+  background: var(--accent-orange);
+}
+
+.menubar-anim-switch--on.menubar-anim-switch--iteration {
+  background: var(--accent-teal);
+}
+
+.menubar-anim-switch--on.menubar-anim-switch--neutral {
+  background: var(--color-primary);
+}
+
+.menubar-anim-switch-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: var(--radius-seg-thumb, 7px);
+  background: var(--text-white, #fff);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  transition: transform 0.15s ease;
+}
+
+.menubar-anim-switch--on .menubar-anim-switch-thumb {
+  transform: translateX(16px);
 }
 
 .menubar-segmented {
@@ -479,6 +535,26 @@ input[type="range"].menubar-speed-slider::-moz-range-thumb {
 .toolbar-btn--text { background-color: var(--color-gray); border-color: var(--color-gray); color: var(--color-primary-contrast); }
 .toolbar-btn--renormalize { background: var(--surface-btn); }
 
+/* Evaluate π (Build/Policy's top-right button): same tinted-outline-chip recipe as
+   .toolbar-btn--play/--pause below, using --color-primary (this app's existing "primary/exact
+   action" blue - already the OK/Renormalize modal-button color) so it reads as distinct from the
+   neutral Step/Reset/Renormalize cluster it sits in. */
+.toolbar-btn--evaluate-pi {
+  background: color-mix(in srgb, var(--color-primary) 16%, transparent);
+  border-color: color-mix(in srgb, var(--color-primary) 45%, transparent);
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+/* Find optimal π (Monte Carlo/Iteration's own top-right button, in Evaluate π's place) - same
+   recipe/purple as .panel-btn--find-optimal (rightPanel.js's identical Policy-log button). */
+.toolbar-btn--find-optimal {
+  background: color-mix(in srgb, var(--accent-purple) 16%, transparent);
+  border-color: color-mix(in srgb, var(--accent-purple) 45%, transparent);
+  color: var(--accent-purple);
+  font-weight: 600;
+}
+
 /* Run/Play and Pause: tinted outline chips (not solid fills), matching the mockup - Step/
    Reset/Renormalize/Skip stay the neutral .toolbar-btn default above, undifferentiated by
    action like the mockup's uniform button styling. */
@@ -567,27 +643,6 @@ input[type="range"].menubar-speed-slider::-moz-range-thumb {
 .toolbar-toggle--iteration-unknown.toolbar-toggle--active {
   background-color: color-mix(in srgb, var(--accent-purpleT) 16%, transparent);
   color: var(--accent-purpleT);
-}
-
-/* Value Iteration T input */
-.toolbar-t-label {
-  font-family: var(--font-family);
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--text-dark);
-  margin-left: 16px;
-  margin-right: 4px;
-  line-height: 36px;
-}
-
-.toolbar-t-input {
-  font-family: var(--font-family);
-  font-size: 14px;
-  padding: 6px 8px;
-  border: 1px solid var(--border-medium);
-  border-radius: 4px;
-  width: 50px;
-  text-align: center;
 }
 
 .toolbar-checkbox {
@@ -822,20 +877,38 @@ input[type="range"].menubar-speed-slider::-moz-range-thumb {
   color: var(--text-medium);
 }
 
-.policy-log-row {
+.policy-log-row,
+.policy-log-header {
   display: grid;
-  grid-template-columns: auto 1fr auto;
-  gap: 0 12px;
+  grid-template-columns: minmax(0, 1fr) auto auto auto auto;
+  gap: 0 6px;
   align-items: baseline;
   font-family: var(--font-mono, monospace);
   font-size: 11px;
-  padding: 5px 6px;
+  padding: 5px 4px;
   border-radius: 6px;
+}
+
+.policy-log-row {
   cursor: pointer;
 }
 
 .policy-log-row:hover {
   background: var(--surface-hover, var(--bg-dark-hover));
+}
+
+.policy-log-header {
+  color: var(--text-lighter);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.policy-log-row-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 .policy-log-row-t {
@@ -850,7 +923,47 @@ input[type="range"].menubar-speed-slider::-moz-range-thumb {
 }
 
 .policy-log-row-value--best {
-  color: var(--accent-yellow);
+  color: var(--accent-green);
+}
+
+.policy-log-row-mc {
+  text-align: right;
+  font-weight: 600;
+  color: var(--text-dark);
+}
+
+.policy-log-header .policy-log-row-value,
+.policy-log-header .policy-log-row-mc {
+  font-weight: inherit;
+  color: inherit;
+}
+
+.policy-log-row-remove {
+  color: var(--text-placeholder);
+  font-size: 14px;
+  line-height: 1;
+  text-align: center;
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+.policy-log-row-remove:hover {
+  color: var(--accent-red);
+}
+
+.policy-log-counter {
+  margin-top: 4px;
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+  color: var(--text-lighter);
+}
+
+.policy-log-rename-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 1px 4px;
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
 }
 
 .panel-top-row {
@@ -1364,7 +1477,10 @@ input[type="range"]::-moz-range-thumb {
 /* Buttons */
 .panel-btn {
   padding: 6px 12px;
-  border: none;
+  /* 1px transparent by default (not `none`) so every modifier renders the same box height
+     whether or not it actually draws a visible border - .panel-btn--secondary's real border
+     used to add 2px (1px top + 1px bottom) on top of the borderless modifiers' height. */
+  border: 1px solid transparent;
   border-radius: 4px;
   font-family: var(--font-family);
   font-size: 13px;
@@ -1384,6 +1500,41 @@ input[type="range"]::-moz-range-thumb {
 
 .panel-btn--danger {
   background-color: var(--color-danger);
+}
+
+/* Neutral "Cancel" style - every other .panel-btn modifier (--primary/--success/--danger) sets a
+   solid background, but the base .panel-btn rule always sets color: var(--text-white) regardless
+   - a Cancel button using the bare class with no modifier ends up near-invisible white-on-white
+   (namePolicyModal.js/renormalizeConfirmModal.js were the first bare .panel-btn usages in this
+   codebase to expose it). */
+.panel-btn--secondary {
+  background-color: var(--surface-btn);
+  border: 1px solid var(--border-medium);
+  color: var(--text-dark);
+}
+
+.panel-btn--secondary:hover {
+  background-color: var(--border-light);
+}
+
+/* "★ Find optimal π" (rightPanel.js's Policy log section) - tinted outline chip, same
+   color-mix() recipe topBar.js's .toolbar-btn--play uses, not .panel-btn--primary's solid fill,
+   to match the mockup's light-purple look. */
+.panel-btn--find-optimal {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 8px;
+  padding: 8px 12px;
+  border: 1px solid color-mix(in srgb, var(--accent-purple) 45%, transparent);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent-purple) 16%, transparent);
+  color: var(--accent-purple);
+  font-weight: 600;
+}
+
+.panel-btn--find-optimal:hover {
+  background: color-mix(in srgb, var(--accent-purple) 24%, transparent);
 }
 
 /* Image preview */
@@ -2265,6 +2416,216 @@ input[type="range"]::-moz-range-thumb {
   color: var(--text-dark);
 }
 
+/* ── Find Optimal π card (findOptimalCard.js) - reuses .goal-card-overlay/.goal-card/
+   .goal-card-eyebrow/.goal-card-equation/.goal-card-mute verbatim for the shared shell; only the
+   sub-equation and the single full-width run CTA need their own rules. ─────────────────────── */
+.find-optimal-card-subequation {
+  font-size: 13px;
+  color: var(--text-lighter);
+  line-height: 1.5;
+  margin-bottom: 20px;
+}
+
+.find-optimal-card-run {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 14px;
+  margin-bottom: 14px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--accent-purple) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-purple) 45%, transparent);
+  color: var(--accent-purple);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.find-optimal-card-run:hover {
+  background: color-mix(in srgb, var(--accent-purple) 24%, transparent);
+}
+
+/* ── Name Policy modal (namePolicyModal.js) - "Name this policy" text-input dialog, shown once
+   a Find-Optimal run converges. z-index sits above .goal-card-overlay's 50 so it can layer over
+   a still-visible find-optimal-card in principle, though in practice the card is always dismissed
+   first. ─────────────────────────────────────────────────────────────────────────────────────── */
+.name-policy-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(6px);
+}
+
+.name-policy-modal {
+  width: 340px;
+  max-width: 90vw;
+  box-sizing: border-box;
+  background: var(--surface-card2, var(--bg-card));
+  border: 1px solid var(--border-hairline, var(--border-light));
+  border-radius: 14px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  padding: 22px 24px;
+  font-family: var(--font-family);
+}
+
+.name-policy-modal-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-dark);
+  margin-bottom: 12px;
+}
+
+.name-policy-modal-input {
+  margin-bottom: 16px;
+}
+
+.name-policy-modal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* .panel-btn--primary's own margin-top: 8px (meant for its stacked, block-level usage elsewhere -
+   e.g. rightPanel.js's form sections) makes the OK/Log button's box 8px taller than the Don't
+   Log/Cancel button sitting next to it in this flex row, so align-items: center visibly offsets
+   them from each other despite same padding/font-size. Reset it back to 0 in this row only. */
+.name-policy-modal-actions .panel-btn--primary {
+  margin-top: 0;
+}
+
+/* ── No-start-node modal (noStartNodeModal.js) - themed replacement for the native alert()
+   previously shown by the Build/Policy "▶ Run" button when no start state is set. Same shell
+   shape as .name-policy-modal above. ─────────────────────────────────────────────────────────── */
+.no-start-node-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(6px);
+}
+
+.no-start-node-modal {
+  width: 340px;
+  max-width: 90vw;
+  box-sizing: border-box;
+  background: var(--surface-card2, var(--bg-card));
+  border: 1px solid var(--border-hairline, var(--border-light));
+  border-radius: 14px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  padding: 22px 24px;
+  font-family: var(--font-family);
+}
+
+.no-start-node-modal-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-dark);
+  margin-bottom: 10px;
+}
+
+.no-start-node-modal-body {
+  font-size: 13px;
+  color: var(--text-lighter);
+  line-height: 1.5;
+  margin-bottom: 18px;
+}
+
+.no-start-node-modal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.no-start-node-modal-actions .panel-btn--primary {
+  margin-top: 0;
+}
+
+/* ── Toast (toast.js) - single-instance, auto-dismissing notification. Bottom-center, no
+   backdrop/buttons (non-blocking, unlike the modals above) - fades/slides in on show(), fades
+   back out on hide()/auto-timeout. z-index above the modals' 60 so it's never hidden behind one,
+   though in practice main.js never shows both at once. ────────────────────────────────────────── */
+.app-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 32px;
+  z-index: 70;
+  transform: translate(-50%, 8px);
+  box-sizing: border-box;
+  max-width: 90vw;
+  background: var(--surface-card2, var(--bg-card));
+  border: 1px solid var(--border-hairline, var(--border-light));
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.3);
+  padding: 10px 18px;
+  font-family: var(--font-family);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-dark);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+.app-toast--visible {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+/* ── Renormalize confirm modal (renormalizeConfirmModal.js) - themed replacement for the native
+   confirm() previously used before starting a simulation / entering Monte Carlo with
+   unnormalized action probabilities. Same shell shape as .name-policy-modal above. ────────────── */
+.renormalize-confirm-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(6px);
+}
+
+.renormalize-confirm-modal {
+  width: 380px;
+  max-width: 90vw;
+  box-sizing: border-box;
+  background: var(--surface-card2, var(--bg-card));
+  border: 1px solid var(--border-hairline, var(--border-light));
+  border-radius: 14px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  padding: 22px 24px;
+  font-family: var(--font-family);
+}
+
+.renormalize-confirm-modal-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-dark);
+  margin-bottom: 10px;
+}
+
+.renormalize-confirm-modal-body {
+  font-size: 13px;
+  color: var(--text-lighter);
+  line-height: 1.5;
+  margin-bottom: 18px;
+}
+
+.renormalize-confirm-modal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 /* ── Q-learning Algorithm subsection (Learning Iteration right panel) ─────── */
 
 .ql-algo-toggle {
@@ -2544,6 +2905,60 @@ input[type="range"]::-moz-range-thumb {
   height: 10px;
   border-radius: 2px;
   flex-shrink: 0;
+}
+
+/* ── Policy log chip strip (policy-logging.md §3) - "+ Log π" plus one toggle chip per logged
+   policy, sitting above expectationChartView.js's two chart cards. First toggle-chip precedent in
+   the app (--hidden = dimmed + strikethrough), styled off a per-chip CSS custom property
+   (--policy-chip-color) set inline from JS (AppPalette.expectation.runColors / accent.green),
+   since each chip's color is per-instance data, not a fixed theme token. ─────────────────────── */
+.policy-chip-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 8px 0;
+  flex-shrink: 0;
+}
+
+.policy-chip-strip-log-btn {
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px dashed var(--border-medium);
+  background: transparent;
+  color: var(--text-medium);
+  font-family: var(--font-family);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.policy-chip-strip-log-btn:hover {
+  border-color: var(--accent-purpleT, var(--color-primary));
+  color: var(--text-dark);
+}
+
+.policy-chip {
+  --policy-chip-color: var(--accent-orange);
+  max-width: 120px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--policy-chip-color);
+  background: color-mix(in srgb, var(--policy-chip-color) 16%, transparent);
+  color: var(--policy-chip-color);
+  font-family: var(--font-family);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.policy-chip--hidden {
+  opacity: 0.45;
+  text-decoration: line-through;
+  background: transparent;
 }
 
 /* ── Iteration inline Chart view: Q-table + Convergence (Phase 3b follow-on) ─────────────── */

@@ -92,19 +92,29 @@ class ViSweepChip {
             this.plainTextEl.textContent = 'press Run to start';
         } else {
             const epsilonStr = vi.epsilon.toFixed(3);
-            this.formulaEl.innerHTML = KatexRenderer.render(`\\|V_{t+1} - V_t\\| < ${epsilonStr}`, false);
-
             const k = vi.currentSweepIndex;
-            if (vi.converged) {
-                const d = vi.getDelta(k);
-                this.valueEl.textContent = `${(d ?? 0).toFixed(3)} ✓`;
-                this.containerEl.classList.add('vi-sweep-chip--converged');
-            } else if (k === 0) {
+
+            if (k === 0) {
+                // No live delta yet - just the bare stop condition, same as before.
+                this.formulaEl.innerHTML = KatexRenderer.render(`\\|V_{t+1} - V_t\\| < ${epsilonStr}`, false);
                 this.valueEl.textContent = 'init';
             } else {
-                const d = vi.getDelta(k);
-                this.valueEl.textContent = (d ?? 0).toFixed(3);
-                this.containerEl.classList.add('vi-sweep-chip--unconverged');
+                // Live delta folded INTO the inequality (\|V_{t+1}-V_t\| = <delta> < epsilon)
+                // instead of appended as a disconnected number off to the right - one coherent
+                // chain the reader can follow left-to-right.
+                const d = vi.getDelta(k) ?? 0;
+                const deltaStr = d.toFixed(3);
+                const color = vi.converged ? AppPalette.reward.positive : AppPalette.accent.yellow;
+                this.formulaEl.innerHTML = KatexRenderer.render(
+                    `\\|V_{t+1} - V_t\\| = \\textcolor{${color}}{${deltaStr}} < ${epsilonStr}`, false
+                );
+                if (vi.converged) {
+                    this.valueEl.textContent = '✓';
+                    this.containerEl.classList.add('vi-sweep-chip--converged');
+                } else {
+                    this.valueEl.textContent = '';
+                    this.containerEl.classList.add('vi-sweep-chip--unconverged');
+                }
             }
         }
 

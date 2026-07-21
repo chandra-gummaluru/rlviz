@@ -58,6 +58,15 @@ class CanvasViewModel {
         // above, which is Values -> Learning Iteration's own, separate Graph|Tree toggle).
         this.buildCanvasView = 'graph';
 
+        // "Animations · per mode" (top bar Parameters popover) - when false, that mode's reveal
+        // is instant instead of animated/tweened; the underlying computation is unaffected
+        // (Monte Carlo still advances tick-by-tick, Value Iteration still computes sweep-by-
+        // sweep - see expectationView.js's startPlay()/viStatesView.js's _prepareLiveSection()).
+        // Presentation-tier only, excluded from graph import/export, same convention as
+        // buildCanvasView/learningIterationCanvasView above.
+        this.mcAnimationEnabled = true;
+        this.iterationAnimationEnabled = true;
+
         // Set<pathId> of tree nodes the user has manually expanded beyond the default depth cap.
         // pathId format: "s0.a0.1" (state root, then alternating .a<actionIndex>/.<outcomeIndex>
         // segments) - a state can recur at multiple tree positions, so expansion is keyed by tree
@@ -77,6 +86,22 @@ class CanvasViewModel {
         // "don't ask again" for this session - once true, entering Values mode or clicking Reset
         // in Monte Carlo/Iteration no longer shows the card until the page reloads.
         this.goalCardMuted = false;
+
+        // "Find optimal π" flow's own focused overlay (findOptimalCard.js) - shown instead of
+        // (never alongside) the generic goal card above; see
+        // CanvasController.enterFindOptimalScene()/dismissFindOptimalCard(). Same
+        // presentation-tier, session-only, import/export-excluded convention as goalCardVisible.
+        this.findOptimalCardVisible = false;
+
+        // Whichever Policy log entry's policy is currently live, if any - the LaTeX label string
+        // (e.g. "\pi_{\text{policy_1}}" or "\pi^{*}_{\text{optimal-1}}") of the entry last
+        // restored via CanvasController.restorePolicyFromLog(), so goalCard.js's "Want to find"
+        // equation can read V^{that label} instead of a generic V^pi. Set to null (falls back to
+        // plain \pi) by restorePolicyFromLog's own callers on fresh restore, and invalidated back
+        // to null by every direct policy edit (setPolicyAction/setPolicyWeight/setPiMode/...) -
+        // once the user touches the policy by hand it may no longer match the named log entry.
+        // Presentation-only, same convention as goalCardVisible above.
+        this.activePolicyLabel = null;
     }
 
     // Factory methods for creating presentation view models
