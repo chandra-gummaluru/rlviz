@@ -112,62 +112,17 @@ class ExpectationChartView {
         this._renderHistogram();
     }
 
-    // Best entry renders green (policy-logging.md §1/§3's "★ = best, green"); every other entry
-    // cycles through AppPalette.expectation.runColors by log order - an 8-color array already
-    // built for exactly this "N distinct series" need, previously unused anywhere in the app.
-    _policyColor(entry) {
-        if (entry.isBest) return AppPalette.accent.green;
-        const colors = AppPalette.expectation.runColors;
-        return colors[entry.id % colors.length];
-    }
-
+    // Thin wrapper around the shared PolicyChartOverlay.renderChipStrip() (see that file for the
+    // full rationale, incl. why hover deliberately re-renders only _renderConvergence(), not a
+    // full refresh()) - shared verbatim with viChartView.js so a policy hidden/hovered from
+    // either pane behaves identically in both.
     _renderChipStrip() {
-        const strip = this._chipStripEl;
-        if (!strip) return;
-        strip.innerHTML = '';
-
-        const logBtn = document.createElement('button');
-        logBtn.type = 'button';
-        logBtn.className = 'policy-chip-strip-log-btn';
-        logBtn.textContent = '+ Log π';
-        logBtn.addEventListener('click', () => {
-            if (this.onLogPolicy) this.onLogPolicy();
-        });
-        strip.appendChild(logBtn);
-
-        const entries = this.policyEvaluationState ? this.policyEvaluationState.entries : [];
-        const hiddenIds = this.expectationViewModel ? this.expectationViewModel.hiddenPolicyIds : new Set();
-
-        entries.forEach(entry => {
-            const chip = document.createElement('button');
-            chip.type = 'button';
-            chip.className = 'policy-chip';
-            if (hiddenIds.has(entry.id)) chip.classList.add('policy-chip--hidden');
-            chip.style.setProperty('--policy-chip-color', this._policyColor(entry));
-            chip.textContent = entry.name || entry.label;
-
-            chip.addEventListener('click', () => {
-                if (!this.expectationViewModel) return;
-                const set = this.expectationViewModel.hiddenPolicyIds;
-                if (set.has(entry.id)) set.delete(entry.id); else set.add(entry.id);
-                this.refresh();
-            });
-            // Deliberately NOT this.refresh() - that tears down and rebuilds the WHOLE chip strip
-            // (see rightPanel.js's rename-input dblclick fix for the identical DOM-swap-mid-
-            // interaction bug this would otherwise reintroduce here: a hover-triggered strip
-            // rebuild replaces this very chip's DOM node while the pointer is still over it,
-            // which can strand a click that lands right after the hover). Hover only needs the
-            // convergence chart's line thickening/dimming to update, so re-render just that.
-            chip.addEventListener('mouseenter', () => {
-                if (this.expectationViewModel) this.expectationViewModel.hoveredPolicyId = entry.id;
-                this._renderConvergence();
-            });
-            chip.addEventListener('mouseleave', () => {
-                if (this.expectationViewModel) this.expectationViewModel.hoveredPolicyId = null;
-                this._renderConvergence();
-            });
-
-            strip.appendChild(chip);
+        PolicyChartOverlay.renderChipStrip(this._chipStripEl, {
+            policyEvaluationState: this.policyEvaluationState,
+            expectationViewModel: this.expectationViewModel,
+            onLogPolicy: this.onLogPolicy,
+            onToggle: () => this.refresh(),
+            onHover: () => this._renderConvergence()
         });
     }
 
@@ -184,11 +139,8 @@ class ExpectationChartView {
         const { mcMeans, mcSEs, viValues, vStar } = ChartDataBuilders.buildConvergenceData(
             this.expectationState, this.valueIterationState);
 
-        const policyEntries = this.policyEvaluationState ? this.policyEvaluationState.entries : [];
-        const hiddenPolicyIds = this.expectationViewModel ? this.expectationViewModel.hiddenPolicyIds : new Set();
+        const visiblePolicyEntries = PolicyChartOverlay.visibleEntries(this.policyEvaluationState, this.expectationViewModel);
         const hoveredPolicyId = this.expectationViewModel ? this.expectationViewModel.hoveredPolicyId : null;
-        const visiblePolicyEntries = policyEntries.filter(e =>
-            !hiddenPolicyIds.has(e.id) && e.valueCurve && e.valueCurve.length > 1);
 
         const canvas = document.createElement('canvas');
         body.appendChild(canvas);
@@ -197,30 +149,9 @@ class ExpectationChartView {
             ...visiblePolicyEntries.map(e => e.valueCurve.length)
         );
 
-        const datasets = [];
-
         // One dashed line per visible logged policy (policy-logging.md §3) - the exact
         // E[G]-vs-horizon curve PolicyEvaluationState.evaluateCurve() computed at log time.
-        visiblePolicyEntries.forEach(entry => {
-            const color = this._policyColor(entry);
-            const isHovered = hoveredPolicyId === entry.id;
-            datasets.push({
-                label: entry.name || entry.label,
-                data: entry.valueCurve.map((y, x) => ({ x, y })),
-                borderColor: color,
-                borderDash: [5, 3],
-                borderWidth: isHovered ? 3 : 1.5,
-                pointRadius: 0, tension: 0,
-                // Marked for ConvergenceEndpointPlugin below, same as the MC "estimate" line -
-                // _policyId (unlike the generic _labelEndpoint-only datasets) routes it through
-                // the plugin's separate de-overlapping/right-aligned label pass instead of that
-                // line's own "draw right next to the point" behavior.
-                _labelEndpoint: true,
-                _endpointLabel: entry.name || '',
-                _policyId: entry.id,
-                _policyHovered: isHovered
-            });
-        });
+        const datasets = PolicyChartOverlay.buildCurveDatasets(visiblePolicyEntries, hoveredPolicyId);
 
         // +-SE shaded band around the MC line - see chartDock.js's _renderConvergence for the
         // fill-target rationale (lower bound first with fill:false, upper bound right after with
@@ -285,131 +216,23 @@ class ExpectationChartView {
             }
         }
 
-        // Draws a solid dot + the numeric value next to the final point of whichever dataset(s)
-        // are flagged `_labelEndpoint: true` above - Chart.js has no built-in per-point label
-        // support without an extra plugin dependency (none is vendored here), so this is a small
-        // inline plugin scoped to just this chart instance (passed via `plugins:` below, not
-        // Chart.register()'d globally) rather than affecting chartDock's/viChartView's own charts.
-        //
-        // Two label styles coexist here: the original single-dataset one (the MC "estimate" line,
-        // `_policyId` unset) draws right next to its own point, completely unchanged from before
-        // policy-log curves existed. Policy curves (`_policyId` set) go through a SEPARATE pass
-        // below that de-overlaps and right-aligns at the plot edge with a leader line back to the
-        // true endpoint (policy-logging.md §3) - kept as two passes, not unified, so multiple
-        // policy curves never disturb the pre-existing MC/VI line's own established look.
-        const endpointPlugin = {
-            id: 'convergenceEndpoint',
-            afterDatasetsDraw(chart) {
-                const ctx = chart.ctx;
-                const chartArea = chart.chartArea;
-                const policyLabels = [];
-
-                chart.data.datasets.forEach((ds, i) => {
-                    if (!ds._labelEndpoint || !ds.data || ds.data.length === 0) return;
-                    const meta = chart.getDatasetMeta(i);
-                    const points = meta.data;
-                    if (!points || points.length === 0) return;
-                    const last = points[points.length - 1];
-                    const lastValue = ds.data[ds.data.length - 1];
-                    const y = typeof lastValue === 'object' ? lastValue.y : lastValue;
-
-                    if (ds._policyId == null) {
-                        ctx.save();
-                        ctx.fillStyle = ds.borderColor;
-                        ctx.beginPath();
-                        ctx.arc(last.x, last.y, 3.5, 0, Math.PI * 2);
-                        ctx.fill();
-                        ctx.font = '600 11px "IBM Plex Mono", Consolas, monospace';
-                        ctx.textBaseline = 'middle';
-                        ctx.textAlign = 'left';
-                        ctx.fillText(y.toFixed(2), last.x + 7, last.y);
-                        ctx.restore();
-                        return;
-                    }
-
-                    policyLabels.push({
-                        anchorX: last.x, anchorY: last.y, labelY: last.y,
-                        text: `${ds._endpointLabel || ''} ${y.toFixed(2)}`.trim(),
-                        color: ds.borderColor, hovered: !!ds._policyHovered
-                    });
-                });
-
-                if (policyLabels.length === 0) return;
-
-                // De-overlap: sort by natural Y, greedily separate by >=13px (policy-logging.md
-                // §3's own spacing spec), then pull the whole stack back up if it overflowed the
-                // chart's bottom edge - keeps relative order intact either way.
-                policyLabels.sort((a, b) => a.labelY - b.labelY);
-                const MIN_GAP = 13;
-                for (let i = 1; i < policyLabels.length; i++) {
-                    if (policyLabels[i].labelY - policyLabels[i - 1].labelY < MIN_GAP) {
-                        policyLabels[i].labelY = policyLabels[i - 1].labelY + MIN_GAP;
-                    }
-                }
-                const overflow = policyLabels[policyLabels.length - 1].labelY - chartArea.bottom;
-                if (overflow > 0) policyLabels.forEach(e => { e.labelY -= overflow; });
-
-                const labelX = chartArea.right + 7;
-                const anyHovered = policyLabels.some(e => e.hovered);
-
-                policyLabels.forEach(e => {
-                    const nudged = Math.abs(e.labelY - e.anchorY) > 1;
-                    ctx.save();
-                    ctx.globalAlpha = (anyHovered && !e.hovered) ? 0.35 : 1;
-
-                    // Leader line back to the curve's TRUE endpoint - only drawn once the label
-                    // has actually been nudged away from it (an isolated curve's label sits right
-                    // on its own endpoint, no line needed).
-                    if (nudged) {
-                        ctx.strokeStyle = e.color;
-                        ctx.lineWidth = 1;
-                        ctx.setLineDash([2, 2]);
-                        ctx.beginPath();
-                        ctx.moveTo(e.anchorX, e.anchorY);
-                        ctx.lineTo(labelX - 4, e.labelY);
-                        ctx.stroke();
-                        ctx.setLineDash([]);
-                    }
-
-                    ctx.fillStyle = e.color;
-                    ctx.beginPath();
-                    ctx.arc(e.anchorX, e.anchorY, 3.5, 0, Math.PI * 2);
-                    ctx.fill();
-
-                    ctx.font = `${e.hovered ? '700' : '600'} 11px "IBM Plex Mono", Consolas, monospace`;
-                    ctx.textBaseline = 'middle';
-                    ctx.textAlign = 'left';
-                    ctx.fillText(e.text, labelX, e.labelY);
-                    ctx.restore();
-                });
-            }
-        };
-
+        // Endpoint dot+label plugin, legend filter, and right-padding are all shared with
+        // viChartView.js's own Convergence chart (see PolicyChartOverlay.js) - kept as ONE
+        // implementation rather than two near-identical copies now that both charts overlay
+        // policy curves.
         this._chartInstances[0] = new Chart(canvas.getContext('2d'), {
             type: 'line',
             data: { datasets },
-            plugins: [endpointPlugin],
+            plugins: [PolicyChartOverlay.createEndpointPlugin()],
             options: {
                 responsive: true, maintainAspectRatio: false, animation: false,
-                // Room for the endpoint plugin's value callouts - wider than the original 36px
-                // now that policy curves' labels carry a name prefix too ("renamed1 -158.85"),
-                // not just a bare number.
-                layout: { padding: { right: visiblePolicyEntries.length > 0 ? 100 : 36 } },
+                layout: { padding: { right: PolicyChartOverlay.convergenceRightPadding(visiblePolicyEntries.length > 0) } },
                 plugins: {
                     legend: {
                         display: true, position: 'top', align: 'end',
                         labels: {
                             boxWidth: 16, boxHeight: 2, font: { size: 10 }, color: AppPalette.text.muted,
-                            // Hides the invisible +-SE fill-boundary datasets - they exist purely
-                            // to shade the band between them, not meaningful legend entries - and
-                            // policy curves, which already have their own color-coded chip in the
-                            // strip above (a second legend entry here would just be duplicate,
-                            // narrower real estate in an already-tight 52%-width pane).
-                            filter: (item, data) => {
-                                if (!item.text || item.text.includes('SE')) return false;
-                                const ds = data.datasets[item.datasetIndex];
-                                return !ds || ds._policyId == null;
-                            }
+                            filter: PolicyChartOverlay.legendFilter
                         }
                     }
                 },
@@ -513,7 +336,7 @@ class ExpectationChartView {
         visiblePolicyEntries.forEach(entry => {
             const samples = this._getPolicyHistogramSamples(entry);
             if (!samples) return;
-            const color = this._policyColor(entry);
+            const color = PolicyChartOverlay.policyColor(entry);
             overlayDatasets.push({
                 type: 'line',
                 label: entry.name || entry.label,

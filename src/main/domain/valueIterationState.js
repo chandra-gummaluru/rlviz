@@ -31,7 +31,10 @@ class ValueIterationState {
         //   policy: {stateId -> actionId|null}  (sweep 0 = arbitrary placeholder; thereafter the
         //     argmax action in 'optimal' mode, or the configured policy's most-favored action in
         //     'expectation' mode - see computeNextSweep())
-        //   backupDetails: {stateId -> {actions:[...], bestActionId, value}}
+        //   backupDetails: {stateId -> {actions:[{actionId, actionName, qValue, pi, transitions:
+        //     [...]}], bestActionId, value}} - pi is each action's resolved pi(a|s) under
+        //     whatever Policy pi is currently configured ('expectation' mode), or null in
+        //     'optimal' mode (no policy to resolve there).
         //   delta: number|null   (null only for sweep 0; max_s |V^k(s)-V^{k-1}(s)| for k>=1)
         this.history = [];
 
@@ -133,6 +136,17 @@ class ValueIterationState {
             const actionQs = [];
             const actionDetails = [];
 
+            // Resolved BEFORE the per-action loop (not just inside the 'expectation' branch
+            // afterward) so pi(a|s) is available while building actionDetails - the "Substitution"
+            // reveal (viBackupDiagram.js) and the Explain narrator both need each action's own
+            // resolved pi, not just the state's aggregate value. 'optimal' mode has no policy to
+            // resolve (there's no pi in a max_a backup), so actionProbs stays null there and every
+            // action's pi is explicitly null below - consumers branch on this the same way they
+            // already branch on runMode.
+            const actionProbs = this.runMode === 'optimal'
+                ? null
+                : simulationState.actionProbsForState(stateId, stateNode.actions);
+
             stateNode.actions.forEach(actionId => {
                 const actionNode = graph.getNodeById(actionId);
                 if (!actionNode || !actionNode.sas) return;
@@ -153,8 +167,9 @@ class ValueIterationState {
                     });
                 });
 
+                const pi = actionProbs ? (actionProbs.get(Number(actionId)) ?? 0) : null;
                 actionQs.push({ actionId, actionName: actionNode.name, qValue: Q });
-                actionDetails.push({ actionId, actionName: actionNode.name, transitions, qValue: Q });
+                actionDetails.push({ actionId, actionName: actionNode.name, transitions, qValue: Q, pi });
 
                 if (this.runMode === 'optimal' && Q > maxQ) {
                     maxQ = Q;
@@ -172,7 +187,6 @@ class ValueIterationState {
                 // action; uniform -> the first action) - the same field every consumer (Q-table
                 // "best" star, viBackupDiagram.js, viEquationView.js's reveal) already reads
                 // generically via getBestAction()/getBackupDetail(), so it "just works" here too.
-                const actionProbs = simulationState.actionProbsForState(stateId, stateNode.actions);
                 value = 0;
                 let bestProb = -1;
                 actionQs.forEach(aq => {

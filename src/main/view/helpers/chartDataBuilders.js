@@ -84,6 +84,51 @@ const ChartDataBuilders = {
         return { rows };
     },
 
+    // Multi-sweep-column shape for ViChartView's "Expected value" table (handoff 2's own
+    // redesign) - one column per computed sweep (t = 0..currentSweepIndex, t = 0 all-zero), rows
+    // fixed by graph structure (every state x every one of its actions) so a state's row exists
+    // before any value has been computed for it. cellsByColumn[t][stateId][actionId] gives the
+    // per-cell {qValue, isBest} - isBest resolved per (sweep, state), not globally, since the
+    // greedy action can differ sweep to sweep. Pure function, no DOM - same convention as every
+    // other builder here; ViChartView owns the collapse-behind-"..." older-column UI state.
+    buildQTableColumns(valueIterationState) {
+        if (!valueIterationState || !valueIterationState.initialized) return { columns: [], rows: [], cellsByColumn: {} };
+        const totalSweeps = valueIterationState.totalSweeps;
+        const columns = [];
+        for (let t = 0; t < totalSweeps; t++) columns.push(t);
+
+        // The action list per state is a structural graph property, identical at every sweep -
+        // sweep 0 alone just happens to carry no Q values yet (ValueIterationState.initialize()'s
+        // own Q0[id] = []), so read the row shape from the LATEST sweep (same limitation
+        // buildQTableData() already had: before any real sweep has run, there is nothing to show).
+        const latestSweep = Math.max(totalSweeps - 1, 0);
+        const rows = valueIterationState.stateIds.map(stateId => ({
+            stateId,
+            stateName: valueIterationState.stateNames[stateId] || `S${stateId}`,
+            actions: valueIterationState.getQValues(latestSweep, stateId).map(aq => ({ actionId: aq.actionId, actionName: aq.actionName }))
+        }));
+
+        const cellsByColumn = {};
+        columns.forEach(t => {
+            const byState = {};
+            valueIterationState.stateIds.forEach(stateId => {
+                const actionQs = valueIterationState.getQValues(t, stateId);
+                const bestActionId = valueIterationState.getBestAction(t, stateId);
+                const byAction = {};
+                actionQs.forEach(aq => {
+                    byAction[aq.actionId] = {
+                        qValue: valueIterationState.getEffectiveQValue(stateId, aq.actionId, aq.qValue),
+                        isBest: aq.actionId === bestActionId
+                    };
+                });
+                byState[stateId] = byAction;
+            });
+            cellsByColumn[t] = byState;
+        });
+
+        return { columns, rows, cellsByColumn };
+    },
+
     // Same per-action row shape buildQTableData() produces, but for exactly one state at an
     // explicit sweep index - powers viEquationView.js's focused Q-table, which needs a specific
     // (possibly non-live, hovered/pinned) sweep rather than always the latest one.

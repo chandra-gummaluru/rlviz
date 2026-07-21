@@ -1592,7 +1592,10 @@ function setup() {
     // VIStepInteractor/VISkipInteractor claim a Step/Skip click for known:full's own per-state
     // reveal before falling through to the old sweep-level advance.
     const viAnimOptions = {
-        getPauseMs: () => Math.round(150 + 650 * currentSpeed),
+        // Widened per feedback - the pause between one sweep finishing and the next one starting
+        // was too quick to read as "a new cycle is beginning" (300-1600ms now vs. the old
+        // 150-800ms), independent of getBeatMs() below (the per-card reveal's own internal pacing).
+        getPauseMs: () => Math.round(300 + 1300 * currentSpeed),
         getBeatMs: () => Math.round(150 + 300 * currentSpeed),
         awaitReveal: () => (viStatesView ? viStatesView.playRemainingLiveSweep() : Promise.resolve()),
         isRevealActive: () => (viStatesView ? viStatesView.hasActiveReveal() : false),
@@ -1652,8 +1655,24 @@ function setup() {
         // A live-section card's animation can finish entirely on its own (no click involved) -
         // canRevealNextState()/canSkipCurrentState() flipping back to true at that moment needs
         // its own button refresh, since nothing else would trigger one (see ViStatesView's own
-        // onRevealProgress doc comment).
-        () => refreshVIButtons());
+        // onRevealProgress doc comment). WITH a payload ({stateId, detail}) once a card's reveal
+        // is genuinely done - forwarded to ViChartView.highlightFill() for the Q-table's one-shot
+        // row fill + source highlight + convergence-chart progress nudge (viChartView is declared
+        // further down this same function - safe via closure, since this callback only ever fires
+        // later, after setup() has finished assigning it).
+        (finishedInfo) => {
+            refreshVIButtons();
+            if (finishedInfo && mainView.viChartView) mainView.viChartView.highlightFill(finishedInfo.stateId, finishedInfo.detail);
+        },
+        // Forwarded straight from whichever live card's own reveal is in flight - gated to the
+        // ACTIVE state only (viEquationView is likewise declared further down; same closure
+        // reasoning as viChartView above), so the Explain narrator never gets driven by a card the
+        // user isn't currently looking at.
+        (stateId, sweepIndex, beat, info) => {
+            if (!mainView.viEquationView) return;
+            if (stateId !== valueIterationViewModel.activeStateId) return;
+            mainView.viEquationView.setBeat(beat, info);
+        });
     mainView.viStatesView = viStatesView;
     // Repaint already-drawn (non-animating) backup-diagram cards once a node photo they reference
     // finishes loading - ViBackupDiagram itself only caches/draws images, it has no notion of
@@ -1663,7 +1682,8 @@ function setup() {
     // ViChartView now lives in the RIGHT pane (merged into viRightViewPill's own [Equation|Chart]
     // toggle below) - the left pane always shows States, so there's no left-pane pill anymore
     // (viLeftViewPill.js is kept, just unwired, same treatment as Graph - see viRightViewPill.js).
-    const viChartView = new ViChartView(canvasViewModel, valueIterationState, expectationState);
+    const viChartView = new ViChartView(canvasViewModel, valueIterationState, expectationState,
+        { policyEvaluationState, expectationViewModel, onLogPolicy: onEvaluatePolicy });
     mainView.viChartView = viChartView;
     // Called here (immediately after construction), not at the viSweepChip.setup() call site the
     // brief's Step 2 pointed at - that call site runs earlier in setup()'s synchronous execution
@@ -1690,8 +1710,10 @@ function setup() {
     }, canvasViewModel);
     mainView.viRightViewPill = viRightViewPill;
 
-    const viEquationView = new ViEquationView(
-        canvasViewModel, valueIterationState, valueIterationViewModel, getVIRevealSpeedScale);
+    // No getSpeedScale param anymore (handoff 2 Phase 5) - the Explain narrator has no independent
+    // clock of its own now that its old bespoke canvas reveal is gone; it's purely reactive to
+    // setBeat() calls forwarded from whichever live left-pane card is actually animating.
+    const viEquationView = new ViEquationView(canvasViewModel, valueIterationState, valueIterationViewModel);
     mainView.viEquationView = viEquationView;
     viRightViewPill.setup(mainView.TOP_BARS_HEIGHT);
     viEquationView.setup();

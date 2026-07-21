@@ -53,20 +53,27 @@ class ViStatesView {
     // getSpeedScale: () => number, multiplies the staged-reveal's base pacing (1 = this view's
     // own base rate, >1 slower, <1 faster) - defaults to a fixed rate if the caller doesn't wire
     // it to the app's actual animation-speed slider (see main.js's construction call).
-    // onRevealProgress: called every time a live-section card finishes revealing (see
-    // _revealOneCard()'s finish()) - unlike the sweep-level canStep/canPlay gate (which only ever
-    // changes in response to an explicit Step/Skip/Play/Reset click, so refreshVIButtons() being
-    // called right after each of those was always enough), canRevealNextState()/
-    // canSkipCurrentState() can flip from false back to true purely because time passed and a
-    // card's own animation finished ON ITS OWN - nothing else would ever tell topBar to re-check
-    // Step/Skip's disabled state without this hook. Defaults to a no-op so this file stays
-    // agnostic of any specific button-refresh mechanism.
-    constructor(canvasViewModel, valueIterationState, valueIterationViewModel, getSpeedScale = () => 1, onRevealProgress = () => {}) {
+    // onRevealProgress(finishedInfo?): called every time a live-section card's animation makes
+    // progress - with NO argument on a mid-reveal step-pause (unlike the sweep-level canStep/
+    // canPlay gate, which only ever changes in response to an explicit Step/Skip/Play/Reset click,
+    // canRevealNextState()/canSkipCurrentState() can flip from false back to true purely because
+    // time passed and a card's own animation finished ON ITS OWN - nothing else would ever tell
+    // topBar to re-check Step/Skip's disabled state without this hook), or WITH
+    // `{stateId, detail}` once a card's reveal is genuinely done (see _revealOneCard()'s finish())
+    // - lets a caller (main.js, wiring ViChartView.highlightFill()) know exactly which state just
+    // finished, for the Q-table's one-shot row fill + source highlight. Defaults to a no-op so
+    // this file stays agnostic of any specific button-refresh/chart mechanism.
+    // onBeat(stateId, sweepIndex, beat, info): forwarded, per live card, straight from
+    // ViBackupDiagram.drawAnimated()'s own onBeat callback - lets a caller (main.js, gating on
+    // ValueIterationViewModel.activeStateId) drive the Explain narrator from the SAME reveal
+    // that's animating the active left-pane card, rather than a second, independent animation.
+    constructor(canvasViewModel, valueIterationState, valueIterationViewModel, getSpeedScale = () => 1, onRevealProgress = () => {}, onBeat = () => {}) {
         this.viewModel = canvasViewModel;
         this.viState = valueIterationState;
         this.viViewModel = valueIterationViewModel;
         this.getSpeedScale = getSpeedScale;
         this.onRevealProgress = onRevealProgress;
+        this.onBeat = onBeat;
 
         this.containerEl = null;
         this._sectionsEl = null;
@@ -319,10 +326,13 @@ class ViStatesView {
     // known:full (real Value Iteration) gets a rich per-state backup diagram; the other 3
     // quadrants (Belief Iteration, PO Q-Learning, Learning Iteration) keep the flat state:value
     // card - decided once per card, not per-frame, and Learning Iteration never reaches this
-    // method at all (the whole States view is hidden for it).
+    // method at all (the whole States view is hidden for it). Sweep 0 is ALWAYS the flat pill card
+    // regardless of quadrant (handoff 2 - vi-animation-redesign.md Phase 3 Step 2): it's the
+    // all-zero init row, the fly-value source for sweep 1's ghost-subtree markers, not itself a
+    // "no actions" diagram worth animating.
     _buildCard(sweepIndex, stateId) {
         const quadrant = ValuesMethodMatrix.key(this.viewModel.modelKnown, this.viewModel.observability);
-        const { card, job } = quadrant === 'known:full'
+        const { card, job } = (quadrant === 'known:full' && sweepIndex > 0)
             ? this._buildDiagramCard(sweepIndex, stateId)
             : { card: this._buildFlatCard(sweepIndex, stateId), job: null };
         // Looked up by _flashCard() to find this exact state's card within an older section.
@@ -375,6 +385,15 @@ class ViStatesView {
         header.appendChild(valueEl);
         card.appendChild(header);
 
+        // DOM equation zone (handoff 2's "Substitution" choreography) - the live accumulating
+        // `Q(S, a) = ...` line, dashed slot template, and expectation-combine line all live here,
+        // ABOVE the canvas (matches the prototype's own eqZone-above-diagram ordering) - the
+        // canvas itself only ever draws the passive visual tree + flying-number sources. See
+        // ViBackupDiagram.drawAnimated()'s own file-header comment for the full split rationale.
+        const eqZone = document.createElement('div');
+        eqZone.className = 'vi-backup-diagram-eqzone';
+        card.appendChild(eqZone);
+
         const canvas = document.createElement('canvas');
         // Actual sizing (backing-buffer width/height, scaled by devicePixelRatio for crisp
         // rendering on HiDPI displays - see _sizeDiagramCanvas()) is deferred to _prepareLiveSection()/
@@ -423,20 +442,7 @@ class ViStatesView {
         const priorValues = sweepIndex > 0
             ? this.viState.getValues(sweepIndex - 1)
             : this.viState.getValues(0);
-        const rewardRange = this._rewardRange();
-        const colors = {
-            state: AppPalette.node.state,
-            action: AppPalette.node.action,
-            best: AppPalette.valueIteration.best,
-            result: AppPalette.valueIteration.result,
-            // Same "active edge" color Graph/Tree view's own simulation reveal uses - marks
-            // whichever state->action/action->outcome edge is currently mid-arithmetic.
-            highlighted: AppPalette.edge.highlighted,
-            // Matches EdgeViewModel's own state->action default (no policy set) edge color.
-            default: AppPalette.edge.default,
-            minReward: rewardRange.minReward,
-            maxReward: rewardRange.maxReward
-        };
+        const colors = this._diagramColors();
 
         // Plain { nodeId: imageUrl|null } lookup for every node this diagram can possibly draw -
         // the state itself, every action, every outcome - built once here (this view has the real
@@ -450,7 +456,53 @@ class ViStatesView {
             });
         }
 
-        return { card, job: { canvas, detail, priorValues, colors, stateName, stateId, images, valueEl, gamma: this.viState.gamma } };
+        return {
+            card,
+            job: {
+                canvas, eqZone, detail, priorValues, colors, stateName, stateId, images, valueEl,
+                gamma: this.viState.gamma, runMode: this.viState.runMode, graph: this.viewModel.graph
+            }
+        };
+    }
+
+    // Full color-token set ViBackupDiagram needs for both canvas rendering and the DOM equation
+    // zone's tokens - a single source shared by _buildDiagramCard() (per-card build time) and
+    // _flyPriorValue() (the cross-card ghost-tree flight, which needs the same sign-based
+    // positive/negative/muted + edgeGray tokens to build ViBackupDiagram.treeChipSVG()'s content).
+    // Resolved once per call (not cached) - matches this file's existing convention of resolving
+    // AppPalette.* at card-build time, not living CSS custom properties; rebuildAll()'s existing
+    // full-teardown-and-rebuild already covers a theme change for anything not currently
+    // mid-animation (see rebuildAll()'s own comment).
+    _diagramColors() {
+        const rewardRange = this._rewardRange();
+        return {
+            state: AppPalette.node.state,
+            action: AppPalette.node.action,
+            best: AppPalette.valueIteration.best,
+            result: AppPalette.valueIteration.result,
+            // The handoff's own halo/edge-flare orange, matched to AppPalette.accent.orange
+            // directly (not AppPalette.edge.highlighted, whose light-theme value diverges from
+            // accent.orange) so this diagram's colors pair consistently across both themes - see
+            // docs/superpowers/plans/2026-07-21-vi-animation-redesign.md Phase 0's palette audit.
+            highlighted: AppPalette.accent.orange,
+            // Matches EdgeViewModel's own state->action default (no policy set) edge color.
+            default: AppPalette.edge.default,
+            minReward: rewardRange.minReward,
+            maxReward: rewardRange.maxReward,
+            positive: AppPalette.accent.green,
+            negative: AppPalette.accent.red,
+            muted: AppPalette.text.muted,
+            primary: AppPalette.text.primary,
+            secondary: AppPalette.text.secondary,
+            subtle: AppPalette.text.subtle,
+            pi: AppPalette.accent.cyan,
+            term: AppPalette.accent.teal,
+            live: AppPalette.accent.yellow,
+            edgeGray: AppPalette.accent.edgeGray,
+            hairline: AppPalette.border.hairline,
+            backplate: AppPalette.surface.scrim,
+            parkedBg: AppPalette.surface.hover
+        };
     }
 
     _nodeImage(nodeId) {
@@ -542,7 +594,7 @@ class ViStatesView {
             if (!card.parentNode) cardsEl.appendChild(card);
             if (job) {
                 this._sizeDiagramCanvas(job.canvas);
-                ViBackupDiagram.drawSkeleton(job.canvas, job.detail, job.priorValues, job.colors, job.stateName, job.stateId, job.images);
+                ViBackupDiagram.drawSkeleton(job.canvas, job.eqZone, job.detail, job.priorValues, job.colors, job.stateName, job.stateId, job.images, job.graph);
             }
         });
         this._liveCardsEl = cardsEl;
@@ -576,7 +628,12 @@ class ViStatesView {
             this._liveCursor = index + 1;
             if (this._activeReveal === reveal) this._activeReveal = null;
             resolveReveal();
-            this.onRevealProgress();
+            // WITH a payload (unlike the step-pause case below, which passes none) - lets a
+            // caller (main.js, wiring ViChartView.highlightFill()) know exactly which state's
+            // reveal just finished, for the Q-table's one-shot row fill + source highlight. Reads
+            // the detail fresh from viState rather than job.detail (job is null for flat cards) so
+            // this fires uniformly for both diagram and flat-card quadrants.
+            this.onRevealProgress({ stateId: Number(card.dataset.stateId), detail: this.viState.getBackupDetail(sweepIndex, Number(card.dataset.stateId)) });
         };
 
         if (!card.parentNode) cardsEl.appendChild(card);
@@ -594,39 +651,48 @@ class ViStatesView {
 
         const beginAnimation = () => {
             const animHandle = ViBackupDiagram.drawAnimated(
-                // Live callback (not a pre-computed number) - drawAnimated() re-reads it every
-                // frame so a mid-reveal slider change takes effect immediately, not just on the
-                // next reveal.
-                job.canvas, job.detail, job.priorValues, job.colors, job.stateName, job.stateId, job.images, job.gamma, () => this.getSpeedScale(),
-                // Also a live read (via the reveal object, not a captured boolean) - see
-                // playRemainingLiveSweep()'s own comment for why that matters.
-                () => reveal.stepMode,
-                (nextStateId) => {
-                    // "Highlight the specific state in the prior step" - not the whole time box.
-                    if (sweepIndex > 0) this._flashCard(sweepIndex - 1, nextStateId);
-                },
-                ({ nextStateId, canvasX, canvasY, durationMs }) => {
-                    // Fly the ACTUAL prior card's value (wherever it really sits on screen right
-                    // now) over to arrive at this diagram's triangle anchor.
-                    if (sweepIndex > 0) {
-                        this._flyPriorValue(sweepIndex - 1, nextStateId, job.priorValues[nextStateId] ?? 0, job.canvas, canvasX, canvasY, durationMs);
-                    }
-                },
-                () => {
-                    // The engine auto-paused after one move (Step) - keep this card's own paused
-                    // flag (and therefore canRevealNextState()'s enablement check) in sync, same
-                    // as finish() already does for the "fully done" case.
-                    reveal.paused = true;
-                    this.onRevealProgress();
-                },
-                () => {
-                    job.valueEl.textContent = `V = ${(job.detail ? job.detail.value : 0).toFixed(2)}`;
-                    // Shrinks this one card to a compact pill the instant its own calculation
-                    // finishes - the next state's card (still full-size) stays the visual focus,
-                    // and already-done states no longer take up space. Cleared by _applyExpansion()
-                    // once this section stops being the live one (see its own comment).
-                    this._collapseCardToPill(card, true);
-                    finish();
+                job.canvas, job.eqZone, job.detail, job.priorValues, job.colors, job.stateName, job.stateId, job.images,
+                job.graph, job.gamma, job.runMode,
+                {
+                    // Live callback (not a pre-computed number) - drawAnimated() re-reads it every
+                    // frame so a mid-reveal slider change takes effect immediately, not just on the
+                    // next reveal.
+                    getSpeedScale: () => this.getSpeedScale(),
+                    // Also a live read (via the reveal object, not a captured boolean) - see
+                    // playRemainingLiveSweep()'s own comment for why that matters.
+                    getStepMode: () => reveal.stepMode,
+                    onHighlightPrior: (nextStateId) => {
+                        // "Highlight the specific state in the prior step" - not the whole time box.
+                        if (sweepIndex > 0) this._flashCard(sweepIndex - 1, nextStateId);
+                    },
+                    onFlyValue: ({ nextStateId, canvasX, canvasY, durationMs }) => {
+                        // Fly the ACTUAL prior card's value (wherever it really sits on screen right
+                        // now) over to arrive at this diagram's triangle anchor.
+                        if (sweepIndex > 0) {
+                            this._flyPriorValue(sweepIndex - 1, nextStateId, job.priorValues[nextStateId] ?? 0, job.canvas, canvasX, canvasY, durationMs);
+                        }
+                    },
+                    onStepPause: () => {
+                        // The engine auto-paused after one checkpoint (Step) - keep this card's own
+                        // paused flag (and therefore canRevealNextState()'s enablement check) in
+                        // sync, same as finish() already does for the "fully done" case.
+                        reveal.paused = true;
+                        this.onRevealProgress();
+                    },
+                    onComplete: () => {
+                        job.valueEl.textContent = `V = ${(job.detail ? job.detail.value : 0).toFixed(2)}`;
+                        // Shrinks this one card to a compact pill the instant its own calculation
+                        // finishes - the next state's card (still full-size) stays the visual focus,
+                        // and already-done states no longer take up space. Cleared by _applyExpansion()
+                        // once this section stops being the live one (see its own comment).
+                        this._collapseCardToPill(card, true);
+                        finish();
+                    },
+                    // Forwarded straight to whichever caller wired ViStatesView's own onBeat -
+                    // gating to the ACTIVE state (ValueIterationViewModel.activeStateId) happens
+                    // there, not here, since this file has no opinion on which card the Explain
+                    // narrator should be following.
+                    onBeat: (beat, info) => this.onBeat(job.stateId, sweepIndex, beat, info)
                 });
             reveal.cancel = animHandle.cancel;
             reveal.pause = animHandle.pause;
@@ -876,7 +942,7 @@ class ViStatesView {
 
     _drawJobStatic(job) {
         this._sizeDiagramCanvas(job.canvas);
-        ViBackupDiagram.draw(job.canvas, job.detail, job.priorValues, job.colors, job.stateName, job.stateId, job.images);
+        ViBackupDiagram.draw(job.canvas, job.eqZone, job.detail, job.priorValues, job.colors, job.stateName, job.stateId, job.images, job.graph, job.runMode);
         job.valueEl.textContent = `V = ${(job.detail ? job.detail.value : 0).toFixed(2)}`;
     }
 
@@ -1038,7 +1104,10 @@ class ViStatesView {
         const overlay = this._ensureFlyOverlay();
         const chip = document.createElement('div');
         chip.className = 'vi-states-view-fly-value';
-        chip.textContent = value.toFixed(2);
+        // Ghost-tree SVG replica (handoff 2's own choreography - see ViBackupDiagram.treeChipSVG())
+        // instead of a plain number, colored by sign through the same token set the diagram's own
+        // ghost-subtree marker uses (no more hardcoded #4CAF50 - see the Phase 0 palette audit).
+        chip.innerHTML = ViBackupDiagram.treeChipSVG(nextStateId, value, this.viewModel.graph, this._diagramColors());
         chip.style.left = fromX + 'px';
         chip.style.top = fromY + 'px';
         overlay.appendChild(chip);

@@ -3018,6 +3018,74 @@ input[type="range"]::-moz-range-thumb {
   overflow-y: auto;
 }
 
+/* Multi-sweep-column "Expected value" Q-table (handoff 2 §4) - one Q column per sweep, t = 0
+   the all-zero init column, newest on the right. Header cells are plain <td>s (not <th>) so they
+   share .chart-dock-qtable's own cell padding/border rule instead of needing a duplicate ruleset. */
+.vi-chart-view-qtable-history {
+  width: max-content;
+  min-width: 100%;
+}
+
+/* Left-aligned by default, matching the body's own "state"/"action" cells (chart-dock-qtable-state
+   / plain <td>s, both browser-default left-aligned) - only the NUMERIC sweep-column headers
+   (--num, added alongside the t=k live marker below) right-align, to sit directly above their own
+   right-aligned .vi-chart-view-qtable-cell values instead of drifting out of column. */
+.vi-chart-view-qtable-headcell {
+  color: var(--text-muted);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.vi-chart-view-qtable-headcell--num {
+  text-align: right;
+}
+
+.vi-chart-view-qtable-col--live,
+.vi-chart-view-qtable-col--live.vi-chart-view-qtable-headcell {
+  color: var(--accent-yellow);
+}
+
+.vi-chart-view-qtable-gap,
+.vi-chart-view-qtable-gap-cell {
+  color: var(--text-lighter, var(--text-placeholder));
+  text-align: right;
+  white-space: nowrap;
+}
+
+.vi-chart-view-qtable-gap {
+  cursor: pointer;
+}
+
+.vi-chart-view-qtable-cell {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  border-radius: 4px;
+  outline: 2px dashed transparent;
+  outline-offset: -2px;
+  transition: outline-color 0.15s ease, opacity 0.2s ease;
+}
+
+.vi-chart-view-qtable-cell--dim {
+  opacity: 0.55;
+}
+
+/* Outlines the just-finished state's own row yellow (highlightFill()'s "this one, just computed")
+   for ~1s. */
+.vi-chart-view-qtable-cell--hot-live {
+  outline-color: var(--accent-yellow);
+}
+
+/* Outlines the t-1 cells of that state's successors green (highlightFill()'s "the values it just
+   read") for the same ~1s, at full opacity even though they're otherwise dimmed as history. */
+.vi-chart-view-qtable-cell--hot-source {
+  outline-color: var(--accent-green, #4CAF50);
+  opacity: 1;
+}
+
 /* ── Iteration right-pane Equation view (2026-07-17 redesign) ────────────── */
 
 .vi-equation-view {
@@ -3032,19 +3100,45 @@ input[type="range"]::-moz-range-thumb {
   padding: 8px;
 }
 
-.vi-equation-view-header {
+/* Plain-language narrator (handoff 2 Phase 5 - "Explain") - replaces the OLD canvas-diagram +
+   4-phase reveal this view used to own; see viEquationView.js's own file header for why. */
+.vi-equation-view-narrator {
   flex: 0 0 auto;
-  padding: 8px;
-  font-size: 15px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 28px 18px 20px;
   text-align: center;
 }
 
-.vi-equation-view-canvas {
-  display: block;
-  width: 100%;
-  max-width: 420px;
-  height: 220px;
-  margin: 0 auto;
+.vi-equation-view-step {
+  font-family: var(--font-family-mono, var(--font-family));
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  min-height: 14px;
+  transition: color 0.2s ease;
+}
+
+.vi-equation-view-sentence {
+  font-family: var(--font-family, var(--font-family-mono));
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.45;
+  max-width: 380px;
+  text-wrap: balance;
+  min-height: 56px;
+  transition: color 0.2s ease;
+}
+
+.vi-equation-view-formula {
+  font-family: var(--font-family-mono, var(--font-family));
+  font-size: 13px;
+  min-height: 18px;
+  transition: color 0.2s ease;
 }
 
 .vi-equation-view-qtable {
@@ -3234,7 +3328,9 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .vi-states-view-section--collapsed .vi-states-view-card--diagram canvas,
-.vi-states-view-card--diagram.vi-states-view-card--pill canvas {
+.vi-states-view-card--diagram.vi-states-view-card--pill canvas,
+.vi-states-view-section--collapsed .vi-states-view-card--diagram .vi-backup-diagram-eqzone,
+.vi-states-view-card--diagram.vi-states-view-card--pill .vi-backup-diagram-eqzone {
   display: none;
 }
 
@@ -3260,7 +3356,8 @@ input[type="range"]::-moz-range-thumb {
   overflow: hidden;
 }
 
-.vi-states-view-card--diagram.vi-states-view-card--shrinking canvas {
+.vi-states-view-card--diagram.vi-states-view-card--shrinking canvas,
+.vi-states-view-card--diagram.vi-states-view-card--shrinking .vi-backup-diagram-eqzone {
   transition: opacity 200ms ease;
   opacity: 0;
 }
@@ -3282,12 +3379,126 @@ input[type="range"]::-moz-range-thumb {
   font-family: var(--font-family-mono, var(--font-family));
   font-size: 13px;
   font-weight: 700;
-  color: #4CAF50; /* matches VBD_TRIANGLE_COLOR - fixed, independent of theme, same reasoning */
+  /* No fixed color here (was a hardcoded #4CAF50, independent of theme/sign - a pre-existing
+     violation of "never hardcode a hex value at a call site" this redesign fixes) - the chip's own
+     content is now ViBackupDiagram.treeChipSVG()'s ghost-tree replica, which colors its value text
+     inline, by sign, through the same token set the diagram's own ghost-subtree marker uses. */
   white-space: nowrap;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
 }
 
 .vi-states-view-fly-value--flying {
+  transition-property: left, top;
+  transition-timing-function: ease-in-out;
+  /* transition-duration set inline per-flight, already speed-scaled by the caller */
+}
+
+/* DOM equation zone (handoff 2's "Substitution" choreography - see viBackupDiagram.js's own file
+   header) - the accumulating `Q(S, a) = ...` line, dashed slot template, and expectation-combine
+   line, all above a diagram card's canvas. Token/slot colors are set inline per-token by
+   ViBackupDiagram (resolved once at card-build time from AppPalette, matching this view's existing
+   convention - see viStatesView.js's _diagramColors()), not through these rules - these only own
+   layout, typography defaults, and the shared fade-in transition. */
+.vi-backup-diagram-eqzone {
+  min-height: 0;
+  font-size: 15px;
+  line-height: 1.65;
+  padding: 2px 4px 4px;
+  color: var(--text-dark);
+}
+
+.vi-backup-diagram-acc-line,
+.vi-backup-diagram-work-line {
+  white-space: nowrap;
+  overflow-x: auto;
+}
+
+.vi-backup-diagram-acc-line {
+  min-height: 24px;
+}
+
+.vi-backup-diagram-work-line {
+  min-height: 26px;
+  font-size: 16px;
+  transition: opacity 0.2s ease;
+}
+
+/* A single symbolic/numeric token - starts hidden/offset, fades+slides in once
+   ViBackupDiagram._writeIn()/_showAll() add --shown (mirrors the "manim-ish token writing" the
+   prototype's own tok() helper establishes). */
+.vi-backup-diagram-tok {
+  display: inline-block;
+  opacity: 0;
+  transform: translateY(5px);
+  transition: opacity 0.28s ease, transform 0.28s ease, background 0.25s ease, color 0.25s ease;
+  border-radius: 4px;
+  padding: 0 1px;
+}
+
+/* A dashed "fly a number in here" slot (P(...)/r/Vt(s')) - starts hidden like a plain token
+   (--shown reveals it the same way), then ViBackupDiagram._fillSlot() swaps its border/background/
+   color once the flown-in number lands. */
+.vi-backup-diagram-slot {
+  display: inline-block;
+  opacity: 0;
+  transform: translateY(5px);
+  min-width: 34px;
+  text-align: center;
+  border: 1px dashed var(--border-light);
+  border-radius: 5px;
+  padding: 0 4px;
+  margin: 0 1px;
+  transition: border-color 0.25s ease, color 0.25s ease, background 0.25s ease, opacity 0.28s ease, transform 0.28s ease;
+}
+
+/* Compound (not bare-class) selectors here, on purpose: .vi-backup-diagram-slot above and this
+   rule have EQUAL bare-class specificity, so whichever one happened to be declared LATER in this
+   file would always win the opacity/transform tug-of-war regardless of which classes an element
+   actually carries at runtime - a real bug this fixes (slots never reached opacity:1, so their
+   P(...)/r/Vt(s') labels and dashed borders silently never appeared). Scoping --shown to each base
+   class gives it strictly higher specificity than either base rule alone, so it always wins. */
+.vi-backup-diagram-tok.vi-backup-diagram-tok--shown,
+.vi-backup-diagram-slot.vi-backup-diagram-tok--shown {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* A resolved action's Q, parked as a compact chip above the current accumulation line once its
+   own transitions have all landed (see ViBackupDiagram.drawAnimated()'s own "park" step). */
+.vi-backup-diagram-parked-chip {
+  display: inline-block;
+  margin: 2px 8px 2px 0;
+  font-family: var(--font-family-mono, var(--font-family));
+  font-size: 12px;
+  border: 1px solid var(--border-hairline, var(--border-light));
+  border-radius: 5px;
+  padding: 1px 7px;
+  transition: border-color 0.2s ease;
+}
+
+/* Fixed overlay holding ViBackupDiagram's own reward/probability/pi/Q flights - self-contained
+   flights that originate/land within a card's own DOM (unlike the cross-card value flight, which
+   stays on .vi-states-view-fly-overlay above, since ViStatesView owns that flight's origin). */
+.vi-backup-diagram-fly-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+}
+
+.vi-backup-diagram-fly-chip {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform: translate(-50%, -50%);
+  font-family: var(--font-family-mono, var(--font-family));
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+.vi-backup-diagram-fly-chip--flying {
   transition-property: left, top;
   transition-timing-function: ease-in-out;
   /* transition-duration set inline per-flight, already speed-scaled by the caller */

@@ -1,51 +1,27 @@
 // src/main/view/viEquationView.js
-// New right-pane view for Values -> Iteration's 3 split quadrants (2026-07-17 redesign): replaces
-// the live MDP graph BY DEFAULT (see viRightViewPill.js for the toggle back to Graph). Shows the
-// active state's (ValueIterationViewModel.activeStateId, set by clicking a card in the left
-// pane's States view) Bellman equation header, an animated step-by-step reveal of how its Q-values
-// were computed (highlight V -> show each outcome's reward -> show its transition probability ->
-// tween/merge both into that action's Q -> highlight the best action), and a Q-table scoped to
-// just that state's own actions.
-//
-// The reveal is a bespoke animation distinct from viBackupDiagram.js's simpler staged reveal (used
-// by the left pane's diagram cards) - this view's whole point is showing the ARITHMETIC building
-// up (reward and probability as separate visual elements converging into Q), not just nodes
-// appearing one at a time. Driven by requestAnimationFrame + elapsed wall-clock time (Date.now()),
-// not p5's own frame loop (this is a plain DOM/Canvas2D component, same family as
-// viChartView.js/viStatesView.js, not a p5.js draw() participant).
-const VEV_CANVAS_W = 420;
-const VEV_CANVAS_H = 220;
-const VEV_PADDING = 14;
-const VEV_STATE_RADIUS = 18;
-const VEV_ACTION_RADIUS = 13;
-
-const VEV_PHASE_HIGHLIGHT_MS = 600;
-const VEV_PHASE_REWARDS_MS = 600;
-const VEV_PHASE_PROBS_SHOW_MS = 250;
-const VEV_PHASE_PROBS_TWEEN_MS = 500;
-const VEV_PHASE_PROBS_SETTLE_MS = 150;
-const VEV_PHASE_PROBS_MS = VEV_PHASE_PROBS_SHOW_MS + VEV_PHASE_PROBS_TWEEN_MS + VEV_PHASE_PROBS_SETTLE_MS;
-const VEV_PHASE_BEST_MS = 600;
-const VEV_TOTAL_MS = VEV_PHASE_HIGHLIGHT_MS + VEV_PHASE_REWARDS_MS + VEV_PHASE_PROBS_MS + VEV_PHASE_BEST_MS;
-
+// Right-pane "Explain" view for Values -> Iteration's 3 split quadrants (handoff 2 - Values ->
+// Iteration animation redesign, docs/superpowers/plans/2026-07-21-vi-animation-redesign.md Phase
+// 5). Replaces this view's OLD bespoke canvas-diagram + 4-phase reveal (a second, simpler
+// animation running alongside the left pane's own, much richer per-card reveal - a real
+// duplication the redesign resolves) with a plain-language NARRATOR: a step label, one large
+// sentence, and a formula footnote, all driven by setBeat(beat, info) - called from the SAME
+// reveal that's animating the active left-pane card (ViBackupDiagram.drawAnimated()'s own onBeat
+// callback, forwarded through ViStatesView -> main.js, gated there to only the card matching
+// ValueIterationViewModel.activeStateId - see main.js's wiring), not a second, independent
+// animation with its own clock. The scoped Q-table below stays exactly as it was - it already
+// reads (activeStateId, previewedSweepIndex) correctly and isn't touched by this redesign.
 class ViEquationView {
-    // getSpeedScale: () => number, multiplies the 4-phase reveal's total pacing (1 = this view's
-    // own base rate, >1 slower, <1 faster) - defaults to a fixed rate if the caller doesn't wire
-    // it to the app's actual animation-speed slider (see main.js's construction call).
-    constructor(canvasViewModel, valueIterationState, valueIterationViewModel, getSpeedScale = () => 1) {
+    constructor(canvasViewModel, valueIterationState, valueIterationViewModel) {
         this.viewModel = canvasViewModel;
         this.viState = valueIterationState;
         this.viViewModel = valueIterationViewModel;
-        this.getSpeedScale = getSpeedScale;
 
         this.containerEl = null;
-        this._headerEl = null;
-        this._canvas = null;
+        this._stepEl = null;
+        this._sentenceEl = null;
+        this._formulaEl = null;
         this._qtableBodyEl = null;
         this._bounds = null;
-
-        this._rafHandle = null;
-        this._lastKey = null; // `${stateId}:${sweepIndex}` last rendered/animated, for replay-vs-hold
     }
 
     setup() {
@@ -56,17 +32,24 @@ class ViEquationView {
         document.body.appendChild(container);
         this.containerEl = container;
 
-        const header = document.createElement('div');
-        header.className = 'vi-equation-view-header';
-        container.appendChild(header);
-        this._headerEl = header;
+        const narrator = document.createElement('div');
+        narrator.className = 'vi-equation-view-narrator';
+        container.appendChild(narrator);
 
-        const canvas = document.createElement('canvas');
-        canvas.width = VEV_CANVAS_W;
-        canvas.height = VEV_CANVAS_H;
-        canvas.className = 'vi-equation-view-canvas';
-        container.appendChild(canvas);
-        this._canvas = canvas;
+        const step = document.createElement('div');
+        step.className = 'vi-equation-view-step';
+        narrator.appendChild(step);
+        this._stepEl = step;
+
+        const sentence = document.createElement('div');
+        sentence.className = 'vi-equation-view-sentence';
+        narrator.appendChild(sentence);
+        this._sentenceEl = sentence;
+
+        const formula = document.createElement('div');
+        formula.className = 'vi-equation-view-formula';
+        narrator.appendChild(formula);
+        this._formulaEl = formula;
 
         const caption = document.createElement('span');
         caption.className = 'vi-chart-view-caption';
@@ -78,6 +61,7 @@ class ViEquationView {
         container.appendChild(qtableBody);
         this._qtableBodyEl = qtableBody;
 
+        this._idle();
         this.hide();
     }
 
@@ -97,52 +81,22 @@ class ViEquationView {
         this.containerEl.style.height = height + 'px';
     }
 
-    // Re-renders whenever the active state or previewed sweep changes; safe to call on every VI
-    // lifecycle event the same way ViStatesView/ViChartView's own refresh() hooks already are.
+    // Re-renders the scoped Q-table and resets the narrator to idle whenever the active state or
+    // previewed sweep changes (e.g. clicking a different card) - a live reveal's own setBeat()
+    // calls immediately re-drive it moments later if one is actually running for this exact state,
+    // matching how the old canvas-based reveal also reset-and-replayed on activeStateId change.
     refresh() {
         if (!this.containerEl || this.containerEl.style.display === 'none') return;
         const stateId = this.viViewModel.activeStateId;
+        this._idle();
         if (stateId === null || stateId === undefined) {
-            this._renderPlaceholder();
+            this._qtableBodyEl.innerHTML = '<div class="chart-dock-empty">Click a state’s card to see its calculation.</div>';
             return;
         }
 
         const sweepIndex = this.viViewModel.previewedSweepIndex ?? this.viState.currentSweepIndex;
-        const key = `${stateId}:${sweepIndex}`;
-        const forceReplay = key !== this._lastKey;
-        this._lastKey = key;
-
-        const stateName = this.viState.stateNames[stateId] || `S${stateId}`;
-        this._headerEl.innerHTML = KatexRenderer.render(this._formatHeader(stateName, sweepIndex), true);
-
-        const detail = this.viState.getBackupDetail(sweepIndex, stateId);
-        const priorValues = sweepIndex > 0 ? this.viState.getValues(sweepIndex - 1) : this.viState.getValues(0);
-        const colors = {
-            state: AppPalette.node.state,
-            action: AppPalette.node.action,
-            best: AppPalette.valueIteration.best,
-            result: AppPalette.valueIteration.result
-        };
-
-        this._cancelReveal();
-        if (forceReplay) {
-            this._startReveal(detail, priorValues, colors, stateName);
-        } else {
-            this._renderFrame(detail, priorValues, colors, stateName, VEV_TOTAL_MS);
-        }
-
         const { rows } = ChartDataBuilders.buildQTableRowForState(this.viState, stateId, sweepIndex);
         this._renderQTable(rows);
-    }
-
-    _renderPlaceholder() {
-        this._cancelReveal();
-        this._lastKey = null;
-        this._headerEl.innerHTML = '';
-        const ctx = this._canvas.getContext('2d');
-        ctx.clearRect(0, 0, this._canvas.width, this._canvas.height);
-        this._qtableBodyEl.innerHTML =
-            '<div class="chart-dock-empty">Click a state’s card to see its calculation.</div>';
     }
 
     _renderQTable(rows) {
@@ -159,7 +113,10 @@ class ViEquationView {
             tdA.textContent = a.actionName;
             tr.appendChild(tdA);
             const tdQ = document.createElement('td');
-            tdQ.textContent = a.qValue.toFixed(2) + (a.isBest ? ' ★' : '');
+            // Star only when actually computing the optimal policy - see viChartView.js's
+            // identical gating for the full rationale.
+            const star = a.isBest && this.viState.runMode === 'optimal' ? ' ★' : '';
+            tdQ.textContent = a.qValue.toFixed(2) + star;
             if (a.isBest) tdQ.classList.add('chart-dock-qtable-best');
             tr.appendChild(tdQ);
             table.appendChild(tr);
@@ -167,236 +124,78 @@ class ViEquationView {
         this._qtableBodyEl.appendChild(table);
     }
 
-    _formatHeader(stateName, sweepIndex) {
-        const s = KatexRenderer.escapeText(stateName);
-        const accentNs = ValuesMethodMatrix.resolve(this.viewModel.modelKnown, this.viewModel.observability).paletteNamespace;
-        const accent = (AppPalette[accentNs] && AppPalette[accentNs].result) || AppPalette.text.medium;
-        // 'expectation' mode (the default outside the Find Optimal π flow) evaluates whatever
-        // Policy π is currently configured - sum_a pi(a|s)*Q(s,a), no max_a anywhere - vs.
-        // 'optimal' mode's true Bellman optimality backup. See ValueIterationState.runMode.
-        const backupTerm = this.viState.runMode === 'optimal'
-            ? '\\max_a \\sum_{s\'} P(s\'|s,a)'
-            : '\\sum_a \\pi(a|s) \\sum_{s\'} P(s\'|s,a)';
-        return `V^{${sweepIndex}}(\\text{${s}}) = ${backupTerm}\\bigl[R + \\gamma \\textcolor{${accent}}{V^{${sweepIndex - 1}}(s')}\\bigr]`;
+    _idle() {
+        this._stepEl.textContent = '';
+        this._sentenceEl.textContent = 'Click a state’s card, then Run or Step, to walk through one Bellman backup at a time.';
+        this._sentenceEl.style.color = AppPalette.text.muted;
+        this._formulaEl.textContent = '';
+        this._stepEl.style.color = AppPalette.text.muted;
     }
 
-    // --- Reveal engine ---
-
-    _startReveal(detail, priorValues, colors, stateName) {
-        // speedScale > 1 slows the reveal down (a given amount of real wall-clock time maps to
-        // less "virtual" phase-progress time), < 1 speeds it up - matching the app's existing
-        // animation-speed slider convention (see viBackupDiagram.js's drawAnimated() for the same
-        // scaling applied to the left-pane cards' own reveal). Re-read every frame (not just
-        // once) so a mid-reveal slider change takes effect immediately - when it changes, rebase
-        // startTime so plugging the NEW speedScale into the elapsed formula below reproduces the
-        // SAME elapsed value at that instant, continuing smoothly instead of jumping (elapsed is
-        // derived from a fixed startTime + Date.now(), unlike drawAnimated()'s per-move rAF
-        // timestamps, so the rebase target here is startTime itself, not a "how far into this
-        // move" delta).
-        let startTime = Date.now();
-        let lastSpeedScale = this.getSpeedScale();
-        const tick = () => {
-            const liveSpeedScale = this.getSpeedScale();
-            if (liveSpeedScale !== lastSpeedScale) {
-                const elapsedSoFar = Math.min((Date.now() - startTime) / lastSpeedScale, VEV_TOTAL_MS);
-                startTime = Date.now() - elapsedSoFar * liveSpeedScale;
-                lastSpeedScale = liveSpeedScale;
-            }
-            const elapsed = Math.min((Date.now() - startTime) / liveSpeedScale, VEV_TOTAL_MS);
-            this._renderFrame(detail, priorValues, colors, stateName, elapsed);
-            if (elapsed < VEV_TOTAL_MS) {
-                this._rafHandle = requestAnimationFrame(tick);
-            } else {
-                this._rafHandle = null;
-            }
-        };
-        tick();
+    _set(step, sentenceHtml, formulaHtml, color) {
+        this._stepEl.textContent = step;
+        this._stepEl.style.color = color || AppPalette.text.placeholder;
+        this._sentenceEl.innerHTML = sentenceHtml;
+        this._sentenceEl.style.color = AppPalette.text.primary;
+        this._formulaEl.innerHTML = formulaHtml || '';
+        this._formulaEl.style.color = AppPalette.text.muted;
     }
 
-    _cancelReveal() {
-        if (this._rafHandle) {
-            cancelAnimationFrame(this._rafHandle);
-            this._rafHandle = null;
+    // Called once per narration-worthy moment of the ACTIVE state's live reveal (see this file's
+    // own header comment for the gating). info shapes mirror ViBackupDiagram.drawAnimated()'s own
+    // onBeat() call sites exactly - {s, a, sp, v} for 'value', {s, a, sp, r} for 'reward', etc.
+    // Ported verbatim (copy and color-coding) from the prototype's vi-app.js EquationView.setBeat,
+    // substituting AppPalette.accent.* for the prototype's own raw hexes (Decision 1 - see the
+    // plan's own Phase 0 palette audit for why this substitution is a lossless 1:1 swap in dark
+    // mode). 'best' is this plan's own addition (not in the prototype/handoff at all) for
+    // runMode === 'optimal' (Find Optimal π), which has no policy to narrate.
+    setBeat(beat, info = {}) {
+        const em = (text, color) => `<span style="color:${color}">${text}</span>`;
+        if (!beat) { this._idle(); return; }
+
+        if (beat === 'value') {
+            this._set('1 · look back',
+                `What was ${em(info.sp, AppPalette.accent.green)} worth in the last sweep?`,
+                `V<sub>t</sub>(${info.sp}) = ${em(this._fmt(info.v), AppPalette.accent.green)} — carried over from t−1`,
+                AppPalette.accent.green);
+        } else if (beat === 'reward') {
+            const c = info.r > 0 ? AppPalette.accent.green : info.r < 0 ? AppPalette.accent.red : AppPalette.text.muted;
+            this._set('2 · collect the reward',
+                `Landing in ${info.sp} via ${em(info.a, AppPalette.accent.orange)} pays ${em(this._fmt(info.r), c)}.`,
+                `r = ${this._fmt(info.r)}, plus the discounted future: r + γ·V<sub>t</sub>(s′)`,
+                AppPalette.accent.orange);
+        } else if (beat === 'probability') {
+            this._set('3 · weight by chance',
+                `${em(info.a, AppPalette.accent.orange)} only leads to ${info.sp} ${em(Math.round(info.p * 100) + '%', AppPalette.text.primary)} of the time.`,
+                `P(${info.s}, ${info.a}, ${info.sp}) = ${info.p.toFixed(2)} scales this outcome’s share`,
+                AppPalette.text.primary);
+        } else if (beat === 'q') {
+            this._set('4 · value of the action',
+                `Adding the weighted outcomes: choosing ${em(info.a, AppPalette.accent.orange)} from ${info.s} is worth ${em(this._fmt(info.q), AppPalette.text.primary)}.`,
+                `Q(${info.s}, ${info.a}) = Σ<sub>s′</sub> P·(r + γ·V<sub>t</sub>)`,
+                AppPalette.accent.orange);
+        } else if (beat === 'pi') {
+            this._set('5 · average over actions',
+                `The policy ${em('π', AppPalette.accent.cyan)} splits its choices — so ${info.s}’s new value is the average of its Q-values.`,
+                'V<sub>t+1</sub>(s) = Σ<sub>a</sub> π(a&thinsp;|&thinsp;s)·Q(s, a)',
+                AppPalette.accent.cyan);
+        } else if (beat === 'best') {
+            // runMode === 'optimal' ending (Find Optimal π) - no policy to average over, so the
+            // best action is simply picked.
+            this._set('5 · pick the best action',
+                `No policy to average — ${info.s} just takes whichever action scores highest: ${em(info.a, AppPalette.accent.orange)}.`,
+                'V<sub>t+1</sub>(s) = max<sub>a</sub> Q(s, a)',
+                AppPalette.accent.orange);
+        } else if (beat === 'v') {
+            this._set('done',
+                `${info.s} gets its new value: ${em(this._fmt(info.v), AppPalette.accent.yellow)}.`,
+                'stored as V<sub>t+1</sub> — the next sweep will look it up here',
+                AppPalette.accent.yellow);
         }
     }
 
-    _computePhase(elapsedMs) {
-        const t1 = VEV_PHASE_HIGHLIGHT_MS;
-        const t2 = t1 + VEV_PHASE_REWARDS_MS;
-        const t3 = t2 + VEV_PHASE_PROBS_MS;
-        const t4 = t3 + VEV_PHASE_BEST_MS;
-        if (elapsedMs < t1) return { phase: 'highlight_value', localT: elapsedMs / t1 };
-        if (elapsedMs < t2) return { phase: 'show_rewards', localT: (elapsedMs - t1) / VEV_PHASE_REWARDS_MS };
-        if (elapsedMs < t3) {
-            const local = elapsedMs - t2;
-            if (local < VEV_PHASE_PROBS_SHOW_MS) {
-                return { phase: 'show_probabilities', sub: 'show', localT: local / VEV_PHASE_PROBS_SHOW_MS };
-            }
-            if (local < VEV_PHASE_PROBS_SHOW_MS + VEV_PHASE_PROBS_TWEEN_MS) {
-                return {
-                    phase: 'show_probabilities', sub: 'tween',
-                    localT: (local - VEV_PHASE_PROBS_SHOW_MS) / VEV_PHASE_PROBS_TWEEN_MS
-                };
-            }
-            return { phase: 'show_probabilities', sub: 'settle', localT: 1 };
-        }
-        if (elapsedMs < t4) return { phase: 'select_best', localT: (elapsedMs - t3) / VEV_PHASE_BEST_MS };
-        return { phase: 'done', localT: 1 };
-    }
-
-    _renderFrame(detail, priorValues, colors, stateName, elapsedMs) {
-        const ctx = this._canvas.getContext('2d');
-        const w = this._canvas.width, h = this._canvas.height;
-        ctx.clearRect(0, 0, w, h);
-
-        if (!detail || !detail.actions || detail.actions.length === 0) {
-            ctx.fillStyle = colors.action;
-            ctx.font = '11px monospace';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText('no actions', w / 2, h / 2);
-            return;
-        }
-
-        const info = this._computePhase(elapsedMs);
-        const stateX = VEV_PADDING + VEV_STATE_RADIUS;
-        const stateY = h / 2;
-        const actionX = w * 0.42;
-        const transX = w * 0.75;
-
-        const rows = [];
-        detail.actions.forEach(action => action.transitions.forEach(t => rows.push({ action, transition: t })));
-        const rowCount = Math.max(rows.length, 1);
-        const rowH = (h - 2 * VEV_PADDING) / rowCount;
-
-        let rowCursor = 0;
-        const actionPositions = new Map();
-        detail.actions.forEach(action => {
-            const span = Math.max(action.transitions.length, 1);
-            actionPositions.set(action.actionId, VEV_PADDING + (rowCursor + span / 2) * rowH);
-            rowCursor += span;
-        });
-
-        const showRewards = info.phase !== 'highlight_value';
-        const showProbs = info.phase === 'show_probabilities' || info.phase === 'select_best' || info.phase === 'done';
-        const tweening = info.phase === 'show_probabilities' && info.sub === 'tween';
-        const tweenT = tweening ? EasingUtils.easeInOut(info.localT)
-            : (info.phase === 'select_best' || info.phase === 'done'
-                || (info.phase === 'show_probabilities' && info.sub === 'settle') ? 1 : 0);
-        // Q reveals as soon as the reward/probability labels finish tweening into the action's Q
-        // anchor (the 'settle' sub-phase, once fadeOut has reached 0) rather than waiting for the
-        // later select_best phase - otherwise there's a ~150ms visually-empty gap where the R/P
-        // labels have already faded out but no Q value has appeared yet, right at the moment the
-        // animation should be climaxing. select_best still exclusively governs the best-action
-        // highlight/star/dimming below, not whether the Q text itself is shown.
-        const qRevealed = info.phase === 'select_best' || info.phase === 'done'
-            || (info.phase === 'show_probabilities' && info.sub === 'settle');
-        const bestRevealed = info.phase === 'done' || (info.phase === 'select_best' && info.localT > 0.3);
-
-        const pulse = info.phase === 'highlight_value' ? Math.sin(info.localT * Math.PI) * 3 : 0;
-        this._circle(ctx, stateX, stateY, VEV_STATE_RADIUS + pulse, colors.state);
-        this._label(ctx, stateX, stateY, stateName, colors.state);
-
-        let rowIdx = 0;
-        detail.actions.forEach(action => {
-            const ay = actionPositions.get(action.actionId);
-            const isBest = action.actionId === detail.bestActionId;
-            const dim = bestRevealed && !isBest;
-            ctx.globalAlpha = dim ? 0.4 : 1;
-
-            ctx.strokeStyle = colors.action;
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            ctx.moveTo(stateX, stateY);
-            ctx.lineTo(actionX, ay);
-            ctx.stroke();
-            const actionFill = (bestRevealed && isBest) ? colors.best : colors.action;
-            this._circle(ctx, actionX, ay, VEV_ACTION_RADIUS, actionFill);
-            this._label(ctx, actionX, ay, action.actionName, actionFill);
-
-            if (qRevealed) {
-                ctx.fillStyle = (bestRevealed && isBest) ? colors.best : colors.result;
-                ctx.font = (bestRevealed && isBest) ? 'bold 12px monospace' : '11px monospace';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'alphabetic';
-                ctx.fillText(`Q = ${action.qValue.toFixed(2)}${(bestRevealed && isBest) ? ' ★' : ''}`,
-                    actionX, ay - VEV_ACTION_RADIUS - 10);
-            }
-
-            action.transitions.forEach(t => {
-                const ty = VEV_PADDING + (rowIdx + 0.5) * rowH;
-                rowIdx += 1;
-
-                ctx.strokeStyle = colors.action;
-                ctx.beginPath();
-                ctx.moveTo(actionX, ay);
-                ctx.lineTo(transX, ty);
-                ctx.stroke();
-
-                ctx.save();
-                ctx.setLineDash([4, 3]);
-                this._circle(ctx, transX, ty, VEV_ACTION_RADIUS, colors.state, true);
-                ctx.restore();
-                this._label(ctx, transX, ty, t.nextStateName, colors.state);
-
-                if (showRewards) {
-                    const originX = transX + VEV_ACTION_RADIUS + 10;
-                    const rOriginY = ty - 7;
-                    const pOriginY = ty + 7;
-                    const qAnchorX = actionX;
-                    const qAnchorY = ay - VEV_ACTION_RADIUS - 10;
-
-                    const rX = originX + (qAnchorX - originX) * tweenT;
-                    const rY = rOriginY + (qAnchorY - rOriginY) * tweenT;
-                    const fadeOut = tweenT > 0.6 ? Math.max(0, 1 - (tweenT - 0.6) / 0.4) : 1;
-
-                    ctx.globalAlpha = (dim ? 0.4 : 1) * fadeOut;
-                    ctx.fillStyle = colors.result;
-                    ctx.font = '9px monospace';
-                    ctx.textAlign = 'left';
-                    ctx.textBaseline = 'middle';
-                    ctx.fillText(`R=${t.reward.toFixed(2)}`, rX, rY);
-
-                    if (showProbs) {
-                        const pX = originX + (qAnchorX - originX) * tweenT;
-                        const pY = pOriginY + (qAnchorY - pOriginY) * tweenT;
-                        ctx.fillText(`P=${t.probability.toFixed(2)}`, pX, pY);
-                    }
-                    ctx.globalAlpha = dim ? 0.4 : 1;
-                }
-            });
-            ctx.globalAlpha = 1;
-        });
-
-        if (rows.length > 0) {
-            ctx.fillStyle = colors.result;
-            ctx.font = '9px monospace';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'alphabetic';
-            ctx.globalAlpha = 0.6;
-            ctx.fillText('t = k−1 (prior iteration)', transX, h - 8);
-            ctx.globalAlpha = 1;
-        }
-    }
-
-    _circle(ctx, x, y, r, fill, dashed = false) {
-        ctx.beginPath();
-        ctx.arc(x, y, r, 0, Math.PI * 2);
-        ctx.fillStyle = fill;
-        ctx.fill();
-        if (dashed) {
-            ctx.strokeStyle = ColorUtils.contrastText(fill);
-            ctx.lineWidth = 1;
-            ctx.stroke();
-        }
-    }
-
-    _label(ctx, x, y, name, fill) {
-        ctx.fillStyle = ColorUtils.contrastText(fill);
-        ctx.font = '10px monospace';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(name, x, y);
+    _fmt(v) {
+        return v >= 0 ? v.toFixed(2) : '−' + Math.abs(v).toFixed(2);
     }
 
     show() {
@@ -407,6 +206,5 @@ class ViEquationView {
 
     hide() {
         if (this.containerEl) this.containerEl.style.display = 'none';
-        this._cancelReveal();
     }
 }
