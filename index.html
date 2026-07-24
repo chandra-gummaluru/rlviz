@@ -34,8 +34,13 @@
     <script src="src/main/domain/valueIterationState.js"></script>
     <script src="src/main/domain/policyEvaluationState.js"></script>
     <script src="src/main/domain/expectationState.js"></script>
+    <script src="src/main/domain/explorationPolicies/epsilonGreedyPolicy.js"></script>
+    <script src="src/main/domain/explorationPolicies/ucbPolicy.js"></script>
+    <script src="src/main/domain/explorationPolicies/softmaxPolicy.js"></script>
     <script src="src/main/domain/qLearningState.js"></script>
     <script src="src/main/domain/qLearningEpisodeGenerator.js"></script>
+    <script src="src/main/domain/pomdpState.js"></script>
+    <script src="src/main/domain/pomdpEpisodeGenerator.js"></script>
 
     <!-- Use Case Layer - CreateNode -->
     <script src="src/main/use_case/createNode/createNodeInputBoundary.js"></script>
@@ -233,6 +238,19 @@
     <script src="src/main/use_case/qLearning/setQLAlgorithmInputBoundary.js"></script>
     <script src="src/main/use_case/qLearning/setQLAlgorithmInputData.js"></script>
     <script src="src/main/use_case/qLearning/setQLAlgorithmInteractor.js"></script>
+
+    <!-- Use Case - POMDP (PO Q-Learning) -->
+    <script src="src/main/use_case/pomdp/pomdpOutputBoundary.js"></script>
+    <script src="src/main/use_case/pomdp/pomdpPresenter.js"></script>
+    <script src="src/main/use_case/pomdp/runPomdpInputBoundary.js"></script>
+    <script src="src/main/use_case/pomdp/runPomdpInputData.js"></script>
+    <script src="src/main/use_case/pomdp/runPomdpInteractor.js"></script>
+    <script src="src/main/use_case/pomdp/pomdpResetInputBoundary.js"></script>
+    <script src="src/main/use_case/pomdp/pomdpResetInputData.js"></script>
+    <script src="src/main/use_case/pomdp/pomdpResetInteractor.js"></script>
+    <script src="src/main/use_case/pomdp/setPomdpAlgorithmInputBoundary.js"></script>
+    <script src="src/main/use_case/pomdp/setPomdpAlgorithmInputData.js"></script>
+    <script src="src/main/use_case/pomdp/setPomdpAlgorithmInteractor.js"></script>
 
     <!-- Use Case Layer - Evaluate Policy -->
     <script src="src/main/use_case/evaluatePolicy/evaluatePolicyInputBoundary.js"></script>

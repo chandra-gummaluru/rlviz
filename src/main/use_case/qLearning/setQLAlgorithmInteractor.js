@@ -10,7 +10,7 @@ class SetQLAlgorithmInteractor extends SetQLAlgorithmInputBoundary {
     }
 
     execute(inputData) {
-        const validAlgorithms = ['epsilonGreedy', 'ucb', 'optimistic'];
+        const validAlgorithms = ['epsilonGreedy', 'ucb', 'softmax', 'optimistic'];
         if (!inputData || !validAlgorithms.includes(inputData.algorithm)) {
             this.outputBoundary.presentError(`Unknown algorithm: ${inputData && inputData.algorithm}`);
             return;
@@ -24,6 +24,8 @@ class SetQLAlgorithmInteractor extends SetQLAlgorithmInputBoundary {
                 this.qLearningState.epsilon = Math.max(0, Math.min(1, p));
             } else if (inputData.algorithm === 'ucb') {
                 this.qLearningState.ucbC = Math.max(0, p);
+            } else if (inputData.algorithm === 'softmax') {
+                this.qLearningState.softmaxTau = Math.max(0.01, p);
             } else if (inputData.algorithm === 'optimistic') {
                 this.qLearningState.optimisticQ0 = p;
             }

@@ -998,12 +998,20 @@ class RightPanel {
             // ε only makes sense for the three quadrants that run a real Bellman sweep to
             // convergence - Learning Iteration has no epsilon/convergence concept at all.
             if (liKey !== 'unknown:full') this._renderEpsilonSlider(paramsDiv);
+            // Obs. noise slider only for PO Q-Learning (auto-derived observation model parameter).
+            if (liKey === 'unknown:partial') this._renderObservationNoiseSlider(paramsDiv);
         });
 
         this.renderInitialStateSection();
 
         if (liKey === 'unknown:full') {
             this._renderLearningIterationPanel();
+            this._renderPolicyLog();
+            return;
+        }
+
+        if (liKey === 'unknown:partial') {
+            this._renderPomdpPanel();
             this._renderPolicyLog();
             return;
         }
@@ -1170,6 +1178,127 @@ class RightPanel {
         this._renderQLearningTable(tableContainer, qls);
     }
 
+    _renderPomdpPanel() {
+        const ps = this.viewModel.pomdpState;
+        const matrixEntry = ValuesMethodMatrix.resolve(this.viewModel.modelKnown, this.viewModel.observability);
+
+        if (ps) ps.gamma = this.discountFactor;
+
+        const title = createDiv(matrixEntry.title);
+        title.parent(this.contentContainer);
+        title.addClass('panel-title');
+
+        const desc = createDiv();
+        desc.parent(this.contentContainer);
+        desc.addClass('panel-section-content');
+        desc.html('P unknown, partial observability. Belief b(s) is updated via Bayes after each '
+            + 'transition; actions are selected by the exploration policy using belief-weighted Q̃(a) = Σ b(s)·Q(s,a).');
+
+        if (!ps) return;
+
+        this._renderPomdpAlgorithmSection(ps);
+
+        const stat = createDiv(`<strong>Episodes:</strong> ${ps.episodeCount}`);
+        stat.parent(this.contentContainer);
+        stat.addClass('panel-section-content');
+        stat.style('margin-top', '8px');
+
+        const tableTitle = createDiv('Belief-weighted Q-values');
+        tableTitle.parent(this.contentContainer);
+        tableTitle.addClass('panel-section-title');
+        tableTitle.style('margin-top', '12px');
+
+        if (ps.episodeCount === 0) {
+            const hint = createDiv('Press Run or Step to begin sampling episodes.');
+            hint.parent(this.contentContainer);
+            hint.addClass('panel-hint');
+            hint.style('margin-top', '6px');
+        }
+
+        const tableContainer = createDiv();
+        tableContainer.parent(this.contentContainer);
+        tableContainer.addClass('q-table-scroll');
+        this._renderQLearningTable(tableContainer, ps);
+    }
+
+    // Same algorithm toggle as Learning Iteration but wired to setPomdpAlgorithm.
+    _renderPomdpAlgorithmSection(ps) {
+        this.createSection('Algorithm', () => {
+            const wrap = createDiv();
+            wrap.parent(this.contentContainer);
+            wrap.addClass('panel-section-content');
+
+            const toggle = createDiv();
+            toggle.parent(wrap);
+            toggle.addClass('policy-det-random-toggle');
+            toggle.addClass('ql-algo-toggle');
+
+            const options = [
+                { key: 'epsilonGreedy', label: 'ε-greedy' },
+                { key: 'ucb', label: 'UCB' },
+                { key: 'softmax', label: 'Softmax' },
+                { key: 'optimistic', label: 'Optimistic' }
+            ];
+            options.forEach(opt => {
+                const btn = createButton(opt.label);
+                btn.parent(toggle);
+                btn.addClass('policy-det-random-btn');
+                if (ps.algorithm === opt.key) btn.addClass('policy-det-random-btn--active');
+                btn.mousePressed(() => {
+                    if (ps.algorithm !== opt.key) {
+                        this.controller.setPomdpAlgorithm(opt.key);
+                        this.updateContent();
+                        if (typeof redraw === 'function') redraw();
+                    }
+                });
+            });
+
+            const chipRow = createDiv();
+            chipRow.parent(wrap);
+            chipRow.addClass('ql-param-row');
+
+            const paramMeta = {
+                epsilonGreedy: { label: 'ε', value: ps.epsilon, step: '0.01' },
+                ucb:           { label: 'c', value: ps.ucbC, step: '0.1' },
+                softmax:       { label: 'τ', value: ps.softmaxTau, step: '0.1' },
+                optimistic:    { label: 'Q₀', value: ps.optimisticQ0, step: '0.5' }
+            }[ps.algorithm];
+
+            const chip = createDiv(`${paramMeta.label} = ${this._fmtParam(paramMeta.value)}`);
+            chip.parent(chipRow);
+            chip.addClass('ql-param-chip');
+            chip.elt.title = 'Click to edit';
+            chip.mousePressed(() => this._startEditingPomdpParam(chip.elt, ps.algorithm, paramMeta));
+        });
+    }
+
+    _startEditingPomdpParam(chipEl, algorithm, meta) {
+        if (chipEl.querySelector('input')) return;
+        chipEl.textContent = '';
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.step = meta.step;
+        input.value = this._fmtParam(meta.value);
+        input.className = 'q-table-cell-input';
+        chipEl.appendChild(input);
+        input.focus();
+        input.select();
+        let settled = false;
+        const commit = () => {
+            if (settled) return;
+            settled = true;
+            const parsed = parseFloat(input.value);
+            if (isFinite(parsed)) this.controller.setPomdpAlgorithm(algorithm, parsed);
+            this.updateContent();
+            if (typeof redraw === 'function') redraw();
+        };
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); commit(); }
+            if (e.key === 'Escape') { settled = true; this.updateContent(); }
+        });
+        input.addEventListener('blur', commit);
+    }
+
     // Algorithm toggle (ε-greedy | UCB | Optimistic) + a small click-to-edit hyperparameter chip
     // for the active algorithm. Toggle DOM/styling mirrors Policy mode's Deterministic|Random
     // toggle; the chip's click-to-edit mirrors the Q-table cell override interaction.
@@ -1187,6 +1316,7 @@ class RightPanel {
             const options = [
                 { key: 'epsilonGreedy', label: 'ε-greedy' },
                 { key: 'ucb', label: 'UCB' },
+                { key: 'softmax', label: 'Softmax' },
                 { key: 'optimistic', label: 'Optimistic' }
             ];
             options.forEach(opt => {
@@ -1211,6 +1341,7 @@ class RightPanel {
             const paramMeta = {
                 epsilonGreedy: { label: 'ε', value: qls.epsilon, step: '0.01' },
                 ucb:           { label: 'c', value: qls.ucbC, step: '0.1' },
+                softmax:       { label: 'τ', value: qls.softmaxTau, step: '0.1' },
                 optimistic:    { label: 'Q₀', value: qls.optimisticQ0, step: '0.5' }
             }[qls.algorithm];
 
@@ -1427,6 +1558,45 @@ class RightPanel {
         slider.elt.addEventListener('change', () => {
             this.updateContent();
             if (typeof redraw === 'function') redraw();
+        });
+    }
+
+    // Observation noise slider for PO Q-Learning (unknown:partial quadrant only).
+    // Controls the auto-derived observation model: O(o|s') = (1-p) if o==s', p/(|S|-1) otherwise.
+    // Change takes effect immediately (not deferred like epsilon) — noise is read per episode.
+    _renderObservationNoiseSlider(parentDiv) {
+        const pomdpState = this.viewModel && this.viewModel.pomdpState;
+        const current = pomdpState ? pomdpState.observationNoise : 0.1;
+
+        const row = createDiv();
+        row.parent(parentDiv);
+        row.addClass('panel-param-row');
+
+        const label = createDiv('Obs. noise (p)');
+        label.parent(row);
+        label.addClass('panel-param-row-label');
+
+        const slider = createElement('input');
+        slider.parent(row);
+        slider.attribute('type', 'range');
+        slider.attribute('min', '0');
+        slider.attribute('max', '0.5');
+        slider.attribute('step', '0.01');
+        slider.attribute('value', String(current));
+        slider.addClass('panel-param-row-slider');
+        slider.elt.addEventListener('mousedown', e => e.stopPropagation());
+        slider.elt.addEventListener('click', e => e.stopPropagation());
+        slider.elt.style.setProperty('--fill', current / 0.5);
+
+        const value = createDiv(current.toFixed(2));
+        value.parent(row);
+        value.addClass('panel-param-row-value');
+
+        slider.input(() => {
+            const p = parseFloat(slider.value());
+            value.html(p.toFixed(2));
+            slider.elt.style.setProperty('--fill', p / 0.5);
+            if (this.controller) this.controller.setPomdpNoise(p);
         });
     }
 

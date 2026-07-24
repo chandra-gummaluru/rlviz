@@ -26,6 +26,12 @@ const qLearningState = new QLearningState();
 const qLearningEpisodeGenerator = new QLearningEpisodeGenerator(graph, traceGenerator);
 canvasViewModel.qLearningState = qLearningState;
 
+// PO Q-Learning (unknown:partial quadrant) real POMDP belief Q-learning domain. Also
+// presentation/session-only; excluded from graph import/export.
+const pomdpState = new PomdpState();
+const pomdpEpisodeGenerator = new PomdpEpisodeGenerator(graph, traceGenerator);
+canvasViewModel.pomdpState = pomdpState;
+
 // Presenters for existing use cases
 const createNodePresenter = new CreateNodePresenter(canvasViewModel.interaction);
 const createEdgePresenter = new CreateEdgePresenter(canvasViewModel);
@@ -295,6 +301,12 @@ const onObservabilityToggle = (value) => {
 // quadrant driven by the real Q-learning subsystem rather than VI's Bellman sweep.
 function _isLearningIterationActive() {
     return ValuesMethodMatrix.key(canvasViewModel.modelKnown, canvasViewModel.observability) === 'unknown:full';
+}
+
+// True when the resolved quadrant is unknown:partial (PO Q-Learning) — drives the POMDP
+// belief Q-learning subsystem instead of VI's Bellman sweep.
+function _isPomdpActive() {
+    return ValuesMethodMatrix.key(canvasViewModel.modelKnown, canvasViewModel.observability) === 'unknown:partial';
 }
 
 // viSweepChip only ever shows for the 3 split quadrants (Learning Iteration hides it in favor of
@@ -820,6 +832,11 @@ const refreshVIButtons = () => {
         topBar.updateVIButtonStates(false, true, true, true);
         return;
     }
+    if (_isPomdpActive()) {
+        // POMDP runs are synchronous like QL - Play/Step/Skip/Reset always enabled.
+        topBar.updateVIButtonStates(false, true, true, true);
+        return;
+    }
     // known:full (real Value Iteration): Step/Skip are gated by whether the live sweep's
     // per-state reveal has anything left, NOT by the sweep-level T-cap/convergence check below -
     // crossing into a new sweep is "Find Optimal"'s job alone now. canPlay ("Find Optimal"'s own
@@ -853,10 +870,21 @@ function _afterQLChange() {
     redraw();
 }
 
+function _afterPomdpChange() {
+    if (rightPanel) rightPanel.updateContent();
+    if (mainView && mainView.viStatesView) mainView.viStatesView.refresh();
+    redraw();
+}
+
 const onVIPlay = () => {
     if (_isLearningIterationActive()) {
         canvasController.runQLearning(10);   // "▶ Run learning": 10 episodes
         _afterQLChange();
+        return;
+    }
+    if (_isPomdpActive()) {
+        canvasController.runPomdp(10);
+        _afterPomdpChange();
         return;
     }
     if (!runVIInteractor || !viPlayInteractor) return;
@@ -881,8 +909,9 @@ const onVIPlay = () => {
 };
 
 const onVIPause = () => {
-    // No continuous playback in Q-learning (Run is synchronous) - nothing to pause.
+    // No continuous playback in Q-learning or POMDP (Run is synchronous) - nothing to pause.
     if (_isLearningIterationActive()) return;
+    if (_isPomdpActive()) return;
     if (!viPauseInteractor) return;
     viPauseInteractor.execute(new VIPauseInputData());
     // Freezes whichever state is currently mid-reveal exactly where it is, instead of only
@@ -901,6 +930,11 @@ const onVIStep = () => {
         _afterQLChange();
         return;
     }
+    if (_isPomdpActive()) {
+        canvasController.stepPomdp();
+        _afterPomdpChange();
+        return;
+    }
     if (!viStepInteractor) return;
     ensureVIInitialized();
     viStepInteractor.execute(new VIStepInputData());
@@ -916,6 +950,12 @@ const onVISkip = () => {
         _afterQLChange();
         return;
     }
+    if (_isPomdpActive()) {
+        // Skip: run 50 episodes at once as a fast-forward equivalent.
+        canvasController.runPomdp(50);
+        _afterPomdpChange();
+        return;
+    }
     if (!viSkipInteractor) return;
     ensureVIInitialized();
     viSkipInteractor.execute(new VISkipInputData());
@@ -928,6 +968,13 @@ const onVIReset = () => {
         canvasController.resetQLearning();
         ensureQLRoot();                      // re-seed root so Tree shows its placeholder again
         _afterQLChange();
+        canvasController.showGoalCardIfNotMuted();
+        if (mainView && mainView.goalCard) mainView.goalCard.refresh();
+        return;
+    }
+    if (_isPomdpActive()) {
+        canvasController.resetPomdp();
+        _afterPomdpChange();
         canvasController.showGoalCardIfNotMuted();
         if (mainView && mainView.goalCard) mainView.goalCard.refresh();
         return;
@@ -1429,6 +1476,21 @@ function setup() {
     canvasController.interactors.qlReset = qlResetInteractor;
     canvasController.interactors.setQLAlgorithm = setQLAlgorithmInteractor;
 
+    // PO Q-Learning (unknown:partial) POMDP belief Q-learning interactors
+    const pomdpPresenter = new PomdpPresenter(canvasViewModel);
+    pomdpPresenter.onComplete = () => {
+        if (typeof redraw === 'function') redraw();
+    };
+    pomdpPresenter.onError = () => {
+        if (rightPanel) rightPanel.updateContent();
+    };
+    const runPomdpInteractor = new RunPomdpInteractor(graph, pomdpEpisodeGenerator, pomdpState, pomdpPresenter);
+    const pomdpResetInteractor = new PomdpResetInteractor(pomdpState, pomdpPresenter);
+    const setPomdpAlgorithmInteractor = new SetPomdpAlgorithmInteractor(pomdpState, pomdpPresenter);
+    canvasController.interactors.runPomdp = runPomdpInteractor;
+    canvasController.interactors.pomdpReset = pomdpResetInteractor;
+    canvasController.interactors.setPomdpAlgorithm = setPomdpAlgorithmInteractor;
+
     const learningIterationView = new LearningIterationView(canvasViewModel);
     mainView.learningIterationView = learningIterationView;
 
@@ -1699,3 +1761,15 @@ function touchMoved() {
 function windowResized() {
     mainView.windowResized();
 }
+
+// Minimal test/debug hook — exposes import + start-node setter so automated tests can drive the
+// app without needing a file-picker dialog. Not used by any production code path.
+window._rlvizTest = {
+    importGraph: (json) => canvasController.importGraph(json),
+    setStartNode: (id) => {
+        const node = graph.getNodeById(id);
+        if (node) canvasController.setStartNode(node);
+        return node ? node.name : 'not found';
+    },
+    getStartNodeName: () => canvasViewModel.startNode ? canvasViewModel.startNode.name : null,
+};

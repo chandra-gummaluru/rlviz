@@ -19,10 +19,11 @@ class QLearningState {
     }
 
     reset() {
-        this.algorithm = 'epsilonGreedy';   // 'epsilonGreedy' | 'ucb' | 'optimistic'
+        this.algorithm = 'epsilonGreedy';   // 'epsilonGreedy' | 'ucb' | 'softmax' | 'optimistic'
         this.epsilon = 0.1;
         this.ucbC = 1.4;
         this.optimisticQ0 = 5;
+        this.softmaxTau = 1.0;
         this.gamma = 0.9;
         this.maxDepth = 8;                  // fixed v1 episode-depth cap, not user-configurable
 
@@ -104,40 +105,29 @@ class QLearningState {
         this.transitionRewardSums[tk] = (this.transitionRewardSums[tk] || 0) + reward;
     }
 
-    // UCB bonus term for one action at a decision point: c * sqrt(ln(max(1,Ns))/max(1,N)). A
-    // zero-visit action gets Infinity (must be tried first). Shared by selectAction and the
-    // view's halo rendering so both agree on the same number.
-    ucbBonus(stateId, actionId) {
-        const n = this.getN(stateId, actionId);
-        if (n === 0) return Infinity;
-        const ns = this.getNs(stateId);
-        return this.ucbC * Math.sqrt(Math.log(Math.max(1, ns)) / Math.max(1, n));
-    }
-
-    // argmax_a getQ(s,a), ties broken by first-encountered order in actionIds.
+    // Delegates to EpsilonGreedyPolicy. Also used by the view layer (rightPanel.js) and by the
+    // 'optimistic' algorithm's selectAction (optimistic Q0 drives exploration, selection is greedy).
     greedyAction(stateId, actionIds) {
-        if (!actionIds || actionIds.length === 0) return null;
-        let best = actionIds[0];
-        let bestQ = this.getQ(stateId, actionIds[0]);
-        for (let i = 1; i < actionIds.length; i++) {
-            const q = this.getQ(stateId, actionIds[i]);
-            if (q > bestQ) { bestQ = q; best = actionIds[i]; }
-        }
-        return best;
+        return EpsilonGreedyPolicy.greedyAction(stateId, actionIds, (s, a) => this.getQ(s, a));
     }
 
-    // argmax_a [getQ(s,a) + bonus], ties broken by first-encountered order. Zero-visit actions
-    // (Infinity bonus) are selected first. Used for UCB selection AND for the view's "did we
-    // choose to explore?" comparison against greedyAction.
+    // Delegates to UCBPolicy. Also used by learningIterationView.js for halo rendering so the
+    // displayed bonus always matches what the algorithm actually used when selecting.
+    ucbBonus(stateId, actionId) {
+        return UCBPolicy.bonus(stateId, actionId,
+            (s, a) => this.getN(s, a), s => this.getNs(s), this.ucbC);
+    }
+
+    // Delegates to UCBPolicy. Used by learningIterationView.js to determine which action was
+    // UCB-selected (for halo highlight) independently of what was actually sampled.
     ucbAction(stateId, actionIds) {
-        if (!actionIds || actionIds.length === 0) return null;
-        let best = actionIds[0];
-        let bestScore = this.getQ(stateId, actionIds[0]) + this.ucbBonus(stateId, actionIds[0]);
-        for (let i = 1; i < actionIds.length; i++) {
-            const score = this.getQ(stateId, actionIds[i]) + this.ucbBonus(stateId, actionIds[i]);
-            if (score > bestScore) { bestScore = score; best = actionIds[i]; }
-        }
-        return best;
+        return UCBPolicy.selectAction(stateId, actionIds,
+            (s, a) => this.getQ(s, a), (s, a) => this.getN(s, a), s => this.getNs(s), this.ucbC);
+    }
+
+    // Returns the softmax probability distribution over actionIds for display purposes.
+    softmaxProbabilities(stateId, actionIds) {
+        return SoftmaxPolicy.probabilities(stateId, actionIds, (s, a) => this.getQ(s, a), this.softmaxTau);
     }
 
     // Behavior policy for the current algorithm. Returns an actionId from actionIds.
@@ -145,17 +135,18 @@ class QLearningState {
         if (!actionIds || actionIds.length === 0) return null;
 
         if (this.algorithm === 'epsilonGreedy') {
-            if (Math.random() < this.epsilon) {
-                return actionIds[Math.floor(Math.random() * actionIds.length)];
-            }
-            return this.greedyAction(stateId, actionIds);
+            return EpsilonGreedyPolicy.selectAction(stateId, actionIds,
+                (s, a) => this.getQ(s, a), this.epsilon);
         }
-
         if (this.algorithm === 'ucb') {
-            return this.ucbAction(stateId, actionIds);
+            return UCBPolicy.selectAction(stateId, actionIds,
+                (s, a) => this.getQ(s, a), (s, a) => this.getN(s, a), s => this.getNs(s), this.ucbC);
         }
-
+        if (this.algorithm === 'softmax') {
+            return SoftmaxPolicy.selectAction(stateId, actionIds,
+                (s, a) => this.getQ(s, a), this.softmaxTau);
+        }
         // 'optimistic': pure greedy — the optimistic initial Q0 default itself drives exploration.
-        return this.greedyAction(stateId, actionIds);
+        return EpsilonGreedyPolicy.greedyAction(stateId, actionIds, (s, a) => this.getQ(s, a));
     }
 }

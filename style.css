@@ -2906,6 +2906,64 @@ input[type="range"]::-moz-range-thumb {
   font-variant-numeric: tabular-nums;
 }
 
+/* Belief bar chart card (unknown:partial / PO Q-Learning quadrant) */
+.vi-states-view-card--belief {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  padding: 6px 8px;
+  cursor: default;
+}
+
+.vi-states-belief-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+
+.vi-states-belief-row--dominant {
+  background: var(--surface-hover);
+}
+
+.vi-states-belief-row-name {
+  flex: 0 0 56px;
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vi-states-belief-bar-wrap {
+  flex: 1;
+  height: 8px;
+  background: var(--surface-raised);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.vi-states-belief-bar {
+  height: 100%;
+  background: var(--accent-yellow);
+  border-radius: 4px;
+  transition: width 0.15s ease;
+}
+
+.vi-states-belief-row--dominant .vi-states-belief-bar {
+  background: var(--accent-orange);
+}
+
+.vi-states-belief-row-pct {
+  flex: 0 0 32px;
+  font-size: 10px;
+  color: var(--text-muted);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
 .vi-states-view-card--diagram {
   display: flex;
   flex-direction: column;

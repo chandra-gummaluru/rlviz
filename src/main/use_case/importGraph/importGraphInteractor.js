@@ -147,7 +147,8 @@ class ImportGraphInteractor extends ImportGraphInputBoundary {
                 graph: this.graph,
                 nodeCount: this.graph.nodes.length,
                 edgeCount: this.graph.edges.length,
-                textLabelCount: this.graph.textLabels ? this.graph.textLabels.length : 0
+                textLabelCount: this.graph.textLabels ? this.graph.textLabels.length : 0,
+                startStateId: data.startStateId !== undefined ? data.startStateId : null
             };
 
             // Present the results

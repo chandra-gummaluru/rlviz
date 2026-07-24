@@ -153,8 +153,88 @@ class ViStatesView {
     // re-applies the hovered/pinned highlight class to every existing section - avoids tearing
     // down and rebuilding the whole scrollable list (and losing scroll position) on every redraw
     // during continuous Play.
+    _isPomdpQuadrant() {
+        return ValuesMethodMatrix.key(this.viewModel.modelKnown, this.viewModel.observability) === 'unknown:partial';
+    }
+
+    // Clears and fully rebuilds the POMDP belief history view from pomdpState.beliefHistory.
+    // Called by refresh() instead of the VI sweep machinery when the quadrant is unknown:partial.
+    _refreshPomdpBelief() {
+        this._sectionsEl.innerHTML = '';
+        const pomdpState = this.viewModel.pomdpState;
+        if (!pomdpState || !pomdpState.beliefHistory || !pomdpState.beliefHistory.length) return;
+
+        const history = pomdpState.beliefHistory;
+        const allStateIds = Object.keys(history[0].belief);
+
+        for (const { t, belief } of history) {
+            const section = document.createElement('div');
+            section.className = 'vi-states-view-section';
+
+            const header = document.createElement('div');
+            header.className = 'vi-states-view-section-header';
+            header.textContent = `t = ${t}`;
+            section.appendChild(header);
+
+            section.appendChild(this._buildBeliefCard(belief, allStateIds));
+            this._sectionsEl.appendChild(section);
+        }
+
+        // Auto-scroll to newest step
+        this._sectionsEl.scrollTop = this._sectionsEl.scrollHeight;
+    }
+
+    // Renders one belief bar chart card: one row per state, bar width ∝ b(s), pct label.
+    _buildBeliefCard(belief, allStateIds) {
+        const card = document.createElement('div');
+        card.className = 'vi-states-view-card vi-states-view-card--belief';
+
+        const maxBelief = Math.max(...allStateIds.map(id => belief[id] || 0));
+
+        for (const stateId of allStateIds) {
+            const b = belief[stateId] || 0;
+            const isDominant = b === maxBelief && maxBelief > 0;
+
+            const row = document.createElement('div');
+            row.className = 'vi-states-belief-row' + (isDominant ? ' vi-states-belief-row--dominant' : '');
+
+            const nameEl = document.createElement('span');
+            nameEl.className = 'vi-states-belief-row-name';
+            // Object.keys() always returns strings, so coerce to number for strict-equality lookup
+            const nodeIdKey = isNaN(Number(stateId)) ? stateId : Number(stateId);
+            const stateNode = this.viewModel && this.viewModel.graph
+                ? this.viewModel.graph.getNodeById(nodeIdKey) : null;
+            nameEl.textContent = stateNode ? stateNode.name : stateId;
+            row.appendChild(nameEl);
+
+            const barWrap = document.createElement('div');
+            barWrap.className = 'vi-states-belief-bar-wrap';
+            const bar = document.createElement('div');
+            bar.className = 'vi-states-belief-bar';
+            bar.style.width = (b * 100).toFixed(1) + '%';
+            barWrap.appendChild(bar);
+            row.appendChild(barWrap);
+
+            const pctEl = document.createElement('span');
+            pctEl.className = 'vi-states-belief-row-pct';
+            pctEl.textContent = (b * 100).toFixed(0) + '%';
+            row.appendChild(pctEl);
+
+            card.appendChild(row);
+        }
+
+        return card;
+    }
+
     refresh() {
         if (!this.containerEl || this.containerEl.style.display === 'none') return;
+
+        // POMDP quadrant bypasses VI sweep machinery entirely — render belief bar charts instead.
+        if (this._isPomdpQuadrant()) {
+            this._refreshPomdpBelief();
+            return;
+        }
+
         if (!this.viState || !this.viState.initialized) {
             // Reset (ValueIterationState.reset() sets initialized = false) lands here, not in the
             // totalSweeps-shrank branch below - a Reset always makes initialized false, so this is

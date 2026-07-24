@@ -606,6 +606,36 @@ class CanvasController {
         this.interactors.setQLAlgorithm.execute(new SetQLAlgorithmInputData(algorithm, param));
     }
 
+    // ===== POMDP (PO Q-Learning, unknown:partial quadrant) =====
+
+    runPomdp(episodeCount = 10) {
+        if (!this.interactors.runPomdp) return;
+        const startNode = this.viewModel.startNode;
+        if (!startNode) return;
+        const gamma = this.viewModel.pomdpState ? this.viewModel.pomdpState.gamma : 0.9;
+        this.interactors.runPomdp.execute(new RunPomdpInputData(startNode.id, gamma, episodeCount));
+    }
+
+    stepPomdp() {
+        this.runPomdp(1);
+    }
+
+    resetPomdp() {
+        if (!this.interactors.pomdpReset) return;
+        this.interactors.pomdpReset.execute(new PomdpResetInputData());
+    }
+
+    setPomdpAlgorithm(algorithm, param) {
+        if (!this.interactors.setPomdpAlgorithm) return;
+        this.interactors.setPomdpAlgorithm.execute(new SetPomdpAlgorithmInputData(algorithm, param));
+    }
+
+    setPomdpNoise(p) {
+        if (this.viewModel.pomdpState) {
+            this.viewModel.pomdpState.observationNoise = Math.max(0, Math.min(0.5, p));
+        }
+    }
+
     // 'graph' | 'tree' canvas view for the Learning Iteration quadrant (presentation-only flag).
     setLearningIterationCanvasView(view) {
         this.viewModel.learningIterationCanvasView = view === 'tree' ? 'tree' : 'graph';
