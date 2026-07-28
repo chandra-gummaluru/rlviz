@@ -696,9 +696,9 @@ class CanvasController {
         // hoveredNode/hoveredEdge are cleared on BOTH directions (not just entering tree view):
         // Graph view's own handleMouseMove() naturally re-populates them on the next real
         // mouse-move regardless, but Tree view drives its own hover via treeView.handleMouseMove()
+        // happens to overwrite it (and vice versa on entry).
         // and never touches these fields itself - so a real EdgeObj left over from a tree-edge
         // hover could otherwise leak into Graph view's panel until the next Graph-view mouse-move
-        // happens to overwrite it (and vice versa on entry).
         this.viewModel.interaction.hoveredNode = null;
         this.viewModel.interaction.hoveredEdge = null;
     }

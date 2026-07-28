@@ -124,9 +124,15 @@ class ViEquationView {
         this._qtableBodyEl.appendChild(table);
     }
 
+    // unknown:partial (PO Q-Learning) runs belief-weighted Q-learning episodes, not a per-state
+    // Bellman backup - the idle prompt is worded per-quadrant so it doesn't misdescribe what
+    // Run/Step is about to do there.
     _idle() {
         this._stepEl.textContent = '';
-        this._sentenceEl.textContent = 'Click a state’s card, then Run or Step, to walk through one Bellman backup at a time.';
+        const isPomdp = ValuesMethodMatrix.key(this.viewModel.modelKnown, this.viewModel.observability) === 'unknown:partial';
+        this._sentenceEl.textContent = isPomdp
+            ? 'Click a state’s card, then Run or Step, to see how its belief and Q-values update from an episode.'
+            : 'Click a state’s card, then Run or Step, to walk through one Bellman backup at a time.';
         this._sentenceEl.style.color = AppPalette.text.muted;
         this._formulaEl.textContent = '';
         this._stepEl.style.color = AppPalette.text.muted;
