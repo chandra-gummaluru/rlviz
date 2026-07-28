@@ -4,11 +4,11 @@
 // crossing sweep boundaries. In the other 3 quadrants (no per-state reveal to step through),
 // falls through to the old sweep-level advance (not blocked by convergence, only the T cap).
 class VIStepInteractor extends VIStepInputBoundary {
-    constructor(viState, outputBoundary, graph, options = {}) {
+    constructor(viState, outputBoundary, graph, simulationState, options = {}) {
         super();
         this.viState = viState;
         this.outputBoundary = outputBoundary;
-        this.animator = new VIAnimator(viState, outputBoundary, graph, options);
+        this.animator = new VIAnimator(viState, outputBoundary, graph, simulationState, options);
     }
 
     execute(inputData) {

@@ -5,11 +5,11 @@
 // zero-duration tween, preserving Skip's historical 1:1 relationship to Step (Step with zero
 // timing).
 class VISkipInteractor extends VISkipInputBoundary {
-    constructor(viState, outputBoundary, graph, options = {}) {
+    constructor(viState, outputBoundary, graph, simulationState, options = {}) {
         super();
         this.viState = viState;
         this.outputBoundary = outputBoundary;
-        this.animator = new VIAnimator(viState, outputBoundary, graph, options);
+        this.animator = new VIAnimator(viState, outputBoundary, graph, simulationState, options);
     }
 
     execute(inputData) {

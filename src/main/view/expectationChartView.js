@@ -6,13 +6,23 @@
 // ChartDataBuilders' existing pure data-shaping functions verbatim - no new chart math here,
 // only a new render target.
 class ExpectationChartView {
-    constructor(canvasViewModel, expectationState, expectationViewModel, valueIterationState) {
+    // policyLogDeps (policy-logging.md - Phase 3/4 of the policy-log chart overlays): optional,
+    // everything in it defaults to a no-op so this class still works standalone if a caller omits
+    // it. `onLogPolicy` is the SAME handler the top bar's dedicated "Evaluate π" button already
+    // calls (main.js's onEvaluatePolicy) - the chip strip's own "+ Log π" reuses it verbatim
+    // rather than duplicating the naming-modal/cap-check flow.
+    constructor(canvasViewModel, expectationState, expectationViewModel, valueIterationState, policyLogDeps = {}) {
         this.viewModel = canvasViewModel;
         this.expectationState = expectationState;
         this.expectationViewModel = expectationViewModel;
         this.valueIterationState = valueIterationState;
+        this.policyEvaluationState = policyLogDeps.policyEvaluationState || null;
+        this.traceGenerator = policyLogDeps.traceGenerator || null;
+        this.startNodeProvider = policyLogDeps.startNodeProvider || (() => null);
+        this.onLogPolicy = policyLogDeps.onLogPolicy || null;
 
         this.containerEl = null;
+        this._chipStripEl = null;
         this._slotBodyEls = [null, null];
         this._statEls = [null, null];
         this._legendEls = [null, null];
@@ -28,7 +38,16 @@ class ExpectationChartView {
         document.body.appendChild(container);
         this.containerEl = container;
 
-        const labels = ['V̂(S₀) vs V*', 'Return distribution'];
+        // Policy log chip strip (policy-logging.md §3's "shared strip above the cards") - lives
+        // above both chart cards, built fresh on every refresh() (see _renderChipStrip()) since
+        // its content is exactly `policyEvaluationState.entries`, same "just re-render, don't
+        // diff" convention every other DOM view in this codebase already uses.
+        const chipStrip = document.createElement('div');
+        chipStrip.className = 'policy-chip-strip';
+        container.appendChild(chipStrip);
+        this._chipStripEl = chipStrip;
+
+        const labels = ['Value over Time for a Given Policy and Initial State', 'Return distribution'];
         for (let i = 0; i < 2; i++) {
             const slot = document.createElement('div');
             slot.className = 'expectation-chart-view-slot';
@@ -88,8 +107,23 @@ class ExpectationChartView {
 
     refresh() {
         if (!this.containerEl || this.containerEl.style.display === 'none') return;
+        this._renderChipStrip();
         this._renderConvergence();
         this._renderHistogram();
+    }
+
+    // Thin wrapper around the shared PolicyChartOverlay.renderChipStrip() (see that file for the
+    // full rationale, incl. why hover deliberately re-renders only _renderConvergence(), not a
+    // full refresh()) - shared verbatim with viChartView.js so a policy hidden/hovered from
+    // either pane behaves identically in both.
+    _renderChipStrip() {
+        PolicyChartOverlay.renderChipStrip(this._chipStripEl, {
+            policyEvaluationState: this.policyEvaluationState,
+            expectationViewModel: this.expectationViewModel,
+            onLogPolicy: this.onLogPolicy,
+            onToggle: () => this.refresh(),
+            onHover: () => this._renderConvergence()
+        });
     }
 
     _renderConvergence() {
@@ -105,11 +139,19 @@ class ExpectationChartView {
         const { mcMeans, mcSEs, viValues, vStar } = ChartDataBuilders.buildConvergenceData(
             this.expectationState, this.valueIterationState);
 
+        const visiblePolicyEntries = PolicyChartOverlay.visibleEntries(this.policyEvaluationState, this.expectationViewModel);
+        const hoveredPolicyId = this.expectationViewModel ? this.expectationViewModel.hoveredPolicyId : null;
+
         const canvas = document.createElement('canvas');
         body.appendChild(canvas);
-        const maxLen = Math.max(mcMeans.length, viValues.length, 1);
+        const maxLen = Math.max(
+            mcMeans.length, viValues.length, 1,
+            ...visiblePolicyEntries.map(e => e.valueCurve.length)
+        );
 
-        const datasets = [];
+        // One dashed line per visible logged policy (policy-logging.md §3) - the exact
+        // E[G]-vs-horizon curve PolicyEvaluationState.evaluateCurve() computed at log time.
+        const datasets = PolicyChartOverlay.buildCurveDatasets(visiblePolicyEntries, hoveredPolicyId);
 
         // +-SE shaded band around the MC line - see chartDock.js's _renderConvergence for the
         // fill-target rationale (lower bound first with fill:false, upper bound right after with
@@ -174,52 +216,23 @@ class ExpectationChartView {
             }
         }
 
-        // Draws a solid dot + the numeric value next to the final point of whichever dataset(s)
-        // are flagged `_labelEndpoint: true` above - Chart.js has no built-in per-point label
-        // support without an extra plugin dependency (none is vendored here), so this is a small
-        // inline plugin scoped to just this chart instance (passed via `plugins:` below, not
-        // Chart.register()'d globally) rather than affecting chartDock's/viChartView's own charts.
-        const endpointPlugin = {
-            id: 'convergenceEndpoint',
-            afterDatasetsDraw(chart) {
-                chart.data.datasets.forEach((ds, i) => {
-                    if (!ds._labelEndpoint || !ds.data || ds.data.length === 0) return;
-                    const meta = chart.getDatasetMeta(i);
-                    const points = meta.data;
-                    if (!points || points.length === 0) return;
-                    const last = points[points.length - 1];
-                    const lastValue = ds.data[ds.data.length - 1];
-                    const y = typeof lastValue === 'object' ? lastValue.y : lastValue;
-                    const ctx = chart.ctx;
-                    ctx.save();
-                    ctx.fillStyle = ds.borderColor;
-                    ctx.beginPath();
-                    ctx.arc(last.x, last.y, 3.5, 0, Math.PI * 2);
-                    ctx.fill();
-                    ctx.font = '600 11px "IBM Plex Mono", Consolas, monospace';
-                    ctx.textBaseline = 'middle';
-                    ctx.textAlign = 'left';
-                    ctx.fillText(y.toFixed(2), last.x + 7, last.y);
-                    ctx.restore();
-                });
-            }
-        };
-
+        // Endpoint dot+label plugin, legend filter, and right-padding are all shared with
+        // viChartView.js's own Convergence chart (see PolicyChartOverlay.js) - kept as ONE
+        // implementation rather than two near-identical copies now that both charts overlay
+        // policy curves.
         this._chartInstances[0] = new Chart(canvas.getContext('2d'), {
             type: 'line',
             data: { datasets },
-            plugins: [endpointPlugin],
+            plugins: [PolicyChartOverlay.createEndpointPlugin()],
             options: {
                 responsive: true, maintainAspectRatio: false, animation: false,
-                layout: { padding: { right: 36 } }, // room for the endpoint plugin's value callout
+                layout: { padding: { right: PolicyChartOverlay.convergenceRightPadding(visiblePolicyEntries.length > 0) } },
                 plugins: {
                     legend: {
                         display: true, position: 'top', align: 'end',
                         labels: {
                             boxWidth: 16, boxHeight: 2, font: { size: 10 }, color: AppPalette.text.muted,
-                            // Hides the invisible +-SE fill-boundary datasets - they exist purely
-                            // to shade the band between them, not meaningful legend entries.
-                            filter: item => item.text && !item.text.includes('SE')
+                            filter: PolicyChartOverlay.legendFilter
                         }
                     }
                 },
@@ -228,9 +241,13 @@ class ExpectationChartView {
                         type: 'linear',
                         ticks: { font: { size: 9 }, color: AppPalette.text.muted, stepSize: 1 },
                         grid: { color: AppPalette.border.chartGrid },
-                        title: { display: true, text: `${maxLen} episodes`, align: 'end', font: { size: 9 }, color: AppPalette.text.muted }
+                        title: { display: true, text: 'Time', align: 'center', font: { size: 9 }, color: AppPalette.text.muted }
                     },
-                    y: { ticks: { font: { size: 9 }, color: AppPalette.text.muted }, grid: { color: AppPalette.border.chartGrid } }
+                    y: {
+                        ticks: { font: { size: 9 }, color: AppPalette.text.muted },
+                        grid: { color: AppPalette.border.chartGrid },
+                        title: { display: true, text: 'Utility', align: 'center', font: { size: 9 }, color: AppPalette.text.muted }
+                    }
                 }
             }
         });
@@ -306,23 +323,139 @@ class ExpectationChartView {
             }
         }
 
+        // Per-policy translucent overlay (policy-logging.md §4) - each visible logged policy gets
+        // its own stepped outline + dashed E[G] marker, binned into the SAME bin edges the live
+        // MC population above already established (not its own [min,max] range), so every overlay
+        // shares one comparable x-axis with the base histogram and with each other.
+        const policyEntries = this.policyEvaluationState ? this.policyEvaluationState.entries : [];
+        const hiddenPolicyIds = this.expectationViewModel ? this.expectationViewModel.hiddenPolicyIds : new Set();
+        const visiblePolicyEntries = policyEntries.filter(e => !hiddenPolicyIds.has(e.id));
+
+        const overlayDatasets = [];
+        const markers = [];
+        visiblePolicyEntries.forEach(entry => {
+            const samples = this._getPolicyHistogramSamples(entry);
+            if (!samples) return;
+            const color = PolicyChartOverlay.policyColor(entry);
+            overlayDatasets.push({
+                type: 'line',
+                label: entry.name || entry.label,
+                data: this._binReturnsInto(samples, bins),
+                borderColor: color,
+                backgroundColor: ColorUtils.applyAlpha(color, 30),
+                borderWidth: 1.5,
+                stepped: true,
+                fill: true,
+                pointRadius: 0
+            });
+            markers.push({ value: entry.valueAtStart, color, label: entry.name || entry.label });
+        });
+
+        // Vertical dashed E[G] marker + name label per visible policy - Chart.js has no built-in
+        // annotation support without an extra plugin (none vendored here), same rationale as
+        // ConvergenceEndpointPlugin above. Snaps to the containing bin's center rather than a
+        // continuous sub-bin pixel position - this chart is already discretized into `binCount`
+        // buckets, so bin-level placement is exactly as precise as the histogram itself.
+        const histogramMarkerPlugin = {
+            id: 'policyHistogramMarkers',
+            afterDatasetsDraw(chart) {
+                const xScale = chart.scales.x;
+                const yScale = chart.scales.y;
+                if (!xScale || !yScale || markers.length === 0) return;
+                const ctx = chart.ctx;
+                markers.forEach(m => {
+                    let idx = bins.findIndex(b => m.value >= b.low && m.value <= b.high);
+                    if (idx === -1) idx = m.value < bins[0].low ? 0 : bins.length - 1;
+                    const x = xScale.getPixelForValue(idx);
+                    ctx.save();
+                    ctx.strokeStyle = m.color;
+                    ctx.lineWidth = 1.5;
+                    ctx.setLineDash([4, 3]);
+                    ctx.beginPath();
+                    ctx.moveTo(x, yScale.top);
+                    ctx.lineTo(x, yScale.bottom);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                    ctx.fillStyle = m.color;
+                    ctx.font = '600 10px "IBM Plex Mono", Consolas, monospace';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'bottom';
+                    ctx.fillText(m.label, x, yScale.top - 3);
+                    ctx.restore();
+                });
+            }
+        };
+
         const canvas = document.createElement('canvas');
         body.appendChild(canvas);
         this._chartInstances[1] = new Chart(canvas.getContext('2d'), {
             type: 'bar',
             data: {
                 labels: bins.map(b => b.label),
-                datasets: [{ data: counts, backgroundColor: bgColors }]
+                datasets: [{ data: counts, backgroundColor: bgColors }, ...overlayDatasets]
             },
+            plugins: [histogramMarkerPlugin],
             options: {
                 responsive: true, maintainAspectRatio: false, animation: false,
+                layout: { padding: { top: markers.length > 0 ? 14 : 0 } },
                 plugins: { legend: { display: false } },
                 scales: {
-                    x: { ticks: { font: { size: 8 }, color: AppPalette.text.muted }, grid: { display: false } },
-                    y: { ticks: { font: { size: 9 }, color: AppPalette.text.muted }, grid: { color: AppPalette.border.chartGrid }, beginAtZero: true }
+                    x: {
+                        ticks: { font: { size: 8 }, color: AppPalette.text.muted },
+                        grid: { display: false },
+                        title: { display: true, text: 'Utility', align: 'center', font: { size: 9 }, color: AppPalette.text.muted }
+                    },
+                    y: {
+                        ticks: { font: { size: 9 }, color: AppPalette.text.muted },
+                        grid: { color: AppPalette.border.chartGrid },
+                        beginAtZero: true,
+                        title: { display: true, text: 'Count', align: 'center', font: { size: 9 }, color: AppPalette.text.muted }
+                    }
                 }
             }
         });
+    }
+
+    // Lazily samples + caches 64 discounted returns for one logged policy's histogram overlay
+    // (policy-logging.md §4) - computed once per entry, on first reveal, then cached directly on
+    // the entry object (entry._histogramSamples) so toggling its chip or scrubbing t never
+    // resamples. Uses the entry's OWN frozen (gamma, maxSteps), not whatever's live now - see
+    // PolicyEvaluationState.addEntry()'s own comment on why those are stored per-entry.
+    _getPolicyHistogramSamples(entry) {
+        if (entry._histogramSamples) return entry._histogramSamples;
+        if (!this.traceGenerator || !this.traceGenerator.graph) return null;
+        const startNode = this.startNodeProvider();
+        if (!startNode) return null;
+
+        const samples = PolicyMcSampler.sampleReturns(this.traceGenerator.graph, this.traceGenerator, startNode, {
+            policy: entry.policySnapshot,
+            policyWeights: entry.policyWeightsSnapshot,
+            timeDependentPolicy: entry.timeDependentPolicySnapshot || null,
+            maxSteps: entry.maxSteps,
+            gamma: entry.gamma,
+            numRuns: 64
+        });
+        entry._histogramSamples = samples;
+        return samples;
+    }
+
+    // Bins raw returns into caller-supplied bin edges (the live MC histogram's own bins, so every
+    // overlay shares one x-axis) - deliberately NOT ChartDataBuilders.buildHistogramData(), which
+    // derives its OWN [min,max] range from expectationState's rollouts; a policy overlay needs to
+    // land in the SAME buckets the base histogram already drew, not its own independent range.
+    _binReturnsInto(returns, bins) {
+        const counts = new Array(bins.length).fill(0);
+        if (bins.length === 0) return counts;
+        const lastIdx = bins.length - 1;
+        const low0 = bins[0].low;
+        const binWidth = (bins[lastIdx].high - low0) / bins.length || 1;
+        returns.forEach(v => {
+            let idx = Math.floor((v - low0) / binWidth);
+            if (idx < 0) idx = 0;
+            if (idx > lastIdx) idx = lastIdx;
+            counts[idx]++;
+        });
+        return counts;
     }
 
     show() {

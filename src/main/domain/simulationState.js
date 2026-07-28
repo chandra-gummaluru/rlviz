@@ -54,7 +54,11 @@ class SimulationState {
         // timeDependentPolicy instead, via resolvePiTAction() below.
         this.piMode = 'stationary';       // 'stationary' | 'timeDependent'
         this.piHorizon = 8;               // shared horizon: episode length cap + backward-induction depth
-        this.timeDependentPolicy = {};    // stateId -> array[piHorizon] of (actionId | 'random')
+        // stateId -> array[piHorizon] of one of: a concrete actionId (deterministic), the
+        // 'random' sentinel (uniform), or a {actionId: rawWeight} object (weighted-random, the
+        // π_t analogue of policyWeights above - see initTimeDependentWeightsUniform/
+        // setTimeDependentWeight/getTimeDependentActionMode below).
+        this.timeDependentPolicy = {};
 
         // Spinning arrow animation settings
         this.spinningArrowEnabled = true;  // Toggle for spinning arrow animation (on by default)
@@ -476,7 +480,18 @@ class SimulationState {
     // 'weighted' mode. Shared by setDecisionProbs() and initStateSpinningArrow().
     _normalizedProbsForState(stateId, validActionIds) {
         if (this.getPolicyMode(stateId) !== 'weighted') return null;
-        const weights = this.policyWeights[stateId];
+        return this._normalizeWeightsObject(this.policyWeights[stateId], validActionIds);
+    }
+
+    // Normalizes an arbitrary {actionId: rawWeight} object (sum-to-1, Number()-keyed), filtered
+    // to actionIds still present on the state - the actual math both _normalizedProbsForState
+    // (Stationary weighted policies) and the time-dependent weighted-slot consumers
+    // (EdgeViewModel._piTEdgeProbability, TraceGenerator, PolicyEvaluationState._actionProbsAtTime)
+    // share, since a π_t weighted slot is shaped exactly like `policyWeights[stateId]` - just
+    // stored at `timeDependentPolicy[stateId][t]` instead. A pure function of its two params -
+    // does not read `this` - so callers may invoke it against any SimulationState instance.
+    _normalizeWeightsObject(weights, validActionIds) {
+        if (!weights) return null;
         const validIds = new Set(validActionIds.map(Number));
 
         let sum = 0;
@@ -495,15 +510,38 @@ class SimulationState {
         return probs;
     }
 
+    // Map<actionId, probability> for one state, under the CURRENT (stationary) policy -
+    // deterministic gets 1.0 on the chosen action, weighted gets the normalized slider weights,
+    // uniform splits evenly. Mirrors EdgeViewModel.policyEdgeProbability's own branching on
+    // getPolicyMode() exactly, so canvas rendering and any consumer of this (PolicyEvaluationState's
+    // evaluate(), ValueIterationState's expectation-mode sweep) never disagree about what the
+    // policy means. Shared single implementation - do not duplicate this branching elsewhere.
+    actionProbsForState(stateId, actions) {
+        const policyMode = this.getPolicyMode(stateId);
+        if (policyMode === 'deterministic') {
+            const chosen = this.getPolicyAction(stateId);
+            const probs = new Map();
+            actions.forEach(a => probs.set(Number(a), Number(a) === Number(chosen) ? 1 : 0));
+            return probs;
+        }
+        if (policyMode === 'weighted') {
+            const probs = this._normalizedProbsForState(stateId, actions);
+            if (probs) return probs;
+        }
+        const uniform = new Map();
+        actions.forEach(a => uniform.set(Number(a), 1 / actions.length));
+        return uniform;
+    }
+
     // Time-dependent policy (π_t) methods - see the field comments above for the storage shape.
     // These are additive: stationary policy/policyWeights are untouched by any of them, so
     // switching piMode back to 'stationary' instantly restores exactly what was there before.
 
     // Switches the active representation. Entering 'timeDependent' seeds any multi-action state
     // not already present in timeDependentPolicy from that state's CURRENT stationary resolution
-    // (deterministic action if set, else the 'random' sentinel) - so a state edited before and
-    // switched away from doesn't lose its time-dependent edits, but a state visited for the first
-    // time starts from something meaningful instead of undefined.
+    // (deterministic action if set, weighted weights copied if set, else the 'random' sentinel) -
+    // so a state edited before and switched away from doesn't lose its time-dependent edits, but
+    // a state visited for the first time starts from something meaningful instead of undefined.
     setPiMode(mode, graph) {
         this.piMode = mode;
         if (mode !== 'timeDependent' || !graph) return;
@@ -511,8 +549,19 @@ class SimulationState {
             const actions = stateNode.actions || [];
             if (actions.length === 0 || this.timeDependentPolicy[stateNode.id]) return;
             const stationaryMode = this.getPolicyMode(stateNode.id);
-            const seed = stationaryMode === 'deterministic' ? this.getPolicyAction(stateNode.id) : 'random';
-            this.timeDependentPolicy[stateNode.id] = Array(this.piHorizon).fill(seed);
+            if (stationaryMode === 'deterministic') {
+                const seed = this.getPolicyAction(stateNode.id);
+                this.timeDependentPolicy[stateNode.id] = Array(this.piHorizon).fill(seed);
+            } else if (stationaryMode === 'weighted') {
+                // Array(n).fill(obj) would share ONE object reference across every t - editing
+                // one timestep's slider would silently mutate every other timestep's weights too.
+                // Each t needs its own independent copy of the stationary weights to seed from.
+                const weights = this.policyWeights[stateNode.id];
+                this.timeDependentPolicy[stateNode.id] =
+                    Array.from({ length: this.piHorizon }, () => ({ ...weights }));
+            } else {
+                this.timeDependentPolicy[stateNode.id] = Array(this.piHorizon).fill('random');
+            }
         });
     }
 
@@ -522,7 +571,10 @@ class SimulationState {
 
     // Resizes every existing time-dependent array to the new horizon: truncates if shorter,
     // extends by repeating the last element if longer (the least surprising default - no new
-    // information exists to fill unedited future timesteps with).
+    // information exists to fill unedited future timesteps with). When the last element is a
+    // weighted-random slot (an object), each newly appended slot gets its OWN copy - reusing the
+    // same object reference across multiple array entries (Array(n).fill(obj)) would make editing
+    // one of the extended timesteps silently edit all of them.
     setPiHorizon(horizon) {
         const h = Math.max(1, Math.floor(horizon));
         this.piHorizon = h;
@@ -533,7 +585,10 @@ class SimulationState {
                 this.timeDependentPolicy[stateId] = seq.slice(0, h);
             } else {
                 const last = seq[seq.length - 1];
-                this.timeDependentPolicy[stateId] = seq.concat(Array(h - seq.length).fill(last));
+                const extension = Array.from({ length: h - seq.length }, () =>
+                    (last && typeof last === 'object') ? { ...last } : last
+                );
+                this.timeDependentPolicy[stateId] = seq.concat(extension);
             }
         });
     }
@@ -575,6 +630,54 @@ class SimulationState {
         if (!seq || seq.length === 0) return null;
         const idx = Math.max(0, Math.min(seq.length - 1, t));
         return seq[idx];
+    }
+
+    // Tri-state read of a single (stateId, t) slot's configuration - mirrors getPolicyMode's
+    // Stationary counterpart, but there's no separate storage to check here: the raw slot value's
+    // own type IS the mode. A concrete actionId -> 'deterministic', a weight object ->
+    // 'weighted', the 'random' sentinel (or no entry at all) -> 'uniform'.
+    getTimeDependentActionMode(stateId, t) {
+        const value = this.getTimeDependentAction(stateId, t);
+        if (value === null || value === undefined || value === 'random') return 'uniform';
+        if (typeof value === 'object') return 'weighted';
+        return 'deterministic';
+    }
+
+    // Weight object at a single (stateId, t) slot, or null if that slot isn't in 'weighted' mode.
+    // Mirrors getPolicyWeights' Stationary counterpart.
+    getTimeDependentWeights(stateId, t) {
+        const value = this.getTimeDependentAction(stateId, t);
+        return (value && typeof value === 'object') ? value : null;
+    }
+
+    // Seeds an equal starting weight for every action the first time a (stateId, t) slot switches
+    // to weighted-random ("Random" in the π_t editor) - mirrors initPolicyWeightsUniform's
+    // Stationary counterpart exactly, just writing into timeDependentPolicy[stateId][t] instead
+    // of policyWeights[stateId].
+    initTimeDependentWeightsUniform(stateId, t, actionIds) {
+        const n = actionIds.length;
+        if (n === 0) return;
+        if (!this.timeDependentPolicy[stateId]) {
+            this.timeDependentPolicy[stateId] = Array(this.piHorizon).fill('random');
+        }
+        const seq = this.timeDependentPolicy[stateId];
+        const idx = Math.max(0, Math.min(seq.length - 1, t));
+        const weights = {};
+        actionIds.forEach(actionId => { weights[actionId] = 1 / n; });
+        seq[idx] = weights;
+    }
+
+    // Sets one action's raw weight within a (stateId, t) weighted-random slot, leaving sibling
+    // actions' weights untouched - mirrors setPolicyWeight's Stationary counterpart exactly.
+    setTimeDependentWeight(stateId, t, actionId, value) {
+        const clamped = Math.max(0, Math.min(1, value));
+        if (!this.timeDependentPolicy[stateId]) {
+            this.timeDependentPolicy[stateId] = Array(this.piHorizon).fill('random');
+        }
+        const seq = this.timeDependentPolicy[stateId];
+        const idx = Math.max(0, Math.min(seq.length - 1, t));
+        if (!seq[idx] || typeof seq[idx] !== 'object') seq[idx] = {};
+        seq[idx][actionId] = clamped;
     }
 
     // Single read path every consumer (TraceGenerator sampling, PolicyEvaluationState's backward

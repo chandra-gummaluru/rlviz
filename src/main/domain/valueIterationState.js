@@ -17,11 +17,24 @@ class ValueIterationState {
         this.gamma = 0.9;
         this.epsilon = 0.01;      // convergence threshold on the max-norm delta
 
+        // 'optimal': the classic Bellman OPTIMALITY backup, V(s) = max_a Q(s,a) - true Value
+        // Iteration, only ever used by the "Find Optimal π" flow (findOptimalCard.js's own
+        // "Run max-a backups" CTA forces this). 'expectation' (the default): the Bellman
+        // EXPECTATION backup, V(s) = sum_a pi(a|s)*Q(s,a), against whatever Policy π is currently
+        // configured - every other entry into Values -> Iteration (known:full only; the two
+        // partial-observability quadrants always force 'optimal', see main.js's ensureVIInitialized).
+        this.runMode = 'expectation';
+
         // history[k] = one full sweep snapshot. history[0] = sweep 0 (init, all V=0).
         //   V:  {stateId -> number}
         //   Q:  {stateId -> [{actionId, actionName, qValue}]}
-        //   policy: {stateId -> actionId|null}  (argmax action; sweep 0 = arbitrary placeholder)
-        //   backupDetails: {stateId -> {actions:[...], bestActionId, value}}
+        //   policy: {stateId -> actionId|null}  (sweep 0 = arbitrary placeholder; thereafter the
+        //     argmax action in 'optimal' mode, or the configured policy's most-favored action in
+        //     'expectation' mode - see computeNextSweep())
+        //   backupDetails: {stateId -> {actions:[{actionId, actionName, qValue, pi, transitions:
+        //     [...]}], bestActionId, value}} - pi is each action's resolved pi(a|s) under
+        //     whatever Policy pi is currently configured ('expectation' mode), or null in
+        //     'optimal' mode (no policy to resolve there).
         //   delta: number|null   (null only for sweep 0; max_s |V^k(s)-V^{k-1}(s)| for k>=1)
         this.history = [];
 
@@ -46,10 +59,11 @@ class ValueIterationState {
      * Initialize sweep 0 (V=0 everywhere). Replaces the old computeHistory() which precomputed
      * the entire T-step backward induction. T here is the MAX SWEEP CAP.
      */
-    initialize(graph, T, gamma, epsilon = 0.01) {
+    initialize(graph, T, gamma, epsilon = 0.01, runMode = 'expectation') {
         this.T = T;
         this.gamma = gamma;
         this.epsilon = epsilon;
+        this.runMode = runMode;
 
         const states = graph.nodes.filter(n => n.type === 'state');
         // Sort states by y-position for a stable top-to-bottom read order (matches the old
@@ -88,8 +102,15 @@ class ValueIterationState {
      * Apply one synchronous Bellman backup, reading V from the previous sweep, and append the new
      * sweep snapshot. Returns the new sweep index. The per-state inner loop is the same Bellman
      * math the old computeHistory used - only the surrounding "when it runs" changed.
+     *
+     * `simulationState` is only consulted in 'expectation' mode (to resolve pi(a|s)) - 'optimal'
+     * mode never reads it, so callers running the two partial-observability quadrants (always
+     * 'optimal') may omit it. Time-dependent (pi_t) policies have no natural per-sweep time index,
+     * so 'expectation' mode always resolves via the STATIONARY representation
+     * (simulationState.actionProbsForState()) even when piMode === 'timeDependent' - an explicit,
+     * deliberate scope cut, not an oversight.
      */
-    computeNextSweep(graph) {
+    computeNextSweep(graph, simulationState) {
         if (!this.initialized) return this.currentSweepIndex;
         const prev = this.history[this.history.length - 1];
         const V_prev = prev.V;
@@ -115,6 +136,17 @@ class ValueIterationState {
             const actionQs = [];
             const actionDetails = [];
 
+            // Resolved BEFORE the per-action loop (not just inside the 'expectation' branch
+            // afterward) so pi(a|s) is available while building actionDetails - the "Substitution"
+            // reveal (viBackupDiagram.js) and the Explain narrator both need each action's own
+            // resolved pi, not just the state's aggregate value. 'optimal' mode has no policy to
+            // resolve (there's no pi in a max_a backup), so actionProbs stays null there and every
+            // action's pi is explicitly null below - consumers branch on this the same way they
+            // already branch on runMode.
+            const actionProbs = this.runMode === 'optimal'
+                ? null
+                : simulationState.actionProbsForState(stateId, stateNode.actions);
+
             stateNode.actions.forEach(actionId => {
                 const actionNode = graph.getNodeById(actionId);
                 if (!actionNode || !actionNode.sas) return;
@@ -135,16 +167,37 @@ class ValueIterationState {
                     });
                 });
 
+                const pi = actionProbs ? (actionProbs.get(Number(actionId)) ?? 0) : null;
                 actionQs.push({ actionId, actionName: actionNode.name, qValue: Q });
-                actionDetails.push({ actionId, actionName: actionNode.name, transitions, qValue: Q });
+                actionDetails.push({ actionId, actionName: actionNode.name, transitions, qValue: Q, pi });
 
-                if (Q > maxQ) {
+                if (this.runMode === 'optimal' && Q > maxQ) {
                     maxQ = Q;
                     bestActionId = actionId;
                 }
             });
 
-            const value = maxQ === -Infinity ? 0 : maxQ;
+            let value;
+            if (this.runMode === 'optimal') {
+                value = maxQ === -Infinity ? 0 : maxQ;
+            } else {
+                // Bellman EXPECTATION backup: V(s) = sum_a pi(a|s)*Q(s,a) against whatever Policy
+                // pi is currently configured. bestActionId here is the action the configured
+                // policy most favors (deterministic -> that action; weighted -> the highest-weight
+                // action; uniform -> the first action) - the same field every consumer (Q-table
+                // "best" star, viBackupDiagram.js, viEquationView.js's reveal) already reads
+                // generically via getBestAction()/getBackupDetail(), so it "just works" here too.
+                value = 0;
+                let bestProb = -1;
+                actionQs.forEach(aq => {
+                    const p = actionProbs.get(Number(aq.actionId)) ?? 0;
+                    value += p * aq.qValue;
+                    if (p > bestProb) {
+                        bestProb = p;
+                        bestActionId = aq.actionId;
+                    }
+                });
+            }
             V_curr[stateId] = value;
             Q_curr[stateId] = actionQs;
             policy_curr[stateId] = bestActionId;

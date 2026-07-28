@@ -11,10 +11,14 @@
 // Optimal" (continuousPlay()) and the other 3 quadrants' Step/Skip still go through
 // animateOneSweep()/stepOneSweep() exactly as before.
 class VIAnimator {
-    constructor(viState, outputBoundary, graph, options = {}) {
+    constructor(viState, outputBoundary, graph, simulationState, options = {}) {
         this.viState = viState;
         this.outputBoundary = outputBoundary;
         this.graph = graph;
+        // Only consulted by computeNextSweep() in 'expectation' mode, to resolve pi(a|s) against
+        // whatever Policy π is currently configured - see ValueIterationState.computeNextSweep()'s
+        // own doc comment.
+        this.simulationState = simulationState;
         // Between-sweep pause AND the beat's own pulse duration are both wired to the
         // animation-speed slider in main.js. Fall back to sensible defaults so the animator
         // works even if no getter is supplied.
@@ -78,7 +82,7 @@ class VIAnimator {
      */
     async animateOneSweep(durationMs = this.getBeatMs()) {
         await this.awaitReveal();
-        this.viState.computeNextSweep(this.graph);
+        this.viState.computeNextSweep(this.graph, this.simulationState);
         this.outputBoundary.presentSweepComplete(this.viState.currentSweepIndex);
         await this.awaitReveal();
         await this._sleep(durationMs);

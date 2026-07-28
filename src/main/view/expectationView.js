@@ -512,6 +512,22 @@ class ExpectationView {
         }
         vm.isPlaying = true;
         if (this.onPlaybackStateChange) this.onPlaybackStateChange(true);
+
+        // "Animations · per mode" (Monte Carlo) off - jump straight to the fully-revealed end
+        // state instead of ticking through _scheduleNextTick(); reuses the exact instant-jump
+        // scrubber-drag/selectRun() already use (_graphPanelReveal = null cancels the fade/
+        // travel-ball reveal), then finishes via the same stopPlay() _scheduleNextTick() itself
+        // calls once currentT reaches maxT.
+        if (!this.viewModel.mcAnimationEnabled) {
+            state.currentT = state.maxT;
+            this._graphPanelReveal = null;
+            this._syncScrubber();
+            if (typeof redraw === 'function') redraw();
+            this._notifyDataChanged();
+            this.stopPlay();
+            return;
+        }
+
         this._scheduleNextTick();
     }
 

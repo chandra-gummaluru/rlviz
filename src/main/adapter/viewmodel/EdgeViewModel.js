@@ -93,14 +93,23 @@ class EdgeViewModel {
     }
 
     // Shared resolution for a time-dependent policy snapshot (live or previewed) at a given t -
-    // concrete action gets 1.0 on the matching edge, 'random'/no-entry means uniform across the
-    // state's actions (nothing highlighted, mirroring the stationary 'uniform' case above).
+    // concrete action gets 1.0 on the matching edge, a weighted-random slot returns its
+    // normalized per-edge share (mirroring the stationary 'weighted' case above),
+    // 'random'/no-entry means uniform across the state's actions (nothing highlighted, mirroring
+    // the stationary 'uniform' case above).
     _piTEdgeProbability(timeDependentPolicy, from, to, t) {
         const seq = timeDependentPolicy[from.id];
         if (!seq || seq.length === 0) return null;
         const idx = Math.max(0, Math.min(seq.length - 1, t));
         const action = seq[idx];
         if (action === 'random' || action === null || action === undefined) return null;
+        if (typeof action === 'object') {
+            // _normalizeWeightsObject is a pure function of its two params (doesn't read
+            // instance state) - safe to call against the live simulationState here even when
+            // resolving a PREVIEWED snapshot rather than the live timeDependentPolicy.
+            const probs = this.simulationState._normalizeWeightsObject(action, from.actions || []);
+            return probs ? (probs.get(Number(to.id)) ?? null) : null;
+        }
         return Number(action) === Number(to.id) ? 1.0 : null;
     }
 

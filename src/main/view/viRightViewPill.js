@@ -8,8 +8,11 @@
 // directly on viLeftViewPill.js's DOM/CSS skeleton (that file itself is now unused, kept for the
 // same reason). Right-edge anchored (moved from its original left-edge placement) so it clears
 // the Q-table/Convergence chart cards' own header row in the Chart state.
+// 'equation' is relabeled "Explain" (handoff 2's plain-language narrator, see viEquationView.js -
+// the internal key stays 'equation' everywhere else in the codebase; only this button's label
+// changed, to avoid touching every rightView === 'equation' check for a purely cosmetic rename).
 const VI_RIGHT_VIEW_PILL_OPTIONS = [
-    { key: 'equation', label: 'Equation' },
+    { key: 'equation', label: 'Explain' },
     { key: 'backward', label: 'Backward' },
     { key: 'chart',    label: 'Chart' }
 ];

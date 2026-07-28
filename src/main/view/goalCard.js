@@ -105,11 +105,16 @@ class GoalCard {
 
         const startNode = this.viewModel.startNode;
         const startName = startNode ? startNode.name : 'S₀';
-        const equationKey = startName;
+        // CanvasController.restorePolicyFromLog() sets this to the LaTeX label of whichever
+        // Policy log entry was last restored (e.g. "\pi_{\text{policy_1}}" or
+        // "\pi^{*}_{\text{optimal-1}}"), and every direct policy edit invalidates it back to null
+        // - falls back to a generic \pi when no named policy is currently active.
+        const policySuperscript = this.viewModel.activePolicyLabel || '\\pi';
+        const equationKey = `${startName}::${policySuperscript}`;
         if (this._lastEquationKey !== equationKey) {
             this._lastEquationKey = equationKey;
             this.equationEl.innerHTML = renderKatex(
-                `V^{\\pi}(${this._latexEscapeName(startName)}) = E[\\,G \\mid S = ${this._latexEscapeName(startName)}\\,]`,
+                `V^{${policySuperscript}}(${this._latexEscapeName(startName)}) = E[\\,G \\mid S = ${this._latexEscapeName(startName)}\\,]`,
                 true
             );
         }
