@@ -196,17 +196,25 @@ Graph]` toggle's **Graph** option (`ValueIterationView.draw()`'s live MDP graph 
 dropped from the pill entirely in an earlier redesign - the code path is kept, just unreachable
 from the UI (see `mainView.js` draw()'s own comment).
 
-Iteration's stop condition is convergence-based, not sweep-count-based (Evaluate redesign Phase 4):
-`ValueIterationState.epsilon` (user-editable via a slider in the Method panel's Parameters section,
-`RightPanel._renderEpsilonSlider()`, range 0.001–0.5, default 0.01, shown only for the three
-quadrants that run a real Bellman sweep) is compared against each sweep's max-norm delta; `T` (the
-`topBar.js` `T =` input) is a **safety cap** ("stop after N iterations if not converged"), not a
-target sweep count. No UI copy anywhere says "sweep" - the floating status chip
-(`viSweepChip.js`), the Parameters/Convergence sections, and the pre-init canvas placeholder all
-lead with the Δ-vs-ε comparison instead (`k=` is used for the plain iteration index, matching the
-Q-table's own column headers). Epsilon is read once at VI-init time (`main.js`'s
-`ensureVIInitialized()`), same as γ - changing the slider has no retroactive effect on an
-already-running sweep, only on the next Reset + Run.
+Iteration's stop condition is an explicit **Infinite Time vs Finite Time** choice, not
+convergence-based (a later revision of the original ε-convergence Phase 4 design):
+`ValueIterationState.timeMode` (`'finite' | 'infinite'`, user-editable via a segmented toggle in
+the Method panel's Parameters section, `RightPanel._renderTimeModeToggle()`, shown only for the
+three quadrants that run a real Bellman sweep) selects between **Infinite Time** (no cap at all —
+Play runs until manually paused/reset) and **Finite Time** (`T`, the `_renderTSlider()` slider, is
+an exact horizon - Play/Step/Skip stop at precisely `T` sweeps). There is no epsilon/convergence
+concept anywhere in this subsystem anymore; `computeNextSweep()` still records each sweep's
+max-norm delta, but purely as an informational readout, not a stop condition. In Finite Time mode,
+every sweep-index display (`viSweepChip.js`, the Method panel's Iteration/Δ sections, States
+view's `t = k` section headers, the Chart view's Q-table columns) counts DOWN from `T` to `0` via
+`ValueIterationState.displaySweepIndex()` - `t=T` is the untouched sweep-0 `V=0`, `t=0` is the
+final, most-refined sweep - matching `evaluateTimeIndexed()`/π_t's own `V_horizon(s)=0 → V_0`
+convention; Infinite Time mode counts up from 0 as before. "Find Optimal π" always forces Finite
+Time regardless of the panel's own toggle (`main.js`'s `ensureVIInitialized()`), since it relies on
+`presentComplete()`/`onComplete` firing to name the resulting policy, which Infinite Time would
+never do. `timeMode`/`T`/γ are all read once at VI-init time (`main.js`'s `ensureVIInitialized()`)
+- changing the toggle/slider has no retroactive effect on an already-running sweep, only on the
+next Reset + Run.
 
 ### Monte Carlo (Values → mc)
 
@@ -225,10 +233,13 @@ easy to conflate with either if you haven't read its own doc comment first:
   sampling rollouts under whichever policy π is currently configured and averaging the discounted
   return.
 - **Evaluate π's V^π** — an *exact*, current-policy-specific value, obtained via the Bellman
-  *expectation* equation (`sum_a pi(a|s) * ...` — no `max_a` anywhere) iterated to convergence for
-  the SAME fixed π Monte Carlo is sampling, just computed exactly instead of sampled.
+  *expectation* equation (`sum_a pi(a|s) * ...` — no `max_a` anywhere), for the SAME fixed π Monte
+  Carlo is sampling, just computed exactly instead of sampled. `evaluate()` (stationary π) has no
+  epsilon/convergence check - it always runs a fixed, large sweep count (an Infinite Time
+  approximation of the infinite-horizon fixed point); `evaluateTimeIndexed()` (π_t) is the Finite
+  Time case, already horizon-bounded via backward induction with no epsilon of its own.
 
-`PolicyEvaluationState.evaluate(graph, simulationState, startStateId, gamma, epsilon)` reuses
+`PolicyEvaluationState.evaluate(graph, simulationState, startStateId, gamma)` reuses
 `SimulationState.getPolicyMode()` / `.getPolicyAction()` / `._normalizedProbsForState()` verbatim —
 the same weighting logic `EdgeViewModel.policyEdgeProbability` and Build/Policy's own simulation
 already use — so the evaluator and the canvas rendering can never disagree about what "the current

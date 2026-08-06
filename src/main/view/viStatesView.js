@@ -266,7 +266,7 @@ class ViStatesView {
 
         const header = document.createElement('div');
         header.className = 'vi-states-view-section-header';
-        header.textContent = `t = ${sweepIndex}`;
+        header.textContent = `t = ${this.viState.displaySweepIndex(sweepIndex)}`;
         section.appendChild(header);
         header.addEventListener('click', (e) => {
             e.stopPropagation();

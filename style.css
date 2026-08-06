@@ -2732,12 +2732,44 @@ input[type="range"]::-moz-range-thumb {
   color: var(--text-muted);
 }
 
-.vi-sweep-chip--unconverged .vi-sweep-chip-value {
+.vi-sweep-chip--running .vi-sweep-chip-value {
   color: var(--accent-yellow);
 }
 
-.vi-sweep-chip--converged .vi-sweep-chip-value {
+.vi-sweep-chip--done .vi-sweep-chip-value {
   color: var(--reward-positive, var(--accent-teal));
+}
+
+/* Infinite Time | Finite Time segmented toggle, Method panel's Parameters section - mirrors
+   .policy-det-random-toggle/.policy-det-random-btn's own sizing/border conventions rather than
+   inventing a new visual language, but kept as its own classes since this toggle isn't
+   policy-specific. */
+.vi-time-mode-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border-input, var(--border-medium));
+  border-radius: var(--radius-btn, 4px);
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+
+.vi-time-mode-btn {
+  font-family: var(--font-family);
+  font-size: 10px;
+  font-weight: 500;
+  padding: 3px 8px;
+  border: none;
+  background: var(--surface-btn, var(--bg-white));
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.vi-time-mode-btn:not(:first-child) {
+  border-left: 1px solid var(--border-input, var(--border-medium));
+}
+
+.vi-time-mode-btn--active {
+  background: var(--color-primary);
+  color: var(--color-primary-contrast, var(--text-white));
 }
 
 /* ── Bottom chart dock ────────────────────────────────────────────────── */

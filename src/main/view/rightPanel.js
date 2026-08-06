@@ -51,15 +51,18 @@ class RightPanel {
         // Discount factor (gamma) for MDP - editable
         this.discountFactor = RP_DEFAULT_DISCOUNT;
 
-        // Value Iteration's convergence threshold (ε) - editable, read once by
-        // main.js's ensureVIInitialized() the same way discountFactor is (see _renderEpsilonSlider).
-        this.viEpsilon = 0.01;
+        // Value Iteration's stop condition: 'finite' (T is an exact horizon - Play/Step stop at
+        // exactly T sweeps) or 'infinite' (no cap at all - Play runs until manually paused/reset).
+        // Editable via the segmented toggle in the Method panel's Parameters section (see
+        // _renderTimeModeToggle()), read once by main.js's ensureVIInitialized() the same "next
+        // Reset+Run" way discountFactor/viT are.
+        this.viTimeMode = 'finite';
 
-        // Value Iteration's safety cap (T, "Max steps") - stop after this many sweeps even if not
-        // converged. Used to live as a number input in the top bar ("T = [8]"); moved into the
-        // Method panel's Parameters section alongside γ/ε (see _renderTSlider) so every VI
-        // parameter lives in one place. Same "read once by ensureVIInitialized() at the next
-        // Reset+Run" semantics as viEpsilon/discountFactor.
+        // Value Iteration's exact horizon (T, "Max steps") in Finite Time mode - Play/Step/Skip
+        // stop here. Used to live as a number input in the top bar ("T = [8]"); moved into the
+        // Method panel's Parameters section alongside γ/the time-mode toggle (see _renderTSlider)
+        // so every VI parameter lives in one place. Same "read once by ensureVIInitialized() at
+        // the next Reset+Run" semantics as viTimeMode/discountFactor.
         this.viT = 8;
 
 
@@ -476,7 +479,7 @@ class RightPanel {
         horizonSlider.elt.addEventListener('change', () => {
             const h = parseInt(horizonSlider.value(), 10);
             this.controller.setPiHorizon(h);
-            // Linked with VI's own T (safety cap) slider while π_t is the active representation -
+            // Linked with VI's own Finite Time T slider while π_t is the active representation -
             // a time-dependent policy's horizon IS the sweep count a matching VI run needs (same
             // 1-20 range on both sliders), so keep them equal rather than requiring the user to
             // separately set both. See _renderTSlider's own half of this link.
@@ -1046,9 +1049,9 @@ class RightPanel {
         const matrixEntry = ValuesMethodMatrix.resolve(modelKnown, observability);
         const matrixKey = ValuesMethodMatrix.key(modelKnown, observability);
 
-        // Header row: title top-left, ε-convergence stop condition right-aligned on the same
-        // line - only for the three quadrants that run a real Bellman sweep; Learning Iteration
-        // renders its own title inside _renderLearningIterationPanel.
+        // Header row: title top-left, time-mode/sweep status right-aligned on the same line -
+        // only for the three quadrants that run a real Bellman sweep; Learning Iteration renders
+        // its own title inside _renderLearningIterationPanel.
         if (liKey !== 'unknown:full') this._renderMethodPanelHeader(matrixEntry, viState);
 
         // Values mode's own top-of-panel Parameters section (shared γ, used by Simulate/VI) -
@@ -1060,12 +1063,14 @@ class RightPanel {
             paramsDiv.parent(this.contentContainer);
             paramsDiv.addClass('panel-section-content');
             this._renderGammaSlider(paramsDiv);
-            // ε/T only make sense for the three quadrants that run a real Bellman sweep to
-            // convergence - Learning Iteration has no epsilon/convergence/sweep-cap concept at
-            // all (it runs Q-learning episodes instead).
+            // The time-mode toggle/T only make sense for the three quadrants that run a real
+            // Bellman sweep - Learning Iteration has no stop-condition/sweep-cap concept at all
+            // (it runs Q-learning episodes instead).
             if (liKey !== 'unknown:full') {
-                this._renderEpsilonSlider(paramsDiv);
-                this._renderTSlider(paramsDiv);
+                this._renderTimeModeToggle(paramsDiv);
+                if (this.viTimeMode === 'finite') {
+                    this._renderTSlider(paramsDiv);
+                }
             }
         });
 
@@ -1113,7 +1118,7 @@ class RightPanel {
         this._renderPolicyLog();
     }
 
-    // Safety cap + current iteration count. Split out of _renderMethodPanel() so it can be
+    // Time mode + current iteration count. Split out of _renderMethodPanel() so it can be
     // rendered above Policy π instead of below it, without duplicating the unknown:full/
     // explanation-mode guards that gate it.
     _renderIterationSection(viState) {
@@ -1123,19 +1128,25 @@ class RightPanel {
             iterDiv.parent(this.contentContainer);
             iterDiv.addClass('panel-section-content');
 
-            const capLine = createDiv(`<strong>Safety cap:</strong> stop after ${viState.T} iterations if not converged`);
+            const capText = viState.timeMode === 'infinite'
+                ? '<strong>Infinite Time:</strong> no cap — runs until manually paused/reset'
+                : `<strong>Finite Time:</strong> stops after exactly ${viState.T} iterations`;
+            const capLine = createDiv(capText);
             capLine.parent(iterDiv);
             capLine.style('margin-bottom', '4px');
 
-            const progressLine = createDiv(`<strong>Iteration:</strong> ${viState.currentSweepIndex}`);
+            const progressText = viState.timeMode === 'finite'
+                ? `<strong>Iteration:</strong> ${viState.currentSweepIndex} (t = ${viState.displaySweepIndex()})`
+                : `<strong>Iteration:</strong> ${viState.currentSweepIndex}`;
+            const progressLine = createDiv(progressText);
             progressLine.parent(iterDiv);
             progressLine.style('margin-bottom', '4px');
         });
     }
 
-    // Convergence - the "converged" check is real (live max-norm delta from the synchronous
-    // Bellman sweep); the sweep/episode/vector framing per quadrant is illustrative for
-    // LI/BI/PO-L, same precedent as Learning Iteration's existing "no real algorithm" framing.
+    // Per-sweep magnitude of change - a purely informational readout now (no threshold/
+    // convergence check attached); the sweep/episode/vector framing per quadrant is illustrative
+    // for LI/BI/PO-L, same precedent as Learning Iteration's existing "no real algorithm" framing.
     // Status is right-aligned on the section title's own row, mirroring the panel header's
     // title/status treatment above. Split out of _renderMethodPanel() for the same reason as
     // _renderIterationSection() above.
@@ -1145,7 +1156,7 @@ class RightPanel {
         convRow.parent(this.contentContainer);
         convRow.addClass('panel-section-title-row');
 
-        const convLabel = createDiv('Convergence');
+        const convLabel = createDiv('Δ (change)');
         convLabel.parent(convRow);
         convLabel.addClass('panel-section-title');
 
@@ -1153,8 +1164,8 @@ class RightPanel {
         const convStatus = createDiv();
         convStatus.parent(convRow);
         convStatus.addClass('panel-title-row-status');
-        if (viState.converged) {
-            convStatus.html(`✓ converged Δ &lt; ${viState.epsilon.toFixed(2)}`);
+        if (viState.timeMode === 'finite' && viState.currentSweepIndex >= viState.T) {
+            convStatus.html('✓ done');
             convStatus.style('color', 'var(--reward-positive)');
         } else if (delta === null) {
             convStatus.html('Δ = — (init)');
@@ -1177,10 +1188,10 @@ class RightPanel {
         }
     }
 
-    // Header row for the three real-Bellman quadrants: title top-left, and the ε-convergence
-    // stop condition (Δ vs ε) as compact inline LaTeX, right-aligned on the same line. Replaces
-    // the old separate title/equation/Action-Values blocks - that detail now lives in the
-    // canvas's Equation/Chart views instead of being duplicated here.
+    // Header row for the three real-Bellman quadrants: title top-left, and the time-mode-aware
+    // sweep status as compact inline LaTeX, right-aligned on the same line. Replaces the old
+    // separate title/equation/Action-Values blocks - that detail now lives in the canvas's
+    // Equation/Chart views instead of being duplicated here.
     _renderMethodPanelHeader(matrixEntry, viState) {
         const headerRow = createDiv();
         headerRow.parent(this.contentContainer);
@@ -1196,14 +1207,14 @@ class RightPanel {
         status.parent(headerRow);
         status.addClass('panel-title-row-status');
 
-        const delta = viState.getDelta(viState.currentSweepIndex);
-        if (viState.converged) {
-            status.elt.innerHTML = renderKatex('\\Delta < \\epsilon');
+        const k = viState.currentSweepIndex;
+        if (viState.timeMode === 'infinite' || k === 0) {
+            status.elt.innerHTML = renderKatex(`k = ${k}`);
+        } else if (k >= viState.T) {
+            status.elt.innerHTML = renderKatex('t = 0');
             status.style('color', 'var(--reward-positive)');
-        } else if (delta === null) {
-            status.elt.innerHTML = renderKatex('k = 0');
         } else {
-            status.elt.innerHTML = renderKatex('\\Delta \\geq \\epsilon');
+            status.elt.innerHTML = renderKatex(`t = ${viState.displaySweepIndex(k)}`);
             status.style('color', 'var(--accent-yellow)');
         }
     }
@@ -1477,52 +1488,50 @@ class RightPanel {
         });
     }
 
-    // Same row layout/fill-pct pattern as _renderGammaSlider, but bound to this.viEpsilon -
-    // Value Iteration's convergence threshold. Only rendered for the three quadrants that run a
-    // real Bellman sweep (see renderValueIterationPanel's liKey gate). Like γ, a change here is
-    // read once by main.js's ensureVIInitialized() at the next Reset+Run - it does not retroact
-    // into an already-running sweep (see the Phase 4 design doc's "epsilon slider" decision).
-    _renderEpsilonSlider(parentDiv) {
-        const row = createDiv();
-        row.parent(parentDiv);
-        row.addClass('panel-param-row');
+    // Infinite Time | Finite Time segmented toggle, top of the Method panel's Parameters section
+    // (replaces the old ε-convergence slider). Own CSS classes (not _renderPiModeToggle()'s
+    // policy-* ones) since this toggle lives in an unrelated section, but mirrors its visual
+    // language for consistency. Only rendered for the three quadrants that run a real Bellman
+    // sweep (see renderValueIterationPanel's liKey gate). Like γ/T, a change here is read once by
+    // main.js's ensureVIInitialized() at the next Reset+Run - it does not retroact into an
+    // already-running sweep.
+    _renderTimeModeToggle(parentDiv) {
+        const toggle = createDiv();
+        toggle.parent(parentDiv);
+        toggle.addClass('vi-time-mode-toggle');
 
-        const label = createDiv('ε');
-        label.parent(row);
-        label.addClass('panel-param-row-label');
+        const isFinite = this.viTimeMode === 'finite';
 
-        const slider = createElement('input');
-        slider.parent(row);
-        slider.attribute('type', 'range');
-        slider.attribute('min', '0.001');
-        slider.attribute('max', '0.5');
-        slider.attribute('step', '0.001');
-        slider.attribute('value', String(this.viEpsilon));
-        slider.addClass('panel-param-row-slider');
-        slider.elt.addEventListener('mousedown', e => e.stopPropagation());
-        slider.elt.addEventListener('click', e => e.stopPropagation());
-        slider.elt.style.setProperty('--fill', (this.viEpsilon - 0.001) / (0.5 - 0.001));
-
-        const value = createDiv(this.viEpsilon.toFixed(3));
-        value.parent(row);
-        value.addClass('panel-param-row-value');
-
-        slider.input(() => {
-            const eps = parseFloat(slider.value());
-            this.viEpsilon = eps;
-            value.html(eps.toFixed(3));
-            slider.elt.style.setProperty('--fill', (eps - 0.001) / (0.5 - 0.001));
+        const infBtn = createButton('Infinite Time');
+        infBtn.parent(toggle);
+        infBtn.addClass('vi-time-mode-btn');
+        if (!isFinite) infBtn.addClass('vi-time-mode-btn--active');
+        infBtn.mousePressed(() => {
+            if (this.viTimeMode !== 'infinite') {
+                this.viTimeMode = 'infinite';
+                this.updateContent();
+                if (typeof redraw === 'function') redraw();
+            }
         });
-        slider.elt.addEventListener('change', () => {
-            this.updateContent();
-            if (typeof redraw === 'function') redraw();
+
+        const finBtn = createButton('Finite Time');
+        finBtn.parent(toggle);
+        finBtn.addClass('vi-time-mode-btn');
+        if (isFinite) finBtn.addClass('vi-time-mode-btn--active');
+        finBtn.mousePressed(() => {
+            if (this.viTimeMode !== 'finite') {
+                this.viTimeMode = 'finite';
+                this.updateContent();
+                if (typeof redraw === 'function') redraw();
+            }
         });
     }
 
-    // Same row layout/fill-pct pattern as _renderEpsilonSlider, but bound to this.viT - Value
-    // Iteration's sweep safety cap (formerly the top bar's "T = [8]" number input, moved here so
-    // every VI parameter lives in one place - see this.viT's own comment). Same "read once by
-    // ensureVIInitialized() at the next Reset+Run" semantics as γ/ε.
+    // Same row layout/fill-pct pattern as _renderGammaSlider, but bound to this.viT - Value
+    // Iteration's exact Finite Time horizon (formerly the top bar's "T = [8]" number input, moved
+    // here so every VI parameter lives in one place - see this.viT's own comment). Only rendered
+    // in Finite Time mode. Same "read once by ensureVIInitialized() at the next Reset+Run"
+    // semantics as γ/the time-mode toggle.
     _renderTSlider(parentDiv) {
         const row = createDiv();
         row.parent(parentDiv);
@@ -1531,7 +1540,7 @@ class RightPanel {
         const label = createDiv('T');
         label.parent(row);
         label.addClass('panel-param-row-label');
-        label.attribute('title', 'Safety cap — Iteration stops here even if it has not converged');
+        label.attribute('title', 'Exact horizon — Iteration stops here');
 
         const slider = createElement('input');
         slider.parent(row);

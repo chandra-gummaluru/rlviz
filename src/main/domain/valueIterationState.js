@@ -13,9 +13,10 @@ class ValueIterationState {
     reset() {
         this.stateIds = [];       // ordered list of state IDs (stable read order)
         this.stateNames = {};     // stateId -> name
-        this.T = 0;               // MAX SWEEPS CAP (hard stop for Play/Step), not an exact horizon
+        this.T = 0;               // Finite Time horizon (exact stop for Play/Step); unused in Infinite Time
         this.gamma = 0.9;
-        this.epsilon = 0.01;      // convergence threshold on the max-norm delta
+        this.timeMode = 'finite'; // 'finite': hard-stop at exactly T sweeps. 'infinite': no cap - Play
+                                   // runs until manually paused/reset.
 
         // 'optimal': the classic Bellman OPTIMALITY backup, V(s) = max_a Q(s,a) - true Value
         // Iteration, only ever used by the "Find Optimal π" flow (findOptimalCard.js's own
@@ -35,14 +36,13 @@ class ValueIterationState {
         //     [...]}], bestActionId, value}} - pi is each action's resolved pi(a|s) under
         //     whatever Policy pi is currently configured ('expectation' mode), or null in
         //     'optimal' mode (no policy to resolve there).
-        //   delta: number|null   (null only for sweep 0; max_s |V^k(s)-V^{k-1}(s)| for k>=1)
+        //   delta: number|null   (null only for sweep 0; max_s |V^k(s)-V^{k-1}(s)| for k>=1) - a
+        //     purely informational readout now (no threshold/convergence semantics attached).
         this.history = [];
 
         this.currentSweepIndex = 0;   // index of the latest computed sweep (== history.length-1)
         this.initialized = false;
         this.isPlaying = false;
-        this.converged = false;       // sticky: set true the first time delta < epsilon, never unset
-        this.convergedAtSweep = null;
 
         // Phase-timing fields kept only for the explanation-card tween machinery (buildExplanationDetail
         // overrides them); the live sweep animator no longer drives a phase state machine.
@@ -57,12 +57,12 @@ class ValueIterationState {
 
     /**
      * Initialize sweep 0 (V=0 everywhere). Replaces the old computeHistory() which precomputed
-     * the entire T-step backward induction. T here is the MAX SWEEP CAP.
+     * the entire T-step backward induction. T is the Finite Time horizon (ignored in Infinite Time).
      */
-    initialize(graph, T, gamma, epsilon = 0.01, runMode = 'expectation') {
+    initialize(graph, T, gamma, timeMode = 'finite', runMode = 'expectation') {
         this.T = T;
         this.gamma = gamma;
-        this.epsilon = epsilon;
+        this.timeMode = timeMode;
         this.runMode = runMode;
 
         const states = graph.nodes.filter(n => n.type === 'state');
@@ -94,8 +94,6 @@ class ValueIterationState {
         this.currentSweepIndex = 0;
         this.initialized = true;
         this.isPlaying = false;
-        this.converged = false;
-        this.convergedAtSweep = null;
     }
 
     /**
@@ -214,23 +212,15 @@ class ValueIterationState {
         this.history.push({ V: V_curr, Q: Q_curr, policy: policy_curr, backupDetails: detail_curr, delta });
         this.currentSweepIndex = this.history.length - 1;
 
-        // Sticky convergence: latch on the first sweep under threshold; never un-latch on later
-        // floating-point noise.
-        if (!this.converged && delta < this.epsilon) {
-            this.converged = true;
-            this.convergedAtSweep = this.currentSweepIndex;
-        }
-
         return this.currentSweepIndex;
     }
 
     /**
-     * Hard cap shared by Play AND Step: only the T cap stops advancement. Convergence does NOT
-     * block Step (stepping past convergence just re-confirms the fixed point); Play chooses to
-     * stop at convergence separately in its own loop.
+     * Hard cap shared by Play AND Step. Infinite Time never stops (the user pauses/resets
+     * manually); Finite Time stops exactly at T sweeps.
      */
     canAdvance() {
-        return this.initialized && this.currentSweepIndex < this.T;
+        return this.initialized && (this.timeMode === 'infinite' || this.currentSweepIndex < this.T);
     }
 
     /**
@@ -239,13 +229,22 @@ class ValueIterationState {
      * pre-init/post-init distinction can't silently drift apart between call sites again.
      * Before the first Run/Reset-triggered initialize(), Play/Step/Skip must stay enabled so the
      * user can kick off the first run (see onVIPlay/onVIStep/onVISkip's ensureVIInitialized()) -
-     * only once initialized does canAdvance()/converged actually gate them.
+     * only once initialized does canAdvance() actually gate them.
      */
     getButtonEnablement() {
         const canAdvance = this.canAdvance();
         const canStep = !this.initialized || canAdvance;
-        const canPlay = !this.initialized || (canAdvance && !this.converged);
+        const canPlay = !this.initialized || canAdvance;
         return { canStep, canPlay };
+    }
+
+    /**
+     * Display label for a sweep index. Infinite Time counts up (0,1,2,...) same as the raw index.
+     * Finite Time counts DOWN from T to 0 (t=T at the untouched sweep-0 V=0, t=0 at the final,
+     * most-refined sweep) - matching evaluateTimeIndexed()/pi_t's V_horizon=0 -> V_0 convention.
+     */
+    displaySweepIndex(sweepIndex = this.currentSweepIndex) {
+        return this.timeMode === 'finite' ? (this.T - sweepIndex) : sweepIndex;
     }
 
     /** Total number of sweep snapshots (sweep 0 .. currentSweepIndex). */

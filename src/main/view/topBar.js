@@ -921,13 +921,13 @@ class TopBar {
         }
     }
 
-    // canStep: can advance (T cap only in the 3 non-diagram quadrants; "does the live sweep have
-    // an un-revealed state left" in known:full - see ViStatesView.canRevealNextState()). canPlay:
-    // "Find Optimal"'s own enablement (canStep AND not yet converged in the non-diagram
-    // quadrants; always just the T cap in known:full, independent of per-state reveal progress -
-    // see ViStatesView.canSkipCurrentState()). canSkip defaults to canStep, keeping every
-    // pre-existing 3-arg call site (the other 3 quadrants + Learning Iteration, where Step and
-    // Skip always share the same enablement) unchanged.
+    // canStep: can advance (Finite Time's T cap, or never in Infinite Time, in the 3 non-diagram
+    // quadrants; "does the live sweep have an un-revealed state left" in known:full - see
+    // ViStatesView.canRevealNextState()). canPlay: "Find Optimal"'s own enablement (same as
+    // canStep in the non-diagram quadrants; always just canAdvance() in known:full, independent
+    // of per-state reveal progress - see ViStatesView.canSkipCurrentState()). canSkip defaults to
+    // canStep, keeping every pre-existing 3-arg call site (the other 3 quadrants + Learning
+    // Iteration, where Step and Skip always share the same enablement) unchanged.
     updateVIButtonStates(isPlaying, canStep, canPlay = canStep, canSkip = canStep) {
         if (isPlaying) {
             this.setVIPlayPauseMode('pause');

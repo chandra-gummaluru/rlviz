@@ -3,7 +3,9 @@
 // ValueIterationState's own "owns history + owns the Bellman backup" shape.
 //
 // evaluate() iterates the Bellman EXPECTATION backup - V(s) = sum_a pi(a|s) * sum_s' P(s'|s,a) *
-// [R + gamma*V(s')] - to convergence. There is NO max_a anywhere here: pi(a|s) comes from
+// [R + gamma*V(s')] - for a fixed, always-run number of sweeps (an Infinite Time approximation of
+// the stationary policy's infinite-horizon fixed point; well-behaved MDPs with gamma < 1 settle
+// far sooner, but there is no early-exit check). There is NO max_a anywhere here: pi(a|s) comes from
 // whatever the user actually configured (simulationState.policy/.policyWeights), via the SAME
 // getPolicyMode()/_normalizedProbsForState() weighting logic Build/Policy mode's own simulation
 // and canvas rendering already use - reused verbatim, not reimplemented. Using max_a here would
@@ -51,17 +53,19 @@ class PolicyEvaluationState {
     // Pure computation - does not mutate this.entries. startStateId is required to report
     // valueAtStart (unlike ValueIterationState, which reports every state and has no single
     // "start" concept baked into the algorithm itself).
-    evaluate(graph, simulationState, startStateId, gamma, epsilon = 0.01) {
+    evaluate(graph, simulationState, startStateId, gamma) {
         const states = graph.nodes.filter(n => n.type === 'state');
         const stateIds = states.map(s => s.id);
 
         let V = {};
         stateIds.forEach(id => { V[id] = 0; });
 
-        const MAX_SWEEPS = 500; // safety cap - well-behaved MDPs (gamma < 1) converge far sooner
-        for (let sweep = 0; sweep < MAX_SWEEPS; sweep++) {
+        // Infinite Time: always runs this fixed sweep count in full, no early-exit check - a
+        // numerical-precision choice, not a user-facing cap (this is a synchronous one-shot call,
+        // not an interruptible animation, so a literal unbounded loop isn't an option).
+        const INFINITE_TIME_SWEEPS = 500;
+        for (let sweep = 0; sweep < INFINITE_TIME_SWEEPS; sweep++) {
             const V_next = {};
-            let delta = 0;
 
             stateIds.forEach(stateId => {
                 const stateNode = graph.getNodeById(stateId);
@@ -88,12 +92,9 @@ class PolicyEvaluationState {
                 });
 
                 V_next[stateId] = value;
-                const d = Math.abs(value - (V[stateId] ?? 0));
-                if (d > delta) delta = d;
             });
 
             V = V_next;
-            if (delta < epsilon) break;
         }
 
         return { valueAtStart: V[startStateId] ?? 0, valuesByState: V };

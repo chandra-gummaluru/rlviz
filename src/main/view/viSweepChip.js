@@ -1,11 +1,11 @@
-// Floating Values -> Method (vi) stop-condition chip, right-aligned to the canvas region on the
+// Floating Values -> Method (vi) time-mode chip, right-aligned to the canvas region on the
 // same row as estimatorPill.js's top-left method badge ("Value Iteration" etc.) - mirrors
-// rightPanel.js's own "title top-left, stop condition right-aligned" header-row convention.
-// Leads with the convergence stop condition, never "sweep" language (Evaluate redesign Phase 4):
+// rightPanel.js's own "title top-left, status right-aligned" header-row convention.
+// Leads with which time mode is active, since that's what now governs when Play/Step stop:
 //   pre-init       -> "press Run to start"
-//   k=0            -> label + formula, value = "init"
-//   unconverged    -> label + formula, value = live Δ (orange)
-//   converged      -> label + formula, value = Δ + ✓ (green)
+//   Infinite Time  -> label + "k = <n>" formula, value = "init" or live Δ (informational only)
+//   Finite Time    -> label + "t = <T-k> / T" countdown formula, value = "init" / live (orange) /
+//                      "✓ done" once k reaches T (green)
 // Hidden outside the Method sub-view; wired via the mode-lifecycle hooks in main.js and refreshed
 // from VIPresenter's sweep-start/complete/reset callbacks.
 class ViSweepChip {
@@ -39,7 +39,6 @@ class ViSweepChip {
 
         const label = document.createElement('span');
         label.className = 'vi-sweep-chip-label';
-        label.textContent = 'Stop condition';
         container.appendChild(label);
         this.labelEl = label;
 
@@ -84,37 +83,39 @@ class ViSweepChip {
 
     refresh() {
         if (!this.containerEl) return;
-        this.containerEl.classList.remove('vi-sweep-chip--converged', 'vi-sweep-chip--unconverged', 'vi-sweep-chip--plain');
+        this.containerEl.classList.remove('vi-sweep-chip--done', 'vi-sweep-chip--running', 'vi-sweep-chip--plain');
         const vi = this.viewModel.valueIterationState;
 
         if (!vi || !vi.initialized) {
             this.containerEl.classList.add('vi-sweep-chip--plain');
             this.plainTextEl.textContent = 'press Run to start';
-        } else {
-            const epsilonStr = vi.epsilon.toFixed(3);
-            const k = vi.currentSweepIndex;
+            this._applyLayout();
+            return;
+        }
 
+        const k = vi.currentSweepIndex;
+
+        if (vi.timeMode === 'infinite') {
+            // No cap to run toward - just a live sweep counter and, once there's a previous
+            // sweep to compare against, the raw max-norm delta as an informational readout (no
+            // threshold, nothing to converge toward).
+            this.labelEl.textContent = 'Infinite Time';
+            this.formulaEl.innerHTML = KatexRenderer.render(`k = ${k}`, false);
+            this.valueEl.textContent = k === 0 ? 'init' : `Δ ${(vi.getDelta(k) ?? 0).toFixed(3)}`;
+        } else {
+            // Countdown from T (untouched V=0) to 0 (final sweep), matching the
+            // evaluateTimeIndexed()/pi_t V_horizon=0 -> V_0 convention.
+            this.labelEl.textContent = 'Finite Time';
+            this.formulaEl.innerHTML = KatexRenderer.render(`t = ${vi.displaySweepIndex(k)} \\,/\\, ${vi.T}`, false);
             if (k === 0) {
-                // No live delta yet - just the bare stop condition, same as before.
-                this.formulaEl.innerHTML = KatexRenderer.render(`\\|V_{t+1} - V_t\\| < ${epsilonStr}`, false);
                 this.valueEl.textContent = 'init';
+                this.containerEl.classList.add('vi-sweep-chip--running');
+            } else if (k >= vi.T) {
+                this.valueEl.textContent = '✓ done';
+                this.containerEl.classList.add('vi-sweep-chip--done');
             } else {
-                // Live delta folded INTO the inequality (\|V_{t+1}-V_t\| = <delta> < epsilon)
-                // instead of appended as a disconnected number off to the right - one coherent
-                // chain the reader can follow left-to-right.
-                const d = vi.getDelta(k) ?? 0;
-                const deltaStr = d.toFixed(3);
-                const color = vi.converged ? AppPalette.reward.positive : AppPalette.accent.yellow;
-                this.formulaEl.innerHTML = KatexRenderer.render(
-                    `\\|V_{t+1} - V_t\\| = \\textcolor{${color}}{${deltaStr}} < ${epsilonStr}`, false
-                );
-                if (vi.converged) {
-                    this.valueEl.textContent = '✓';
-                    this.containerEl.classList.add('vi-sweep-chip--converged');
-                } else {
-                    this.valueEl.textContent = '';
-                    this.containerEl.classList.add('vi-sweep-chip--unconverged');
-                }
+                this.valueEl.textContent = '';
+                this.containerEl.classList.add('vi-sweep-chip--running');
             }
         }
 

@@ -1,10 +1,11 @@
 // Interactor for Log Optimal Policy - thin, mirroring EvaluatePolicyInteractor's own division of
 // labor: no Bellman math here. ValueIterationState has ALREADY computed the real optimal V*/Q*
 // via its Bellman OPTIMALITY backup (computeNextSweep()'s max_a); this interactor's only job is
-// to read out whichever sweep is "the answer" (converged, or the T-cap fallback), snapshot its
-// greedy policy, and append it to the SAME Policy log Evaluate π writes to - so the two features
-// share one list, distinguished only by the \pi^{*} label this interactor builds (see below)
-// versus EvaluatePolicyInteractor's auto \pi_k labels.
+// to read out the latest computed sweep ("the answer" - whatever Finite Time's T cap settled on,
+// or wherever Infinite Time currently sits), snapshot its greedy policy, and append it to the SAME
+// Policy log Evaluate π writes to - so the two features share one list, distinguished only by the
+// \pi^{*} label this interactor builds (see below) versus EvaluatePolicyInteractor's auto \pi_k
+// labels.
 class LogOptimalPolicyInteractor extends LogOptimalPolicyInputBoundary {
     constructor(valueIterationState, policyEvaluationState, outputBoundary, startNodeProvider, traceGenerator, simulationState) {
         super();
@@ -29,11 +30,9 @@ class LogOptimalPolicyInteractor extends LogOptimalPolicyInputBoundary {
             return;
         }
 
-        // Whichever sweep is "the answer": the sweep convergence actually latched at, or (if the
-        // T cap was hit first, or the caller is logging mid-run) the latest computed sweep -
-        // ValueIterationState.computeNextSweep()'s own sticky-convergence comment explains why
-        // convergedAtSweep is the more authoritative of the two when it's set.
-        const sweepIdx = viState.convergedAtSweep ?? viState.currentSweepIndex;
+        // "The answer" is simply the latest computed sweep - wherever Finite Time's T cap settled,
+        // or wherever Infinite Time currently sits if the caller is logging mid-run.
+        const sweepIdx = viState.currentSweepIndex;
         const valuesByState = viState.getValues(sweepIdx);
         const valueAtStart = valuesByState[startNode.id] ?? 0;
 

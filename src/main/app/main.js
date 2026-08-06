@@ -785,7 +785,7 @@ const goToValuesSceneAfterEvaluate = () => {
 const _evaluatePolicyAndLabel = (gamma, name) => {
     const beforeCount = policyEvaluationState ? policyEvaluationState.entries.length : 0;
     const inputData = name !== undefined
-        ? new EvaluatePolicyInputData(gamma, 0.01, name)
+        ? new EvaluatePolicyInputData(gamma, name)
         : new EvaluatePolicyInputData(gamma);
     evaluatePolicyInteractor.execute(inputData);
     if (policyEvaluationState && policyEvaluationState.entries.length > beforeCount) {
@@ -1069,11 +1069,14 @@ const ensureVIInitialized = (forcedMode) => {
     }
     const T = rightPanel ? rightPanel.viT : 8;
     const gamma = rightPanel ? rightPanel.discountFactor : 0.9;
-    const epsilon = rightPanel ? rightPanel.viEpsilon : 0.01;
+    // "Find Optimal π" (forcedMode === 'optimal') always forces Finite Time regardless of the
+    // panel's own toggle - it relies on presentComplete()/onComplete firing to name the resulting
+    // policy, which Infinite Time (no auto-stop) would never do.
+    const timeMode = forcedMode ? 'finite' : (rightPanel ? rightPanel.viTimeMode : 'finite');
     // Belief Iteration / PO Q-Learning (partial observability) always run the true optimality
     // sweep, untouched by the expectation-mode change - only known:full defaults to 'expectation'.
     const defaultMode = canvasViewModel.observability === 'partial' ? 'optimal' : 'expectation';
-    runVIInteractor.execute(new RunVIInputData(T, gamma, epsilon, forcedMode || defaultMode));
+    runVIInteractor.execute(new RunVIInputData(T, gamma, timeMode, forcedMode || defaultMode));
 };
 
 // The VI Play/Step/Skip/Reset buttons are shared by all four Values-mode Method quadrants. In
