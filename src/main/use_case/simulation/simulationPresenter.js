@@ -3,13 +3,18 @@ class SimulationPresenter extends SimulationOutputBoundary {
     constructor(canvasViewModel) {
         super();
         this.viewModel = canvasViewModel;
-        this.toolBar = null;
+        this.topBar = null;
+        this.traceScrubber = null;
         this._onLaunchParticles = null;
         this._onDestroyParticles = null;
     }
 
-    setToolBar(toolBar) {
-        this.toolBar = toolBar;
+    setTopBar(topBar) {
+        this.topBar = topBar;
+    }
+
+    setTraceScrubber(traceScrubber) {
+        this.traceScrubber = traceScrubber;
     }
 
     setParticleCallbacks(launchCb, destroyCb) {
@@ -22,10 +27,16 @@ class SimulationPresenter extends SimulationOutputBoundary {
     }
 
     presentInitializationComplete() {
-        if (this.viewModel.interaction.mode === 'expectation') return;
+        if (this.viewModel.interaction.mode !== 'build' && this.viewModel.interaction.mode !== 'policy') return;
         const isPlaying = this.viewModel.simulationState.isPlaying;
         const canAdvance = this.viewModel.simulationState.canAdvance();
-        if (this.toolBar) this.toolBar.updateButtonStates(isPlaying, canAdvance);
+        if (this.topBar) this.topBar.updateButtonStates(isPlaying, canAdvance);
+        if (this.traceScrubber) {
+            this.traceScrubber.setTicks(this._buildTickLabels());
+            this.traceScrubber.setPosition(this.viewModel.simulationState.currentIndex);
+            this.traceScrubber.setMaxSteps(this.viewModel.simulationState.maxSteps);
+            this.traceScrubber.show();
+        }
         redraw();
     }
 
@@ -36,7 +47,8 @@ class SimulationPresenter extends SimulationOutputBoundary {
     presentRoundComplete(currentNode) {
         const isPlaying = this.viewModel.simulationState.isPlaying;
         const canAdvance = this.viewModel.simulationState.canAdvance();
-        if (this.toolBar) this.toolBar.updateButtonStates(isPlaying, canAdvance);
+        if (this.topBar) this.topBar.updateButtonStates(isPlaying, canAdvance);
+        if (this.traceScrubber) this.traceScrubber.setPosition(this.viewModel.simulationState.currentIndex);
         redraw();
     }
 
@@ -77,15 +89,20 @@ class SimulationPresenter extends SimulationOutputBoundary {
     }
 
     presentTraceEnd() {
-        if (this.viewModel.interaction.mode === 'expectation') return;
-        if (this.toolBar) this.toolBar.updateButtonStates(false, false);
+        if (this.viewModel.interaction.mode !== 'build' && this.viewModel.interaction.mode !== 'policy') return;
+        if (this.topBar) this.topBar.updateButtonStates(false, false);
         this.viewModel.lastOperationMessage = 'Simulation complete! Reached end of trace.';
     }
 
     presentPaused() {
-        if (this.viewModel.interaction.mode === 'expectation') return;
+        if (this.viewModel.interaction.mode !== 'build' && this.viewModel.interaction.mode !== 'policy') return;
         const canAdvance = this.viewModel.simulationState.canAdvance();
-        if (this.toolBar) this.toolBar.updateButtonStates(false, canAdvance);
+        if (this.topBar) this.topBar.updateButtonStates(false, canAdvance);
         redraw();
+    }
+
+    // Builds one tick label per trace entry ("S0", "a0", "S1", ...) from SimulationState.visited.
+    _buildTickLabels() {
+        return this.viewModel.simulationState.visited.map(entry => entry.name);
     }
 }

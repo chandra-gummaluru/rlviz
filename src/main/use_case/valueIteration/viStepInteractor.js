@@ -1,10 +1,14 @@
-// Interactor for VI Step — advances one sub-phase of the Bellman backup
+// Interactor for VI Step — in the known:full quadrant (real Value Iteration, the only one with a
+// per-state reveal), reveals exactly ONE state's animation within the current live sweep and
+// never crosses into a new sweep (see ViStatesView.revealNextState()) - Reset/"Find Optimal" own
+// crossing sweep boundaries. In the other 3 quadrants (no per-state reveal to step through),
+// falls through to the old sweep-level advance (not blocked by convergence, only the T cap).
 class VIStepInteractor extends VIStepInputBoundary {
-    constructor(viState, outputBoundary, viViewModel) {
+    constructor(viState, outputBoundary, graph, simulationState, options = {}) {
         super();
         this.viState = viState;
         this.outputBoundary = outputBoundary;
-        this.animator = new VIAnimator(viState, outputBoundary, viViewModel);
+        this.animator = new VIAnimator(viState, outputBoundary, graph, simulationState, options);
     }
 
     execute(inputData) {
@@ -12,17 +16,10 @@ class VIStepInteractor extends VIStepInputBoundary {
             this.outputBoundary.presentError('Value iteration not initialized.');
             return;
         }
-
-        if (!this.viState.canAdvance()) {
-            this.outputBoundary.presentComplete();
-            return;
-        }
-
         if (this.viState.isPlaying) {
             this.viState.pause();
         }
-
-        this.viState.phase = 'stepping';
-        this.animator.animateOneSubPhase();
+        if (this.animator.revealNextState()) return;
+        this.animator.stepOneSweep();
     }
 }

@@ -1,149 +1,254 @@
-// Domain entity for Value Iteration state machine and precomputed history
+// Domain entity for synchronous-sweep Value Iteration.
+//
+// Runs classic value iteration one *sweep* at a time, on demand, and stores each sweep as a
+// full snapshot. Sweep 0 is the initialization (V=0 everywhere). Each subsequent sweep applies
+// one synchronous Bellman backup reading only the *previous* sweep's V, and records the
+// max-norm delta so the view can show convergence. This replaced the old finite-horizon
+// backward-induction model that precomputed history[0..T] up front and only animated the reveal.
 class ValueIterationState {
     constructor() {
         this.reset();
     }
 
     reset() {
-        // Precomputed data
-        this.history = [];        // history[0] = V_T (all zeros), history[i] = V_{T-i}
-        this.qValues = [];        // qValues[i][stateId] = [{actionId, actionName, qValue}]
-        this.bestActions = [];    // bestActions[i][stateId] = actionId
-        this.backupDetails = [];  // backupDetails[i][stateId] = { actions: [...], bestActionId, value }
-        this.stateIds = [];       // ordered list of state IDs
+        this.stateIds = [];       // ordered list of state IDs (stable read order)
         this.stateNames = {};     // stateId -> name
-        this.T = 0;
+        this.T = 0;               // Finite Time horizon (exact stop for Play/Step); unused in Infinite Time
         this.gamma = 0.9;
+        this.timeMode = 'finite'; // 'finite': hard-stop at exactly T sweeps. 'infinite': no cap - Play
+                                   // runs until manually paused/reset.
 
-        // Animation cursor
-        this.currentColumnIndex = 0;   // which column is being animated (0 = terminal, 1 = T-1, etc.)
-        this.currentStateIndex = 0;    // which state within that column
+        // 'optimal': the classic Bellman OPTIMALITY backup, V(s) = max_a Q(s,a) - true Value
+        // Iteration, only ever used by the "Find Optimal π" flow (findOptimalCard.js's own
+        // "Run max-a backups" CTA forces this). 'expectation' (the default): the Bellman
+        // EXPECTATION backup, V(s) = sum_a pi(a|s)*Q(s,a), against whatever Policy π is currently
+        // configured - every other entry into Values -> Iteration (known:full only; the two
+        // partial-observability quadrants always force 'optimal', see main.js's ensureVIInitialized).
+        this.runMode = 'expectation';
+
+        // history[k] = one full sweep snapshot. history[0] = sweep 0 (init, all V=0).
+        //   V:  {stateId -> number}
+        //   Q:  {stateId -> [{actionId, actionName, qValue}]}
+        //   policy: {stateId -> actionId|null}  (sweep 0 = arbitrary placeholder; thereafter the
+        //     argmax action in 'optimal' mode, or the configured policy's most-favored action in
+        //     'expectation' mode - see computeNextSweep())
+        //   backupDetails: {stateId -> {actions:[{actionId, actionName, qValue, pi, transitions:
+        //     [...]}], bestActionId, value}} - pi is each action's resolved pi(a|s) under
+        //     whatever Policy pi is currently configured ('expectation' mode), or null in
+        //     'optimal' mode (no policy to resolve there).
+        //   delta: number|null   (null only for sweep 0; max_s |V^k(s)-V^{k-1}(s)| for k>=1) - a
+        //     purely informational readout now (no threshold/convergence semantics attached).
+        this.history = [];
+
+        this.currentSweepIndex = 0;   // index of the latest computed sweep (== history.length-1)
         this.initialized = false;
+        this.isPlaying = false;
 
-        // Phase state machine
-        this.phase = 'idle';
-        this.phaseStartTime = 0;
+        // Phase-timing fields kept only for the explanation-card tween machinery (buildExplanationDetail
+        // overrides them); the live sweep animator no longer drives a phase state machine.
         this.phaseDuration = 0;
+        this.phaseStartTime = 0;
 
-        // Sub-phase for detailed Bellman backup animation
-        // idle | show_equation | show_actions | show_transitions | compute_q_values | select_max | revealing_value
-        // Per-action mode adds: show_action | compute_action (one action at a time)
-        this.subPhase = 'idle';
-        this.currentActionIndex = 0;      // which action within per-action mode
-        this.currentTransitionIndex = 0;  // which transition within current action
+        // Manual Q-value overrides (editable Q-table, "Learning Iteration" / P-unknown
+        // presentation only). Keyed `${stateId}:${actionId}`. Presentation-layer annotations,
+        // not domain-significant - excluded from graph import/export.
+        this.manualOverrides = {};
+    }
 
-        // Playback control
+    /**
+     * Initialize sweep 0 (V=0 everywhere). Replaces the old computeHistory() which precomputed
+     * the entire T-step backward induction. T is the Finite Time horizon (ignored in Infinite Time).
+     */
+    initialize(graph, T, gamma, timeMode = 'finite', runMode = 'expectation') {
+        this.T = T;
+        this.gamma = gamma;
+        this.timeMode = timeMode;
+        this.runMode = runMode;
+
+        const states = graph.nodes.filter(n => n.type === 'state');
+        // Sort states by y-position for a stable top-to-bottom read order (matches the old
+        // convention; layout itself now comes from real graph node positions, not this order).
+        states.sort((a, b) => (a.y || 0) - (b.y || 0));
+        this.stateIds = states.map(s => s.id);
+        this.stateNames = {};
+        states.forEach(s => { this.stateNames[s.id] = s.name; });
+
+        const V0 = {};
+        const Q0 = {};
+        const policy0 = {};
+        const backup0 = {};
+        this.stateIds.forEach(id => {
+            const stateNode = graph.getNodeById(id);
+            V0[id] = 0;
+            Q0[id] = [];
+            // Sweep 0's policy is the state's own FIRST action - an arbitrary, Q-value-independent
+            // placeholder. This is intentional (not a bug): it gives sweep 1 a meaningful "policy
+            // flipped" moment to visualize once the real argmax is computed.
+            policy0[id] = (stateNode && stateNode.actions && stateNode.actions.length > 0)
+                ? stateNode.actions[0]
+                : null;
+            backup0[id] = { actions: [], bestActionId: policy0[id], value: 0 };
+        });
+
+        this.history = [{ V: V0, Q: Q0, policy: policy0, backupDetails: backup0, delta: null }];
+        this.currentSweepIndex = 0;
+        this.initialized = true;
         this.isPlaying = false;
     }
 
     /**
-     * Run full value iteration and store results.
-     * history[0] = V_T (zeros), history[1] = V_{T-1}, ..., history[T] = V_0
+     * Apply one synchronous Bellman backup, reading V from the previous sweep, and append the new
+     * sweep snapshot. Returns the new sweep index. The per-state inner loop is the same Bellman
+     * math the old computeHistory used - only the surrounding "when it runs" changed.
+     *
+     * `simulationState` is only consulted in 'expectation' mode (to resolve pi(a|s)) - 'optimal'
+     * mode never reads it, so callers running the two partial-observability quadrants (always
+     * 'optimal') may omit it. Time-dependent (pi_t) policies have no natural per-sweep time index,
+     * so 'expectation' mode always resolves via the STATIONARY representation
+     * (simulationState.actionProbsForState()) even when piMode === 'timeDependent' - an explicit,
+     * deliberate scope cut, not an oversight.
      */
-    computeHistory(graph, T, gamma) {
-        this.T = T;
-        this.gamma = gamma;
+    computeNextSweep(graph, simulationState) {
+        if (!this.initialized) return this.currentSweepIndex;
+        const prev = this.history[this.history.length - 1];
+        const V_prev = prev.V;
+        const gamma = this.gamma;
 
-        const states = graph.nodes.filter(n => n.type === 'state');
-        // Sort states by y-position so VI animates top-to-bottom visually
-        states.sort((a, b) => (a.y || 0) - (b.y || 0));
-        this.stateIds = states.map(s => s.id);
-        states.forEach(s => { this.stateNames[s.id] = s.name; });
+        const V_curr = {};
+        const Q_curr = {};
+        const policy_curr = {};
+        const detail_curr = {};
 
-        // V_T = 0 for all states
-        const V_T = {};
-        this.stateIds.forEach(id => { V_T[id] = 0; });
-        this.history = [V_T];
-        this.qValues = [{}]; // no Q-values at terminal
-        this.bestActions = [{}];
-        this.backupDetails = [{}]; // no backup details at terminal
+        this.stateIds.forEach(stateId => {
+            const stateNode = graph.getNodeById(stateId);
+            if (!stateNode || !stateNode.actions || stateNode.actions.length === 0) {
+                V_curr[stateId] = 0;
+                Q_curr[stateId] = [];
+                policy_curr[stateId] = null;
+                detail_curr[stateId] = { actions: [], bestActionId: null, value: 0 };
+                return;
+            }
 
-        // Backup T steps
-        for (let step = 0; step < T; step++) {
-            const V_prev = this.history[this.history.length - 1];
-            const V_curr = {};
-            const Q_curr = {};
-            const best_curr = {};
-            const detail_curr = {};
+            let maxQ = -Infinity;
+            let bestActionId = null;
+            const actionQs = [];
+            const actionDetails = [];
 
-            this.stateIds.forEach(stateId => {
-                const stateNode = graph.getNodeById(stateId);
-                if (!stateNode || !stateNode.actions || stateNode.actions.length === 0) {
-                    V_curr[stateId] = 0;
-                    Q_curr[stateId] = [];
-                    best_curr[stateId] = null;
-                    detail_curr[stateId] = { actions: [], bestActionId: null, value: 0 };
-                    return;
-                }
+            // Resolved BEFORE the per-action loop (not just inside the 'expectation' branch
+            // afterward) so pi(a|s) is available while building actionDetails - the "Substitution"
+            // reveal (viBackupDiagram.js) and the Explain narrator both need each action's own
+            // resolved pi, not just the state's aggregate value. 'optimal' mode has no policy to
+            // resolve (there's no pi in a max_a backup), so actionProbs stays null there and every
+            // action's pi is explicitly null below - consumers branch on this the same way they
+            // already branch on runMode.
+            const actionProbs = this.runMode === 'optimal'
+                ? null
+                : simulationState.actionProbsForState(stateId, stateNode.actions);
 
-                let maxQ = -Infinity;
-                let bestActionId = null;
-                const actionQs = [];
-                const actionDetails = [];
+            stateNode.actions.forEach(actionId => {
+                const actionNode = graph.getNodeById(actionId);
+                if (!actionNode || !actionNode.sas) return;
 
-                stateNode.actions.forEach(actionId => {
-                    const actionNode = graph.getNodeById(actionId);
-                    if (!actionNode || !actionNode.sas) return;
-
-                    let Q = 0;
-                    const transitions = [];
-                    actionNode.sas.forEach(({ nextState, probability, reward }) => {
-                        const nextValue = V_prev[nextState] ?? 0;
-                        const term = probability * (reward + gamma * nextValue);
-                        Q += term;
-                        transitions.push({
-                            nextState,
-                            nextStateName: this.stateNames[nextState] || `S${nextState}`,
-                            probability,
-                            reward,
-                            nextValue,
-                            term
-                        });
+                let Q = 0;
+                const transitions = [];
+                actionNode.sas.forEach(({ nextState, probability, reward }) => {
+                    const nextValue = V_prev[nextState] ?? 0;
+                    const term = probability * (reward + gamma * nextValue);
+                    Q += term;
+                    transitions.push({
+                        nextState,
+                        nextStateName: this.stateNames[nextState] || `S${nextState}`,
+                        probability,
+                        reward,
+                        nextValue,
+                        term
                     });
-
-                    actionQs.push({
-                        actionId: actionId,
-                        actionName: actionNode.name,
-                        qValue: Q
-                    });
-
-                    actionDetails.push({
-                        actionId,
-                        actionName: actionNode.name,
-                        transitions,
-                        qValue: Q
-                    });
-
-                    if (Q > maxQ) {
-                        maxQ = Q;
-                        bestActionId = actionId;
-                    }
                 });
 
-                const value = maxQ === -Infinity ? 0 : maxQ;
-                V_curr[stateId] = value;
-                Q_curr[stateId] = actionQs;
-                best_curr[stateId] = bestActionId;
-                detail_curr[stateId] = {
-                    actions: actionDetails,
-                    bestActionId,
-                    value
-                };
+                const pi = actionProbs ? (actionProbs.get(Number(actionId)) ?? 0) : null;
+                actionQs.push({ actionId, actionName: actionNode.name, qValue: Q });
+                actionDetails.push({ actionId, actionName: actionNode.name, transitions, qValue: Q, pi });
+
+                if (this.runMode === 'optimal' && Q > maxQ) {
+                    maxQ = Q;
+                    bestActionId = actionId;
+                }
             });
 
-            this.history.push(V_curr);
-            this.qValues.push(Q_curr);
-            this.bestActions.push(best_curr);
-            this.backupDetails.push(detail_curr);
-        }
+            let value;
+            if (this.runMode === 'optimal') {
+                value = maxQ === -Infinity ? 0 : maxQ;
+            } else {
+                // Bellman EXPECTATION backup: V(s) = sum_a pi(a|s)*Q(s,a) against whatever Policy
+                // pi is currently configured. bestActionId here is the action the configured
+                // policy most favors (deterministic -> that action; weighted -> the highest-weight
+                // action; uniform -> the first action) - the same field every consumer (Q-table
+                // "best" star, viBackupDiagram.js, viEquationView.js's reveal) already reads
+                // generically via getBestAction()/getBackupDetail(), so it "just works" here too.
+                value = 0;
+                let bestProb = -1;
+                actionQs.forEach(aq => {
+                    const p = actionProbs.get(Number(aq.actionId)) ?? 0;
+                    value += p * aq.qValue;
+                    if (p > bestProb) {
+                        bestProb = p;
+                        bestActionId = aq.actionId;
+                    }
+                });
+            }
+            V_curr[stateId] = value;
+            Q_curr[stateId] = actionQs;
+            policy_curr[stateId] = bestActionId;
+            detail_curr[stateId] = { actions: actionDetails, bestActionId, value };
+        });
 
-        this.initialized = true;
-        this.currentColumnIndex = 0;
-        this.currentStateIndex = 0;
+        // Max-norm change vs the previous sweep.
+        let delta = 0;
+        this.stateIds.forEach(id => {
+            const d = Math.abs((V_curr[id] ?? 0) - (V_prev[id] ?? 0));
+            if (d > delta) delta = d;
+        });
+
+        this.history.push({ V: V_curr, Q: Q_curr, policy: policy_curr, backupDetails: detail_curr, delta });
+        this.currentSweepIndex = this.history.length - 1;
+
+        return this.currentSweepIndex;
     }
 
-    /** Total number of columns (T+1) */
-    get totalColumns() {
+    /**
+     * Hard cap shared by Play AND Step. Infinite Time never stops (the user pauses/resets
+     * manually); Finite Time stops exactly at T sweeps.
+     */
+    canAdvance() {
+        return this.initialized && (this.timeMode === 'infinite' || this.currentSweepIndex < this.T);
+    }
+
+    /**
+     * Single source of truth for whether Play/Step/Skip should be clickable, shared by every
+     * consumer (main.js's refreshVIButtons(), viPresenter.js's _updateButtonStates()) so the
+     * pre-init/post-init distinction can't silently drift apart between call sites again.
+     * Before the first Run/Reset-triggered initialize(), Play/Step/Skip must stay enabled so the
+     * user can kick off the first run (see onVIPlay/onVIStep/onVISkip's ensureVIInitialized()) -
+     * only once initialized does canAdvance() actually gate them.
+     */
+    getButtonEnablement() {
+        const canAdvance = this.canAdvance();
+        const canStep = !this.initialized || canAdvance;
+        const canPlay = !this.initialized || canAdvance;
+        return { canStep, canPlay };
+    }
+
+    /**
+     * Display label for a sweep index. Infinite Time counts up (0,1,2,...) same as the raw index.
+     * Finite Time counts DOWN from T to 0 (t=T at the untouched sweep-0 V=0, t=0 at the final,
+     * most-refined sweep) - matching evaluateTimeIndexed()/pi_t's V_horizon=0 -> V_0 convention.
+     */
+    displaySweepIndex(sweepIndex = this.currentSweepIndex) {
+        return this.timeMode === 'finite' ? (this.T - sweepIndex) : sweepIndex;
+    }
+
+    /** Total number of sweep snapshots (sweep 0 .. currentSweepIndex). */
+    get totalSweeps() {
         return this.history.length;
     }
 
@@ -152,82 +257,42 @@ class ValueIterationState {
         return this.stateIds.length;
     }
 
+    play() { this.isPlaying = true; }
+    pause() { this.isPlaying = false; }
+
     /**
-     * Advance cursor to next state, or next column if at end of current column.
-     * Returns false if already at the end.
+     * V-table for a given sweep index. KEEP THIS EXACT CALL SIGNATURE AND RETURN SHAPE -
+     * ValuesMethodMatrix.beliefFor() depends on getValues(sweepIndex) -> {stateId: number}.
      */
-    advance() {
-        if (!this.canAdvance()) return false;
-
-        this.currentStateIndex++;
-        if (this.currentStateIndex >= this.stateCount) {
-            this.currentStateIndex = 0;
-            this.currentColumnIndex++;
-        }
-        return true;
+    getValues(sweepIndex) {
+        return this.history[sweepIndex]?.V ?? {};
     }
 
-    canAdvance() {
-        if (!this.initialized) return false;
-        // We've processed all columns
-        if (this.currentColumnIndex >= this.totalColumns) return false;
-        // Last column, last state already done
-        if (this.currentColumnIndex === this.totalColumns - 1 &&
-            this.currentStateIndex >= this.stateCount) return false;
-        return true;
+    /** Q-values [{actionId, actionName, qValue}] for a sweep+state. */
+    getQValues(sweepIndex, stateId) {
+        return this.history[sweepIndex]?.Q[stateId] ?? [];
     }
 
-    /** Check if the current column is fully completed */
-    isColumnComplete() {
-        return this.currentStateIndex >= this.stateCount;
+    /** argmax action (policy) for a sweep+state. */
+    getBestAction(sweepIndex, stateId) {
+        return this.history[sweepIndex]?.policy[stateId] ?? null;
     }
 
-    play() {
-        this.isPlaying = true;
+    /** Full backup detail (actions/transitions/terms) for a sweep+state. */
+    getBackupDetail(sweepIndex, stateId) {
+        return this.history[sweepIndex]?.backupDetails[stateId] ?? null;
     }
 
-    pause() {
-        this.isPlaying = false;
+    /** Max-norm delta at a sweep (null for sweep 0). */
+    getDelta(sweepIndex) {
+        return this.history[sweepIndex]?.delta ?? null;
     }
 
-    // Phase timing
-    setPhase(phase, duration) {
-        this.phase = phase;
-        this.phaseDuration = duration;
-        this.phaseStartTime = Date.now();
-    }
-
-    isPhaseComplete() {
-        if (this.phaseDuration <= 0) return true;
-        return (Date.now() - this.phaseStartTime) >= this.phaseDuration;
-    }
-
-    /** Get the V-table for a given column index */
-    getValues(columnIndex) {
-        if (columnIndex < 0 || columnIndex >= this.history.length) return {};
-        return this.history[columnIndex];
-    }
-
-    /** Get the Q-values for a given column index and state */
-    getQValues(columnIndex, stateId) {
-        if (columnIndex < 0 || columnIndex >= this.qValues.length) return [];
-        return this.qValues[columnIndex][stateId] || [];
-    }
-
-    /** Get the best action for a given column index and state */
-    getBestAction(columnIndex, stateId) {
-        if (columnIndex < 0 || columnIndex >= this.bestActions.length) return null;
-        return this.bestActions[columnIndex][stateId] || null;
-    }
-
-    /** Get the timestep label for a column index (column 0 = t=T, column i = t=T-i) */
-    getTimestep(columnIndex) {
-        return this.T - columnIndex;
-    }
-
-    /** Get full backup detail for a given column and state (transitions, Q-values, terms) */
-    getBackupDetail(columnIndex, stateId) {
-        if (columnIndex < 0 || columnIndex >= this.backupDetails.length) return null;
-        return this.backupDetails[columnIndex][stateId] || null;
+    /** Manual override for a Q-value if one has been set (editable Q-table), else computedValue. */
+    getEffectiveQValue(stateId, actionId, computedValue) {
+        const key = `${stateId}:${actionId}`;
+        return Object.prototype.hasOwnProperty.call(this.manualOverrides, key)
+            ? this.manualOverrides[key]
+            : computedValue;
     }
 }

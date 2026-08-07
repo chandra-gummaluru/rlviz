@@ -1,7 +1,8 @@
 // User interaction state management
 class InteractionViewModel {
     constructor() {
-        this.mode = 'editor'; // 'editor' or 'simulate'
+        this.mode = 'build'; // 'build' | 'values'
+        this.valuesSubView = 'mc'; // 'mc' | 'vi' (only meaningful while mode === 'values')
 
         // Placement state
         this.placingMode = null; // 'state', 'action', 'textbox'
@@ -27,6 +28,8 @@ class InteractionViewModel {
         this.resizingNode = null;
         this.resizeStartSize = 0;
         this.resizeStartDistance = 0;
+        this.resizingTextLabel = null;
+        this.resizeStartFontSize = 0;
 
         // Pan state
         this.isPanning = false;
@@ -63,6 +66,20 @@ class InteractionViewModel {
         this.hoveredNode = null;
         this.hoveredEdge = null;
 
+        // Policy log hover-preview (Evaluate pi Phase 2): when hovering a Policy log row, this
+        // holds that row's SNAPSHOTTED policy/policyWeights so EdgeViewModel.policyEdgeProbability
+        // can render it on the graph WITHOUT touching the real, live simulationState.policy -
+        // only clicking a row (CanvasController.restorePolicyFromLog) mutates the real policy.
+        this.previewPolicy = null;
+        this.previewPolicyWeights = null;
+        this.previewTimeDependentPolicy = null; // same preview pair, π_t entries only (Phase 6)
+
+        // Time-dependent policy (π_t, Phase 6): which timestep the Policy π panel's pager
+        // currently shows - written by rightPanel.js, read by EdgeViewModel.policyEdgeProbability
+        // so canvas edge highlighting follows whichever t is paged, per the handoff's "π edge
+        // weights follow the pager/scrubber." Presentation-only, does not affect sampling/eval.
+        this.piTCursor = 0;
+
         // Editor neighborhood focus state
         this.editorFocusNode = null;
         this.editorFocusNodeIds = new Set();
@@ -78,11 +95,15 @@ class InteractionViewModel {
         this.draggingNodeNameLabel = null;
         this.draggingEdgeLabel = null;
         this.resizingNode = null;
+        this.resizingTextLabel = null;
         this.isPanning = false;
         this.renameRequested = false;
         this.textLabelRequested = false;
         this.hoveredNode = null;
         this.hoveredEdge = null;
+        this.previewPolicy = null;
+        this.previewPolicyWeights = null;
+        this.previewTimeDependentPolicy = null;
         this.clearEditorFocus();
     }
 
@@ -130,6 +151,7 @@ class InteractionViewModel {
                this.draggingNodeNameLabel !== null ||
                this.draggingEdgeLabel !== null ||
                this.resizingNode !== null ||
+               this.resizingTextLabel !== null ||
                this.isPanning;
     }
 

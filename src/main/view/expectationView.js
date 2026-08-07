@@ -1,30 +1,59 @@
-const EXPECTATION_SCRUBBER_H = 36;
 const EXPECTATION_LABEL_H = 18;
 const EXPECTATION_PADDING = 12;
 const EXPECTATION_ARROW_SIZE = 8;
 const EXPECTATION_DIM_ALPHA = 45;
 const EXPECTATION_Y_STEP = 0.12;
+// Reserved space at the top of the canvas-local drawing area so the mini-panel grid / focused
+// panel never renders behind the floating estimator pill (which overlaps the top of the
+// canvas). The scrubber's own DOM position (bottom-anchored, computed in resize()/
+// setupScrubber()) is untouched by this - only the top of the content area shrinks.
+const EXPECTATION_TOP_CLEARANCE = 90;
 
 class ExpectationView {
-    constructor(canvasViewModel, expectationViewModel, expectationState, graph) {
+    constructor(canvasViewModel, expectationViewModel, expectationState, graph, options = {}) {
         this.viewModel = canvasViewModel;
         this.expectationViewModel = expectationViewModel;
         this.expectationState = expectationState;
         this.graph = graph;
-        this._scrubberDiv = null;
-        this._scrubberSlider = null;
-        this._scrubberReadout = null;
-        this._rafHandle = null;
+        // Per-tick playback delay; wired to the animation-speed slider in main.js (same slider
+        // driving Build/Policy's simulation timing and VI's sweep beat/pause). Range (100-400ms)
+        // is centered on the old fixed 250ms default. Falls back to that default if no getter
+        // is supplied.
+        this.getTickMs = options.getTickMs || (() => 250);
+        this._scrubber = null;
+        this._scrubberCallbacks = null;
         this._playTimer = null;
         this._rightPanel = null;
+        this._chartDock = null;
+        this._expectationChartView = null;
         this.onPlaybackStateChange = null;
-        this._topOffset = 90;
+        this._topOffset = 40; // corrected immediately by resize(), matches the top bar's height
         this._imageCache = new Map();
-        this._backBtn = null;
+        // Fade-in state for the shared right-pane graph panel's newest revealed step (Play/Step
+        // only - dragging the scrubber directly always jumps instantly, see onScrub below).
+        // null = nothing animating, render the selected run's path at full opacity.
+        this._graphPanelReveal = null;
     }
 
     setRightPanel(rightPanel) {
         this._rightPanel = rightPanel;
+    }
+
+    setChartDock(chartDock) {
+        this._chartDock = chartDock;
+    }
+
+    // The new inline Chart view for the left pane (Phase 3a) - a sibling DOM component, not a
+    // p5-canvas overlay, so it needs its own bounds kept in sync on resize() (see below) and its
+    // own refresh() call alongside rightPanel/chartDock whenever the underlying data changes.
+    setExpectationChartView(view) {
+        this._expectationChartView = view;
+    }
+
+    _notifyDataChanged() {
+        if (this._rightPanel) this._rightPanel.updateExpectationData();
+        if (this._chartDock) this._chartDock.refresh();
+        if (this._expectationChartView) this._expectationChartView.refresh();
     }
 
     draw(canvasW, canvasH) {
@@ -40,48 +69,96 @@ class ExpectationView {
 
         this._ensureImagesLoaded();
 
-        if (vm.focusedRunIndex !== null) {
-            this._drawFocusedPanel(canvasW, canvasH);
-            return;
+        const { leftW, rightW } = vm.splitWidths(canvasW);
+
+        if (vm.leftView === 'grid') {
+            this._drawGrid(leftW, canvasH);
+        } else {
+            // Chart view (ExpectationChartView, a DOM component) renders over this region
+            // instead - just clear the canvas-space behind it so nothing from a previous
+            // grid-mode frame lingers visible at the pane's edges.
+            noStroke();
+            fill(AppPalette.surface.canvas);
+            rect(0, 0, leftW, canvasH);
         }
+
+        push();
+        stroke(AppPalette.border.medium);
+        strokeWeight(1);
+        line(leftW, EXPECTATION_TOP_CLEARANCE, leftW, canvasH);
+        pop();
+
+        this._drawGraphPanel(leftW, rightW, canvasH);
+    }
+
+    // Episode mini-panel grid, budgeted to the left pane's width (leftW) instead of the full
+    // canvas - this is exactly today's pre-split grid-mode rendering, just parameterized.
+    _drawGrid(leftW, canvasH) {
+        const state = this.expectationState;
+        const vm = this.expectationViewModel;
 
         if (vm.layoutStale) {
-            vm.computeLayout(canvasW, canvasH - EXPECTATION_SCRUBBER_H, state.displayRuns, this.graph);
+            vm.computeLayout(leftW, canvasH - EXPECTATION_TOP_CLEARANCE, state.displayRuns, this.graph, EXPECTATION_TOP_CLEARANCE);
         }
         if (!vm.panelLayout) {
-            this._drawEmptyPrompt(canvasW, canvasH);
+            this._drawEmptyPrompt(leftW, canvasH);
             return;
         }
 
-        const { panels, fitTransform } = vm.panelLayout;
+        const { panels, fitTransform, topOffset } = vm.panelLayout;
         if (!fitTransform) {
-            this._drawEmptyPrompt(canvasW, canvasH);
+            this._drawEmptyPrompt(leftW, canvasH);
             return;
         }
 
         const { offsetX, offsetY, fitScale } = fitTransform;
         const currentT = state.currentT;
         const runColors = AppPalette.expectation.runColors;
+        const scrollY = vm.gridScrollY;
+        const viewportTop = topOffset;
+        const viewportBottom = canvasH;
+
+        // Outer clip for the whole scrollable viewport - without this, a panel scrolled
+        // partially above viewportTop would still paint over the floating pill/badge chrome
+        // anchored there.
+        drawingContext.save();
+        drawingContext.beginPath();
+        drawingContext.rect(0, viewportTop, leftW, viewportBottom - viewportTop);
+        drawingContext.clip();
 
         const displaySlice = state.getDisplaySlice();
+        const hoveredRun = vm.hoveredRun;
+        const selectedRun = vm.selectedRunIndex;
         for (let i = 0; i < displaySlice.length; i++) {
             const panel = panels[i];
             if (!panel) continue;
+
+            // Screen-space position: content-space panel.x/y, shifted down past the reserved
+            // top clearance and up by however far the user has scrolled.
+            const sx = panel.x;
+            const sy = viewportTop + panel.y - scrollY;
+
+            // Cull panels fully outside the visible viewport - cheap, and keeps a 64-panel grid
+            // from doing full mini-graph render work for rows that aren't on screen.
+            if (sy + panel.h < viewportTop || sy > viewportBottom) continue;
+
             const rollout = displaySlice[i];
             const runColor = runColors[i % runColors.length];
+            const isHovered = hoveredRun === i;
+            const isSelected = selectedRun === i;
 
             drawingContext.save();
             drawingContext.beginPath();
-            drawingContext.rect(panel.x, panel.y, panel.w, panel.h);
+            drawingContext.rect(sx, sy, panel.w, panel.h);
             drawingContext.clip();
 
             // Draw panel background
-            fill(AppPalette.surface.white);
+            fill(isHovered ? AppPalette.surface.hoverCard : AppPalette.surface.card);
             noStroke();
-            rect(panel.x, panel.y, panel.w, panel.h);
+            rect(sx, sy, panel.w, panel.h, 9);
 
             push();
-            translate(panel.x + offsetX, panel.y + offsetY);
+            translate(sx + offsetX, sy + offsetY);
             scale(fitScale);
 
             // Draw all edges dim
@@ -91,9 +168,11 @@ class ExpectationView {
                 this._drawEdge(from, to, AppPalette.node.state, EXPECTATION_DIM_ALPHA);
             }
 
-            // Draw all nodes dim
+            // Draw all nodes dim - no name labels in the grid's mini-panels (too small to be
+            // legible at this scale, and the shared right-pane graph panel is where node names
+            // are meant to be read now).
             for (const node of this.graph.nodes) {
-                this._drawNode(node, AppPalette.node.state, EXPECTATION_DIM_ALPHA, fitScale);
+                this._drawNode(node, AppPalette.node.state, EXPECTATION_DIM_ALPHA, fitScale, false);
             }
 
             // Draw text labels
@@ -118,27 +197,192 @@ class ExpectationView {
             for (const entry of visitedSlice) {
                 const node = this.graph.getNodeById(entry.id);
                 if (node) {
-                    this._drawNode(node, runColor, 255, fitScale);
+                    this._drawNode(node, runColor, 255, fitScale, false);
                 }
             }
 
             pop();
             drawingContext.restore();
 
-            // Panel label (screen space, after restore)
+            // Panel label (screen space, after restore): "#NN" muted mono (left) + "G = x.xx"
+            // mono, green/red by sign (right)
             const utility = state._getUtility(rollout, currentT);
             noStroke();
-            fill(AppPalette.text.primary);
             textSize(10);
-            textAlign(LEFT, TOP);
-            textFont('Calibri, "Segoe UI", Tahoma, sans-serif');
-            text(`Run ${i + 1}  G=${utility.toFixed(1)}`, panel.x + 4, panel.y + 3);
+            textFont(Typography.mono());
 
-            // Panel border
+            textAlign(LEFT, TOP);
+            fill(AppPalette.text.placeholder);
+            text(`#${String(i + 1).padStart(2, '0')}`, sx + 4, sy + 3);
+
+            textAlign(RIGHT, TOP);
+            fill(utility >= 0 ? AppPalette.reward.positive : AppPalette.reward.negative);
+            text(`G = ${utility.toFixed(2)}`, sx + panel.w - 4, sy + 3);
+
+            // Panel border - color reflects hover OR selection; stroke weight never changes so
+            // the border doesn't visually "jump" in thickness.
             noFill();
-            stroke(AppPalette.border.medium);
-            strokeWeight(0.5);
-            rect(panel.x, panel.y, panel.w, panel.h);
+            stroke((isHovered || isSelected) ? AppPalette.accent.orange : AppPalette.border.medium);
+            strokeWeight(1);
+            rect(sx, sy, panel.w, panel.h, 9);
+        }
+
+        drawingContext.restore();
+    }
+
+    // Shared right-pane graph panel (48% of canvasW, always visible regardless of leftView).
+    // Bare graph when nothing is selected; the selected run's visited-so-far path (synced to the
+    // shared scrubber's currentT) is highlighted otherwise. Replaces the old full-canvas
+    // "focused mode" (_drawFocusedPanel) - same rendering approach, just always-on and pane-
+    // scoped instead of a modal takeover.
+    // Number of trace entries visible at time t for a given rollout - the same 2*effectiveT+1
+    // sizing _drawGraphPanel's highlight loop already used, extracted so the reveal-fade trigger
+    // (step()/_scheduleNextTick()) and the render itself agree on exactly what "one step" means.
+    _revealedCountForRolloutAtT(rollout, t) {
+        const effectiveT = Math.min(t, rollout.numSteps);
+        return 2 * effectiveT + 1;
+    }
+
+    // Starts (or restarts) a fade-in of the trace entries between fromCount and toCount - the
+    // chunk newly revealed by a single Play/Step advance. No-ops if there's nothing new to
+    // reveal (toCount <= fromCount, e.g. stepping past the rollout's own end).
+    _startGraphPanelReveal(fromCount, toCount) {
+        if (toCount <= fromCount) return;
+        this._graphPanelReveal = { fromCount, toCount, startTime: performance.now() };
+        this._runGraphPanelRevealLoop();
+    }
+
+    _runGraphPanelRevealLoop() {
+        const DURATION_MS = 280;
+        const tick = () => {
+            if (!this._graphPanelReveal) return;
+            const elapsed = performance.now() - this._graphPanelReveal.startTime;
+            if (typeof redraw === 'function') redraw();
+            if (elapsed < DURATION_MS) {
+                requestAnimationFrame(tick);
+            } else {
+                this._graphPanelReveal = null;
+                if (typeof redraw === 'function') redraw();
+            }
+        };
+        requestAnimationFrame(tick);
+    }
+
+    _drawGraphPanel(leftW, rightW, canvasH) {
+        const state = this.expectationState;
+        const vm = this.expectationViewModel;
+
+        const availH = canvasH - EXPECTATION_TOP_CLEARANCE;
+        const fitTransform = vm._computeFitTransform(this.graph, rightW, availH);
+        if (!fitTransform) return;
+
+        const { offsetX, offsetY, fitScale } = fitTransform;
+
+        drawingContext.save();
+        drawingContext.beginPath();
+        drawingContext.rect(leftW, EXPECTATION_TOP_CLEARANCE, rightW, availH);
+        drawingContext.clip();
+
+        fill(AppPalette.surface.card);
+        noStroke();
+        rect(leftW, EXPECTATION_TOP_CLEARANCE, rightW, availH);
+
+        push();
+        translate(leftW + offsetX, EXPECTATION_TOP_CLEARANCE + offsetY);
+        scale(fitScale);
+
+        for (const edge of this.graph.edges) {
+            this._drawEdge(edge.getFromNode(), edge.getToNode(), AppPalette.node.state, EXPECTATION_DIM_ALPHA);
+        }
+        for (const node of this.graph.nodes) {
+            this._drawNode(node, AppPalette.node.state, EXPECTATION_DIM_ALPHA, fitScale);
+        }
+
+        if (vm.selectedRunIndex !== null) {
+            const rollout = state.getDisplaySlice()[vm.selectedRunIndex];
+            if (rollout) {
+                const runColor = AppPalette.expectation.runColors[vm.selectedRunIndex % AppPalette.expectation.runColors.length];
+                const currentT = state.currentT;
+                const visitedSlice = rollout.trace.slice(0, this._revealedCountForRolloutAtT(rollout, currentT));
+
+                // Per-index alpha: entries already visible before the current reveal (or all of
+                // them, if nothing is animating - a scrub-drag jump or a fresh run selection)
+                // render at full opacity; only the newest Play/Step chunk eases in.
+                const reveal = this._graphPanelReveal;
+                const animating = reveal && reveal.toCount === visitedSlice.length;
+                const fadeFromIndex = animating ? reveal.fromCount : visitedSlice.length;
+                const fadeAlpha = animating
+                    ? Math.round(255 * EasingUtils.easeOut(Math.min(1, (performance.now() - reveal.startTime) / 280)))
+                    : 255;
+                const alphaForIndex = (idx) => idx < fadeFromIndex ? 255 : fadeAlpha;
+
+                for (let k = 0; k + 1 < visitedSlice.length; k++) {
+                    const fromNode = this.graph.getNodeById(visitedSlice[k].id);
+                    const toNode = this.graph.getNodeById(visitedSlice[k + 1].id);
+                    if (fromNode && toNode) this._drawEdge(fromNode, toNode, runColor, alphaForIndex(k + 1));
+                }
+                // The current node (always the last, and always a state entry - the trace
+                // alternates state/action/state/...) is filled with the same accent Build/Policy
+                // mode uses for "where the simulation currently is" (NodeViewModel.color),
+                // instead of the run's own color, so it reads as a distinct "you are here" marker
+                // rather than just another visited step.
+                const lastIdx = visitedSlice.length - 1;
+                visitedSlice.forEach((entry, idx) => {
+                    const node = this.graph.getNodeById(entry.id);
+                    if (!node) return;
+                    const color = idx === lastIdx ? AppPalette.node.activeInitial : runColor;
+                    this._drawNode(node, color, alphaForIndex(idx), fitScale);
+                });
+
+                // Traveling ball along the newest chunk's path (matches Build/Policy's own
+                // travel-ball convention, AppPalette.simulation.travelBall) - only while a
+                // Play/Step reveal is actually animating; scrub-drags and fresh selections
+                // render everything instantly with no ball.
+                if (animating && reveal.toCount - reveal.fromCount > 0) {
+                    const waypoints = visitedSlice
+                        .slice(reveal.fromCount - 1, reveal.toCount)
+                        .map(entry => this.graph.getNodeById(entry.id))
+                        .filter(Boolean);
+                    if (waypoints.length >= 2) {
+                        const t = Math.min(1, (performance.now() - reveal.startTime) / 280);
+                        const eased = EasingUtils.easeInOut(t);
+                        const segCount = waypoints.length - 1;
+                        const segProgress = eased * segCount;
+                        const segIndex = Math.min(segCount - 1, Math.floor(segProgress));
+                        const segT = segProgress - segIndex;
+                        const from = waypoints[segIndex];
+                        const to = waypoints[segIndex + 1];
+                        const bx = from.x + (to.x - from.x) * segT;
+                        const by = from.y + (to.y - from.y) * segT;
+                        noStroke();
+                        fill(AppPalette.simulation.travelBall);
+                        circle(bx, by, Math.max(4, (from.size || 20) * 0.35));
+                    }
+                }
+            }
+        }
+
+        this._drawTextLabels(fitScale);
+
+        pop();
+        drawingContext.restore();
+
+        noFill();
+        stroke(AppPalette.border.medium);
+        strokeWeight(1);
+        rect(leftW, EXPECTATION_TOP_CLEARANCE, rightW, availH);
+
+        if (vm.selectedRunIndex !== null) {
+            const rollout = state.getDisplaySlice()[vm.selectedRunIndex];
+            if (rollout) {
+                const utility = state._getUtility(rollout, state.currentT);
+                noStroke();
+                fill(AppPalette.accent.yellow);
+                textSize(13);
+                textAlign(LEFT, TOP);
+                textFont(Typography.mono());
+                text(`Run ${String(vm.selectedRunIndex + 1).padStart(2, '0')} · G = ${utility.toFixed(2)}`, leftW + 12, EXPECTATION_TOP_CLEARANCE + 10);
+            }
         }
     }
 
@@ -149,7 +393,7 @@ class ExpectationView {
             if (this._imageCache.has(key)) continue;
             const img = new Image();
             img.onload = () => {
-                if (this.viewModel.interaction.mode === 'expectation') {
+                if (this.viewModel.interaction.mode === 'values') {
                     if (typeof redraw === 'function') redraw();
                 }
             };
@@ -159,7 +403,7 @@ class ExpectationView {
         }
     }
 
-    _drawNode(node, color, alpha, fitScale) {
+    _drawNode(node, color, alpha, fitScale, showLabel = true) {
         const col = ColorUtils.applyAlpha(color, alpha);
         push();
         noStroke();
@@ -191,14 +435,14 @@ class ExpectationView {
             const img = this._imageCache.get(key);
             return img && img !== 'failed' && img.complete && img.naturalWidth > 0;
         })();
-        if (!hasVisibleImage) {
+        if (!hasVisibleImage && showLabel) {
             const label = node.name && node.name.length > 4 ? node.name.slice(0, 3) + '…' : (node.name || '');
             const screenFontSize = Math.max(6, node.size * 0.55);
             const worldFontSize = screenFontSize / (fitScale || 1);
             fill(255);
             textSize(worldFontSize);
             textAlign(CENTER, CENTER);
-            textFont('Calibri, "Segoe UI", Tahoma, sans-serif');
+            textFont(Typography.sans());
             text(label, node.x, node.y);
         }
         pop();
@@ -211,7 +455,7 @@ class ExpectationView {
         fill(AppPalette.text.black);
         noStroke();
         textAlign(CENTER, CENTER);
-        textFont('Calibri, "Segoe UI", Tahoma, sans-serif');
+        textFont(Typography.sans());
         for (const label of labels) {
             textSize(worldFontSize(label));
             text(label.text, label.x, label.y);
@@ -254,7 +498,7 @@ class ExpectationView {
         noStroke();
         textSize(14);
         textAlign(CENTER, CENTER);
-        textFont('Calibri, "Segoe UI", Tahoma, sans-serif');
+        textFont(Typography.sans());
         text('Set a start state in Simulate mode to compute rollouts.', canvasW / 2, canvasH / 2);
     }
 
@@ -268,6 +512,22 @@ class ExpectationView {
         }
         vm.isPlaying = true;
         if (this.onPlaybackStateChange) this.onPlaybackStateChange(true);
+
+        // "Animations · per mode" (Monte Carlo) off - jump straight to the fully-revealed end
+        // state instead of ticking through _scheduleNextTick(); reuses the exact instant-jump
+        // scrubber-drag/selectRun() already use (_graphPanelReveal = null cancels the fade/
+        // travel-ball reveal), then finishes via the same stopPlay() _scheduleNextTick() itself
+        // calls once currentT reaches maxT.
+        if (!this.viewModel.mcAnimationEnabled) {
+            state.currentT = state.maxT;
+            this._graphPanelReveal = null;
+            this._syncScrubber();
+            if (typeof redraw === 'function') redraw();
+            this._notifyDataChanged();
+            this.stopPlay();
+            return;
+        }
+
         this._scheduleNextTick();
     }
 
@@ -276,16 +536,32 @@ class ExpectationView {
         const state = this.expectationState;
         this._playTimer = setTimeout(() => {
             if (!vm.isPlaying) return;
+            const oldT = state.currentT;
             state.currentT++;
+            this._maybeAnimateReveal(oldT, state.currentT);
             this._syncScrubber();
             if (typeof redraw === 'function') redraw();
-            if (this._rightPanel) this._rightPanel.updateExpectationData();
+            this._notifyDataChanged();
             if (state.currentT >= state.maxT) {
                 this.stopPlay();
             } else {
                 this._scheduleNextTick();
             }
-        }, 250);
+        }, this.getTickMs());
+    }
+
+    // Triggers the right-pane graph panel's fade-in for the step just taken (Play tick or the
+    // Step button - see step() below), if a run is currently selected. No-op otherwise; scrubber
+    // drags never call this (see onScrub in setupScrubber()), so dragging always jumps instantly.
+    _maybeAnimateReveal(oldT, newT) {
+        const vm = this.expectationViewModel;
+        if (vm.selectedRunIndex === null) return;
+        const rollout = this.expectationState.getDisplaySlice()[vm.selectedRunIndex];
+        if (!rollout) return;
+        this._startGraphPanelReveal(
+            this._revealedCountForRolloutAtT(rollout, oldT),
+            this._revealedCountForRolloutAtT(rollout, newT)
+        );
     }
 
     stopPlay() {
@@ -299,12 +575,41 @@ class ExpectationView {
         if (this.onPlaybackStateChange) this.onPlaybackStateChange(false);
     }
 
-    _syncScrubber() {
+    // Advance currentT by one tick without starting continuous playback - pauses first so a
+    // step during an active play doesn't race the scheduled tick. Mirrors the single-tick body
+    // of _scheduleNextTick, matching Build/VI's Step button semantics.
+    step() {
         const state = this.expectationState;
-        if (!this._scrubberSlider) return;
-        this._scrubberSlider.value = String(state.currentT);
-        if (this._scrubberReadout) {
-            this._scrubberReadout.textContent = `${state.currentT} / ${state.maxT}`;
+        if (!state.computed) return;
+        this.stopPlay();
+        if (state.currentT >= state.maxT) return;
+        const oldT = state.currentT;
+        state.currentT++;
+        this._maybeAnimateReveal(oldT, state.currentT);
+        this._syncScrubber();
+        if (typeof redraw === 'function') redraw();
+        this._notifyDataChanged();
+    }
+
+    // The shared right-pane graph panel (not a full-canvas "focused" takeover) has no canonical
+    // single path to label ticks with even when a run is selected, since the left pane's own
+    // grid/chart view is what the scrubber really scrubs - so ticks are always plain numeric
+    // ("0","1","2"...), regardless of selection. (Before the MC screen split, "focused mode"
+    // used real trace-name ticks; that mode no longer exists.)
+    _buildScrubberTicks() {
+        const maxT = this.expectationState.maxT || 0;
+        const ticks = [];
+        for (let t = 0; t <= maxT; t++) ticks.push(String(t));
+        return ticks;
+    }
+
+    _scrubberIndexForCurrentT() {
+        return this.expectationState.currentT;
+    }
+
+    _syncScrubber() {
+        if (this._scrubber) {
+            this._scrubber.setPosition(this._scrubberIndexForCurrentT());
         }
     }
 
@@ -312,204 +617,174 @@ class ExpectationView {
         this._removeScrubber();
         this._topOffset = topOffset;
 
-        const div = document.createElement('div');
-        div.className = 'expectation-scrubber';
-        div.style.left = '0px';
-        div.style.top = (topOffset + canvasH - EXPECTATION_SCRUBBER_H) + 'px';
-        div.style.width = canvasW + 'px';
-
-        const label = document.createElement('span');
-        label.className = 'timeline-label';
-        label.textContent = 'T =';
-        div.appendChild(label);
-
-        const slider = document.createElement('input');
-        slider.type = 'range';
-        slider.min = '0';
-        slider.max = String(this.expectationState.maxT);
-        slider.step = '1';
-        slider.value = '0';
-        div.appendChild(slider);
-
-        const readout = document.createElement('span');
-        readout.className = 't-readout';
-        readout.textContent = `0 / ${this.expectationState.maxT}`;
-        div.appendChild(readout);
-
-        slider.addEventListener('input', () => {
-            this.stopPlay();
-            const val = parseInt(slider.value, 10);
-            readout.textContent = `${val} / ${this.expectationState.maxT}`;
-            cancelAnimationFrame(this._rafHandle);
-            this._rafHandle = requestAnimationFrame(() => {
-                this.expectationState.currentT = val;
+        // Reuses the single shared mainView.traceScrubber instance (constructed once in
+        // main.js, Task 3) rather than constructing a private one - the whole point of the
+        // shared component. Reassigns its callbacks to Monte Carlo's own handlers while this
+        // sub-view is active.
+        this._scrubber = mainView.traceScrubber;
+        this._scrubberCallbacks = {
+            onScrub: (index, isFinal) => {
+                this.stopPlay();
+                this.expectationState.currentT = index;
+                // Dragging the scrubber always jumps instantly - cancel any in-progress
+                // Play/Step reveal fade so it doesn't keep animating toward a position the drag
+                // has already moved past.
+                this._graphPanelReveal = null;
                 if (typeof redraw === 'function') redraw();
-                if (this._rightPanel) this._rightPanel.updateExpectationData();
-            });
-        });
+                this._notifyDataChanged();
+            },
+            onMaxStepsChange: (value) => {
+                this.expectationState.maxSteps = value;
+            }
+        };
+        this._scrubber.callbacks = this._scrubberCallbacks;
+        this._scrubber.resize(0, 0, canvasW);
+        this._positionScrubberAboveDock();
+        this._scrubber.show();
+        this._scrubber.setTicks(this._buildScrubberTicks());
+        this._scrubber.setPosition(this._scrubberIndexForCurrentT());
+        this._scrubber.setMaxSteps(this.expectationState.maxSteps);
+    }
 
-        document.body.appendChild(div);
-        this._scrubberDiv = div;
-        this._scrubberSlider = slider;
-        this._scrubberReadout = readout;
+    // TraceScrubber's own CSS anchors it a fixed 16px above the viewport bottom - fine for
+    // Build/Policy (nothing else docked there), but Monte Carlo also shows the bottom chart
+    // dock, which would otherwise render on top of (and hide) the scrubber (chart-dock's
+    // z-index is higher, and the two floating elements occupy the same screen region). Lifts
+    // the shared instance above the dock's current reserved height via its public `containerEl`
+    // - not a change to TraceScrubber itself, just how this consumer positions the shared
+    // instance while it owns it. Reset back to the CSS default in _removeScrubber() so
+    // Build/Policy (which has no dock) is unaffected.
+    _positionScrubberAboveDock() {
+        if (!this._scrubber || !this._scrubber.containerEl) return;
+        // Goes through mainView.getDockHeight() (sub-view-aware) rather than reading
+        // this._chartDock.getReservedHeight() directly - the dock's own dockState.open is a
+        // persistent user preference from Iteration that outlives a visit to Iteration, so a
+        // raw getReservedHeight() call here would float the scrubber above a dock that isn't
+        // even visible once the user has ever opened it in Iteration and come back to Monte
+        // Carlo. mainView.getDockHeight() is the one place that reconciles "reserved height"
+        // with which sub-view is actually active.
+        const dockH = (typeof mainView !== 'undefined' && mainView) ? mainView.getDockHeight() : 0;
+        this._scrubber.containerEl.style.bottom = (dockH + 16) + 'px';
     }
 
     updateScrubberMax() {
-        if (!this._scrubberSlider) return;
-        const maxT = this.expectationState.maxT;
-        this._scrubberSlider.max = String(maxT);
-        if (this._scrubberReadout) {
-            this._scrubberReadout.textContent = `0 / ${maxT}`;
-        }
-        this._scrubberSlider.value = '0';
+        if (!this._scrubber) return;
+        this._scrubber.setTicks(this._buildScrubberTicks());
+        this._scrubber.setPosition(0);
     }
 
     handleClick(mx, my) {
         const vm = this.expectationViewModel;
         const state = this.expectationState;
-        if (!state.computed) return;
+        if (!state.computed || vm.leftView !== 'grid' || !vm.panelLayout) return;
 
-        if (vm.focusedRunIndex !== null) {
-            return;
-        }
-
-        const { panels } = vm.panelLayout || { panels: [] };
+        // Panels are stored in content space (scroll/topOffset-independent) - convert the
+        // incoming screen-space click the same way _drawGrid() converts the other direction.
+        const cy = my - vm.panelLayout.topOffset + vm.gridScrollY;
+        const { panels } = vm.panelLayout;
         for (let i = 0; i < panels.length; i++) {
             const p = panels[i];
-            if (mx >= p.x && mx <= p.x + p.w && my >= p.y && my <= p.y + p.h) {
-                this.enterFocusMode(i);
+            if (mx >= p.x && mx <= p.x + p.w && cy >= p.y && cy <= p.y + p.h) {
+                // Clicking an already-selected panel deselects it (toggle), matching this
+                // codebase's other click-to-select-or-clear conventions.
+                this.selectRun(vm.selectedRunIndex === i ? null : i);
                 return;
             }
         }
     }
 
-    enterFocusMode(index) {
-        const state = this.expectationState;
+    // Scrolls the Grid view's fixed-size panel layout vertically. deltaY follows the native
+    // WheelEvent convention (positive = scroll down). Returns true if the event was consumed
+    // (there's something to scroll and the Grid view is showing), so the caller (mainView.js's
+    // mouseWheel()) knows whether to suppress the page's own default scroll.
+    handleWheel(deltaY) {
         const vm = this.expectationViewModel;
-        if (index < 0 || index >= state.getDisplaySlice().length) return;
-        vm.focusedRunIndex = index;
-        this._createBackButton();
-        if (this._rightPanel) this._rightPanel.updateExpectationData();
+        if (vm.leftView !== 'grid' || !vm.panelLayout) return false;
+        const maxScrollY = vm.panelLayout.maxScrollY || 0;
+        if (maxScrollY <= 0) return false;
+        vm.gridScrollY = Math.min(Math.max(0, vm.gridScrollY + deltaY), maxScrollY);
+        if (typeof redraw === 'function') redraw();
+        return true;
+    }
+
+    // Sets which rollout's path the shared right-pane graph panel highlights. index === null
+    // clears the selection (bare graph). Replaces the old enterFocusMode(index) - no longer
+    // triggers any canvas mode switch, just updates which run is highlighted.
+    selectRun(index) {
+        const vm = this.expectationViewModel;
+        vm.selectedRunIndex = index;
+        // A new selection renders instantly (it's a jump to a different run, not a step forward
+        // in the current one) - cancel any reveal fade left over from the previous selection.
+        this._graphPanelReveal = null;
+        this._notifyDataChanged();
         if (typeof redraw === 'function') redraw();
     }
 
-    exitFocusMode() {
+    // Updates expectationViewModel.hoveredRun for the grid's own hover highlight and (later
+    // phase) the chart dock's live-linking. Returns true if the hovered run changed, so callers
+    // can redraw only when needed.
+    handleMouseMove(mx, my) {
         const vm = this.expectationViewModel;
-        if (vm.focusedRunIndex === null) return;
-        vm.focusedRunIndex = null;
-        this._removeBackButton();
-        vm.invalidateLayout();
-        if (this._rightPanel) this._rightPanel.updateExpectationData();
-        if (typeof redraw === 'function') redraw();
-    }
-
-    handleKey(key) {
-        if (key === 'Escape') this.exitFocusMode();
-    }
-
-    _createBackButton() {
-        this._removeBackButton();
-        const btn = document.createElement('div');
-        btn.className = 'expectation-back-btn';
-        btn.textContent = '← All runs';
-        btn.style.top = (this._topOffset + 8) + 'px';
-        btn.style.left = '8px';
-        btn.addEventListener('click', () => this.exitFocusMode());
-        document.body.appendChild(btn);
-        this._backBtn = btn;
-    }
-
-    _removeBackButton() {
-        if (this._backBtn) {
-            this._backBtn.remove();
-            this._backBtn = null;
-        }
-    }
-
-    _drawFocusedPanel(canvasW, canvasH) {
         const state = this.expectationState;
-        const vm = this.expectationViewModel;
-        const rollout = state.getDisplaySlice()[vm.focusedRunIndex];
-        if (!rollout) return;
+        const prevHovered = vm.hoveredRun;
 
-        const availH = canvasH - EXPECTATION_SCRUBBER_H;
-        const fitTransform = this.expectationViewModel._computeFitTransform(this.graph, canvasW, availH);
-        if (!fitTransform) return;
-
-        const { offsetX, offsetY, fitScale } = fitTransform;
-        const runColor = AppPalette.expectation.runColors[vm.focusedRunIndex % AppPalette.expectation.runColors.length];
-        const currentT = state.currentT;
-
-        drawingContext.save();
-        drawingContext.beginPath();
-        drawingContext.rect(0, 0, canvasW, availH);
-        drawingContext.clip();
-
-        fill(AppPalette.surface.white);
-        noStroke();
-        rect(0, 0, canvasW, availH);
-
-        push();
-        translate(offsetX, offsetY);
-        scale(fitScale);
-
-        for (const edge of this.graph.edges) {
-            this._drawEdge(edge.getFromNode(), edge.getToNode(), AppPalette.node.state, EXPECTATION_DIM_ALPHA);
-        }
-        for (const node of this.graph.nodes) {
-            this._drawNode(node, AppPalette.node.state, EXPECTATION_DIM_ALPHA, fitScale);
+        if (!state.computed || vm.leftView !== 'grid' || !vm.panelLayout) {
+            vm.hoveredRun = null;
+            return prevHovered !== null;
         }
 
-        const effectiveT = Math.min(currentT, rollout.numSteps);
-        const visitedSlice = rollout.trace.slice(0, 2 * effectiveT + 1);
-        for (let k = 0; k + 1 < visitedSlice.length; k++) {
-            const fromNode = this.graph.getNodeById(visitedSlice[k].id);
-            const toNode = this.graph.getNodeById(visitedSlice[k + 1].id);
-            if (fromNode && toNode) this._drawEdge(fromNode, toNode, runColor, 255);
+        const cy = my - vm.panelLayout.topOffset + vm.gridScrollY;
+        const { panels } = vm.panelLayout;
+        let hovered = null;
+        for (let i = 0; i < panels.length; i++) {
+            const p = panels[i];
+            if (mx >= p.x && mx <= p.x + p.w && cy >= p.y && cy <= p.y + p.h) {
+                hovered = i;
+                break;
+            }
         }
-        for (const entry of visitedSlice) {
-            const node = this.graph.getNodeById(entry.id);
-            if (node) this._drawNode(node, runColor, 255, fitScale);
-        }
-
-        this._drawTextLabels(fitScale);
-
-        pop();
-        drawingContext.restore();
-
-        const utility = state._getUtility(rollout, currentT);
-        noStroke();
-        fill(AppPalette.text.primary);
-        textSize(13);
-        textAlign(LEFT, TOP);
-        textFont('Calibri, "Segoe UI", Tahoma, sans-serif');
-        text(`Run ${vm.focusedRunIndex + 1}  G = ${utility.toFixed(2)}`, 48, 10);
+        vm.hoveredRun = hovered;
+        return hovered !== prevHovered;
     }
+
+    // No-op: "focused mode" (and its Escape-to-exit) no longer exists after the MC screen split
+    // - kept as a method (rather than removed) because main.js's global keyPressed() calls it
+    // unconditionally while Values -> Monte Carlo is active.
+    handleKey(key) {}
 
     teardown() {
         this.stopPlay();
-        this.exitFocusMode();
-        cancelAnimationFrame(this._rafHandle);
-        this._rafHandle = null;
         this._removeScrubber();
         this._imageCache.clear();
+        // Its rAF loop checks `if (!this._graphPanelReveal) return;` every frame, so clearing
+        // this is enough to stop it - no separate cancelAnimationFrame handle to track.
+        this._graphPanelReveal = null;
     }
 
+    // Hides the shared scrubber and clears this view's local reference/callbacks - does NOT
+    // destroy it, since it's a single instance shared with Build/Policy (mainView.traceScrubber).
     _removeScrubber() {
-        if (this._scrubberDiv) {
-            this._scrubberDiv.remove();
-            this._scrubberDiv = null;
-            this._scrubberSlider = null;
-            this._scrubberReadout = null;
+        if (this._scrubber) {
+            if (this._scrubber.containerEl) this._scrubber.containerEl.style.bottom = '';
+            this._scrubber.hide();
         }
+        this._scrubber = null;
+        this._scrubberCallbacks = null;
     }
 
     resize(canvasW, canvasH, topOffset) {
         this._topOffset = topOffset;
-        if (this._scrubberDiv) {
-            this._scrubberDiv.style.top = (topOffset + canvasH - EXPECTATION_SCRUBBER_H) + 'px';
-            this._scrubberDiv.style.width = canvasW + 'px';
+        if (this._scrubber) {
+            this._scrubber.resize(0, 0, canvasW);
+            this._positionScrubberAboveDock();
         }
         this.expectationViewModel.invalidateLayout();
+        if (this._expectationChartView) {
+            const { leftW } = this.expectationViewModel.splitWidths(canvasW);
+            // +56 clears estimatorPill's top-left badge - see main.js's setUpMCSplitChrome()
+            // for the same inset applied on initial setup/mode-entry.
+            const chartTopInset = 56;
+            this._expectationChartView.updateBounds(0, topOffset + chartTopInset, leftW, canvasH - chartTopInset);
+        }
     }
 }

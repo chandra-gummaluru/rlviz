@@ -32,7 +32,10 @@
     <script src="src/main/domain/simulationState.js"></script>
     <script src="src/main/domain/traceGenerator.js"></script>
     <script src="src/main/domain/valueIterationState.js"></script>
+    <script src="src/main/domain/policyEvaluationState.js"></script>
     <script src="src/main/domain/expectationState.js"></script>
+    <script src="src/main/domain/qLearningState.js"></script>
+    <script src="src/main/domain/qLearningEpisodeGenerator.js"></script>
 
     <!-- Use Case Layer - CreateNode -->
     <script src="src/main/use_case/createNode/createNodeInputBoundary.js"></script>
@@ -79,6 +82,13 @@
     <script src="src/main/use_case/setMode/setModeOutputBoundary.js"></script>
     <script src="src/main/use_case/setMode/setModePresenter.js"></script>
 
+    <!-- Use Case Layer - SetValuesSubView -->
+    <script src="src/main/use_case/setValuesSubView/setValuesSubViewInputBoundary.js"></script>
+    <script src="src/main/use_case/setValuesSubView/setValuesSubViewInputData.js"></script>
+    <script src="src/main/use_case/setValuesSubView/setValuesSubViewInteractor.js"></script>
+    <script src="src/main/use_case/setValuesSubView/setValuesSubViewOutputBoundary.js"></script>
+    <script src="src/main/use_case/setValuesSubView/setValuesSubViewPresenter.js"></script>
+
     <!-- Use Case Layer (new - Zoom) -->
     <script src="src/main/use_case/zoom/zoomInputBoundary.js"></script>
     <script src="src/main/use_case/zoom/zoomInputData.js"></script>
@@ -96,6 +106,7 @@
 
     <!-- Use Case Layer (new - Simulation) -->
     <script src="src/main/use_case/shared/AnimationUtils.js"></script>
+    <script src="src/main/use_case/shared/PolicyMcSampler.js"></script>
     <script src="src/main/use_case/simulation/simulationOutputBoundary.js"></script>
     <script src="src/main/use_case/simulation/simulationAnimator.js"></script>
     <script src="src/main/use_case/simulation/playInputBoundary.js"></script>
@@ -211,8 +222,36 @@
     <script src="src/main/use_case/expectation/updateExpectationGammaInteractor.js"></script>
     <script src="src/main/use_case/expectation/expectationPresenter.js"></script>
 
+    <!-- Use Case - Q-learning (Learning Iteration) -->
+    <script src="src/main/use_case/qLearning/qlOutputBoundary.js"></script>
+    <script src="src/main/use_case/qLearning/qlPresenter.js"></script>
+    <script src="src/main/use_case/qLearning/runQLInputBoundary.js"></script>
+    <script src="src/main/use_case/qLearning/runQLInputData.js"></script>
+    <script src="src/main/use_case/qLearning/runQLInteractor.js"></script>
+    <script src="src/main/use_case/qLearning/qlResetInputBoundary.js"></script>
+    <script src="src/main/use_case/qLearning/qlResetInputData.js"></script>
+    <script src="src/main/use_case/qLearning/qlResetInteractor.js"></script>
+    <script src="src/main/use_case/qLearning/setQLAlgorithmInputBoundary.js"></script>
+    <script src="src/main/use_case/qLearning/setQLAlgorithmInputData.js"></script>
+    <script src="src/main/use_case/qLearning/setQLAlgorithmInteractor.js"></script>
+
+    <!-- Use Case Layer - Evaluate Policy -->
+    <script src="src/main/use_case/evaluatePolicy/evaluatePolicyInputBoundary.js"></script>
+    <script src="src/main/use_case/evaluatePolicy/evaluatePolicyInputData.js"></script>
+    <script src="src/main/use_case/evaluatePolicy/evaluatePolicyOutputBoundary.js"></script>
+    <script src="src/main/use_case/evaluatePolicy/evaluatePolicyInteractor.js"></script>
+    <script src="src/main/use_case/evaluatePolicy/evaluatePolicyPresenter.js"></script>
+
+    <!-- Use Case Layer - Log Optimal Policy -->
+    <script src="src/main/use_case/logOptimalPolicy/logOptimalPolicyInputBoundary.js"></script>
+    <script src="src/main/use_case/logOptimalPolicy/logOptimalPolicyInputData.js"></script>
+    <script src="src/main/use_case/logOptimalPolicy/logOptimalPolicyOutputBoundary.js"></script>
+    <script src="src/main/use_case/logOptimalPolicy/logOptimalPolicyInteractor.js"></script>
+    <script src="src/main/use_case/logOptimalPolicy/logOptimalPolicyPresenter.js"></script>
+
     <!-- Presentation Shared -->
     <script src="src/main/view/helpers/AppPalette.js"></script>
+    <script src="src/main/view/helpers/Typography.js"></script>
 
     <!-- Adapter Layer - ViewModels -->
     <script src="src/main/adapter/viewmodel/SelectionViewModel.js"></script>
@@ -230,17 +269,51 @@
     <!-- View Layer - Helpers -->
     <script src="src/main/view/helpers/GeometricHelper.js"></script>
     <script src="src/main/view/helpers/MathRenderer.js"></script>
+    <script src="src/main/view/helpers/KatexRenderer.js"></script>
     <script src="src/main/view/helpers/ColorUtils.js"></script>
     <script src="src/main/view/helpers/EasingUtils.js"></script>
+    <script src="src/main/view/helpers/RevealTimeline.js"></script>
+    <script src="src/main/view/helpers/SpinningArrowGlyph.js"></script>
+    <script src="src/main/view/helpers/chartDataBuilders.js"></script>
+    <script src="src/main/view/helpers/PolicyChartOverlay.js"></script>
+    <script src="src/main/view/helpers/RecentFiles.js"></script>
+    <script src="src/main/view/helpers/valuesMethodMatrix.js"></script>
+    <script src="src/main/view/helpers/RolloutFormatter.js"></script>
+    <script src="src/main/view/helpers/TreeLayout.js"></script>
 
     <!-- View Layer - UI Components -->
-    <script src="src/main/view/menuBar.js"></script>
-    <script src="src/main/view/toolBar.js"></script>
+    <script src="src/main/view/topBar.js"></script>
+    <script src="src/main/view/toolPalette.js"></script>
+    <script src="src/main/view/zoomPill.js"></script>
+    <script src="src/main/view/estimatorPill.js"></script>
+    <script src="src/main/view/mcRunsPill.js"></script>
+    <script src="src/main/view/mcLeftViewPill.js"></script>
+    <script src="src/main/view/viLeftViewPill.js"></script>
+    <script src="src/main/view/viRightViewPill.js"></script>
+    <script src="src/main/view/learningTreeTogglePill.js"></script>
+    <script src="src/main/view/treeViewPill.js"></script>
+    <script src="src/main/view/viSweepChip.js"></script>
     <script src="src/main/view/RightPanelBuilder.js"></script>
     <script src="src/main/view/rightPanel.js"></script>
+    <script src="src/main/view/goalCard.js"></script>
+    <script src="src/main/view/findOptimalCard.js"></script>
+    <script src="src/main/view/namePolicyModal.js"></script>
+    <script src="src/main/view/renormalizeConfirmModal.js"></script>
+    <script src="src/main/view/noStartNodeModal.js"></script>
+    <script src="src/main/view/toast.js"></script>
     <script src="src/main/view/rewardParticleSystem.js"></script>
     <script src="src/main/view/valueIterationView.js"></script>
+    <script src="src/main/view/learningIterationView.js"></script>
+    <script src="src/main/view/treeView.js"></script>
+    <script src="src/main/view/traceScrubber.js"></script>
     <script src="src/main/view/expectationView.js"></script>
+    <script src="src/main/view/expectationChartView.js"></script>
+    <script src="src/main/view/helpers/viBackupDiagram.js"></script>
+    <script src="src/main/view/viStatesView.js"></script>
+    <script src="src/main/view/viChartView.js"></script>
+    <script src="src/main/view/viEquationView.js"></script>
+    <script src="src/main/view/viBackwardView.js"></script>
+    <script src="src/main/view/chartDock.js"></script>
     <script src="src/main/view/SimulationRenderer.js"></script>
     <script src="src/main/view/mainView.js"></script>
 

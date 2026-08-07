@@ -30,8 +30,35 @@ class SimulationState {
         this.currentDecisionProbs = [];  // Available actions with uniform probability
         this.currentOutcomeProbs = [];  // Possible next states with their probabilities
 
+        // User-configurable trace-length cap, in TRANSITIONS (state->action->state = 1) - matches
+        // expectationState.maxSteps's semantic exactly (Monte Carlo's own equivalent "steps"
+        // parameter), including the same *2+1 conversion to raw trace-node count when calling
+        // TraceGenerator.generate(). Default 25 reproduces this app's prior hardcoded ~25-
+        // transition behavior (TraceGenerator.generate() used to always be called with a fixed
+        // cap of 50 raw nodes) rather than silently jumping to Monte Carlo's much larger default
+        // of 100.
+        this.maxSteps = 25;
+
         // Policy settings: stateId -> selected actionId. Missing entries use random action selection.
         this.policy = {};
+
+        // Weighted-random policy settings: stateId -> {actionId: rawWeight}. Raw slider values,
+        // not forced to sum to 1 - consumers (sampling, decision-prob display, spinning arrow)
+        // normalize by dividing by the sum wherever the numbers are actually used. Mutually
+        // exclusive with `policy` per state - see getPolicyMode().
+        this.policyWeights = {};
+
+        // Time-dependent policy (π_t, Evaluate redesign Phase 6) - orthogonal to policy/
+        // policyWeights above, which remain the "Stationary" representation. 'timeDependent'
+        // switches every consumer (sampling, exact evaluation, canvas rendering) over to reading
+        // timeDependentPolicy instead, via resolvePiTAction() below.
+        this.piMode = 'stationary';       // 'stationary' | 'timeDependent'
+        this.piHorizon = 8;               // shared horizon: episode length cap + backward-induction depth
+        // stateId -> array[piHorizon] of one of: a concrete actionId (deterministic), the
+        // 'random' sentinel (uniform), or a {actionId: rawWeight} object (weighted-random, the
+        // π_t analogue of policyWeights above - see initTimeDependentWeightsUniform/
+        // setTimeDependentWeight/getTimeDependentActionMode below).
+        this.timeDependentPolicy = {};
 
         // Spinning arrow animation settings
         this.spinningArrowEnabled = true;  // Toggle for spinning arrow animation (on by default)
@@ -40,6 +67,12 @@ class SimulationState {
         this.spinningArrowEdges = [];  // Array of {edgeIndex, probability, targetId}
         this.spinningArrowSequence = [];  // Array of edge indices — the tick order
         this.spinningArrowTickTimestamps = [];  // Cumulative ms timestamps for each tick
+
+        // Incremented by jumpToIndex() - lets an in-flight, multi-phase animateTransition()
+        // (SimulationAnimator) detect that a scrub/jump has invalidated it mid-flight and abort
+        // before mutating state further, rather than resuming with stale fromNode/toNode data
+        // and corrupting the position/stats jumpToIndex() just recomputed from scratch.
+        this.jumpGeneration = 0;
     }
 
     // Initialize with a generated trace
@@ -86,6 +119,55 @@ class SimulationState {
             return true;
         }
         return false;  // Reached end of trace
+    }
+
+    // Instantly jump to an arbitrary trace position, bypassing the normal phase-by-phase
+    // animation (reveal/decision/transition/camera) that advance() drives via SimulationAnimator -
+    // used by TraceScrubber's drag-to-scrub and stepper-arrow interactions. Recomputes reward/
+    // visibility state from scratch rather than incrementally replaying advance()/addReward()
+    // calls, since jumping BACKWARD must also un-accumulate reward/visibility past the new
+    // position, not just stop adding to it. `graph` is required to look up each transition's real
+    // reward (mirrors SimulationAnimator.getNodeFromGraph()'s own sas.find() lookup - the trace
+    // entries themselves don't carry reward, see TraceGenerator.createVisitedEntry()).
+    jumpToIndex(targetIndex, graph) {
+        if (this.visited.length === 0) return;
+
+        // Invalidate any in-flight animateTransition() so it aborts at its next generation
+        // check instead of resuming with stale fromNode/toNode and clobbering what we're about
+        // to recompute below.
+        this.jumpGeneration++;
+
+        const clamped = Math.max(0, Math.min(this.visited.length - 1, targetIndex));
+
+        this.currentIndex = clamped;
+        this.currentNode = this.visited[clamped];
+        this.phase = 'idle';
+        this.isPlaying = false;
+        this.phaseStartTime = 0;
+        this.phaseDuration = 0;
+
+        this.clearVisualState();
+        this.totalReward = 0;
+        this.stepCount = 0;
+        this.rewardHistory = [];
+        this.pendingReward = 0;
+        this.pendingRewardActionNodeId = null;
+
+        for (let i = 0; i <= clamped; i++) {
+            this.revealNode(this.visited[i].id);
+            if (i > 0) this.revealEdge(this.visited[i - 1].id, this.visited[i].id);
+
+            if (i > 0 && this.visited[i - 1].type === 'action' && this.visited[i].type === 'state') {
+                const actionNodeInGraph = graph ? graph.getNodeById(this.visited[i - 1].id) : null;
+                const transition = actionNodeInGraph
+                    ? actionNodeInGraph.sas.find(t => t.nextState === this.visited[i].id)
+                    : null;
+                const reward = transition ? transition.reward : 0;
+                this.totalReward += reward;
+                this.stepCount++;
+                this.rewardHistory.push(reward);
+            }
+        }
     }
 
     // Check if we can advance further
@@ -268,14 +350,16 @@ class SimulationState {
         if (!stateNode || stateNode.type !== 'state') return;
 
         const availableActions = stateNode.actions || [];
+        const weightedProbs = this._normalizedProbsForState(stateNode.id, availableActions);
         const uniformProb = availableActions.length > 0 ? 1.0 / availableActions.length : 0;
 
         availableActions.forEach(actionId => {
             const actionNode = graph.getNodeById(actionId);
             if (actionNode) {
+                const probability = weightedProbs ? (weightedProbs.get(Number(actionId)) ?? 0) : uniformProb;
                 this.currentDecisionProbs.push({
                     actionName: actionNode.name,
-                    probability: uniformProb
+                    probability
                 });
             }
         });
@@ -348,10 +432,261 @@ class SimulationState {
             return;
         }
         this.policy[stateId] = actionId;
+        delete this.policyWeights[stateId];
     }
 
     getPolicyAction(stateId) {
         return this.policy[stateId] ?? null;
+    }
+
+    // Tri-state read of a state's policy configuration - 'deterministic' (policy[stateId] set),
+    // 'weighted' (policyWeights[stateId] set, explicit Random distribution), or 'uniform'
+    // (neither set - today's default random-among-available-actions behavior).
+    getPolicyMode(stateId) {
+        if (this.policy[stateId] !== undefined && this.policy[stateId] !== null) return 'deterministic';
+        if (this.policyWeights[stateId] !== undefined) return 'weighted';
+        return 'uniform';
+    }
+
+    // Seeds an equal starting weight for every action the first time a state switches to
+    // Random-with-weights mode (e.g. clicking "Random" in Policy mode) - individual weights are
+    // then adjusted one at a time via setPolicyWeight().
+    initPolicyWeightsUniform(stateId, actionIds) {
+        const n = actionIds.length;
+        if (n === 0) return;
+        const weights = {};
+        actionIds.forEach(actionId => { weights[actionId] = 1 / n; });
+        this.policyWeights[stateId] = weights;
+        delete this.policy[stateId];
+    }
+
+    // Sets one action's raw weight (0-1) within a state's Random distribution, leaving the
+    // other actions' weights untouched - sampling/display normalize by dividing by the sum
+    // wherever the numbers are used, so this doesn't need to rebalance anything itself.
+    setPolicyWeight(stateId, actionId, value) {
+        const clamped = Math.max(0, Math.min(1, value));
+        if (!this.policyWeights[stateId]) this.policyWeights[stateId] = {};
+        this.policyWeights[stateId][actionId] = clamped;
+        delete this.policy[stateId];
+    }
+
+    getPolicyWeights(stateId) {
+        return this.policyWeights[stateId] ?? null;
+    }
+
+    // Normalized (sum-to-1), Number()-keyed probabilities for a state's weighted policy,
+    // filtered to actionIds still present on the state (stale/deleted actions are silently
+    // dropped rather than crashing or under-sampling). Returns null when the state isn't in
+    // 'weighted' mode. Shared by setDecisionProbs() and initStateSpinningArrow().
+    _normalizedProbsForState(stateId, validActionIds) {
+        if (this.getPolicyMode(stateId) !== 'weighted') return null;
+        return this._normalizeWeightsObject(this.policyWeights[stateId], validActionIds);
+    }
+
+    // Normalizes an arbitrary {actionId: rawWeight} object (sum-to-1, Number()-keyed), filtered
+    // to actionIds still present on the state - the actual math both _normalizedProbsForState
+    // (Stationary weighted policies) and the time-dependent weighted-slot consumers
+    // (EdgeViewModel._piTEdgeProbability, TraceGenerator, PolicyEvaluationState._actionProbsAtTime)
+    // share, since a π_t weighted slot is shaped exactly like `policyWeights[stateId]` - just
+    // stored at `timeDependentPolicy[stateId][t]` instead. A pure function of its two params -
+    // does not read `this` - so callers may invoke it against any SimulationState instance.
+    _normalizeWeightsObject(weights, validActionIds) {
+        if (!weights) return null;
+        const validIds = new Set(validActionIds.map(Number));
+
+        let sum = 0;
+        const entries = [];
+        Object.entries(weights).forEach(([actionId, weight]) => {
+            const numericId = Number(actionId);
+            if (!validIds.has(numericId)) return;
+            sum += weight;
+            entries.push([numericId, weight]);
+        });
+
+        if (entries.length === 0 || sum <= 0) return null;
+
+        const probs = new Map();
+        entries.forEach(([actionId, weight]) => probs.set(actionId, weight / sum));
+        return probs;
+    }
+
+    // Map<actionId, probability> for one state, under the CURRENT (stationary) policy -
+    // deterministic gets 1.0 on the chosen action, weighted gets the normalized slider weights,
+    // uniform splits evenly. Mirrors EdgeViewModel.policyEdgeProbability's own branching on
+    // getPolicyMode() exactly, so canvas rendering and any consumer of this (PolicyEvaluationState's
+    // evaluate(), ValueIterationState's expectation-mode sweep) never disagree about what the
+    // policy means. Shared single implementation - do not duplicate this branching elsewhere.
+    actionProbsForState(stateId, actions) {
+        const policyMode = this.getPolicyMode(stateId);
+        if (policyMode === 'deterministic') {
+            const chosen = this.getPolicyAction(stateId);
+            const probs = new Map();
+            actions.forEach(a => probs.set(Number(a), Number(a) === Number(chosen) ? 1 : 0));
+            return probs;
+        }
+        if (policyMode === 'weighted') {
+            const probs = this._normalizedProbsForState(stateId, actions);
+            if (probs) return probs;
+        }
+        const uniform = new Map();
+        actions.forEach(a => uniform.set(Number(a), 1 / actions.length));
+        return uniform;
+    }
+
+    // Time-dependent policy (π_t) methods - see the field comments above for the storage shape.
+    // These are additive: stationary policy/policyWeights are untouched by any of them, so
+    // switching piMode back to 'stationary' instantly restores exactly what was there before.
+
+    // Switches the active representation. Entering 'timeDependent' seeds any multi-action state
+    // not already present in timeDependentPolicy from that state's CURRENT stationary resolution
+    // (deterministic action if set, weighted weights copied if set, else the 'random' sentinel) -
+    // so a state edited before and switched away from doesn't lose its time-dependent edits, but
+    // a state visited for the first time starts from something meaningful instead of undefined.
+    setPiMode(mode, graph) {
+        this.piMode = mode;
+        if (mode !== 'timeDependent' || !graph) return;
+        graph.nodes.filter(n => n.type === 'state').forEach(stateNode => {
+            const actions = stateNode.actions || [];
+            if (actions.length === 0 || this.timeDependentPolicy[stateNode.id]) return;
+            const stationaryMode = this.getPolicyMode(stateNode.id);
+            if (stationaryMode === 'deterministic') {
+                const seed = this.getPolicyAction(stateNode.id);
+                this.timeDependentPolicy[stateNode.id] = Array(this.piHorizon).fill(seed);
+            } else if (stationaryMode === 'weighted') {
+                // Array(n).fill(obj) would share ONE object reference across every t - editing
+                // one timestep's slider would silently mutate every other timestep's weights too.
+                // Each t needs its own independent copy of the stationary weights to seed from.
+                const weights = this.policyWeights[stateNode.id];
+                this.timeDependentPolicy[stateNode.id] =
+                    Array.from({ length: this.piHorizon }, () => ({ ...weights }));
+            } else {
+                this.timeDependentPolicy[stateNode.id] = Array(this.piHorizon).fill('random');
+            }
+        });
+    }
+
+    isTimeDependent() {
+        return this.piMode === 'timeDependent';
+    }
+
+    // Resizes every existing time-dependent array to the new horizon: truncates if shorter,
+    // extends by repeating the last element if longer (the least surprising default - no new
+    // information exists to fill unedited future timesteps with). When the last element is a
+    // weighted-random slot (an object), each newly appended slot gets its OWN copy - reusing the
+    // same object reference across multiple array entries (Array(n).fill(obj)) would make editing
+    // one of the extended timesteps silently edit all of them.
+    setPiHorizon(horizon) {
+        const h = Math.max(1, Math.floor(horizon));
+        this.piHorizon = h;
+        Object.keys(this.timeDependentPolicy).forEach(stateId => {
+            const seq = this.timeDependentPolicy[stateId];
+            if (seq.length === h) return;
+            if (seq.length > h) {
+                this.timeDependentPolicy[stateId] = seq.slice(0, h);
+            } else {
+                const last = seq[seq.length - 1];
+                const extension = Array.from({ length: h - seq.length }, () =>
+                    (last && typeof last === 'object') ? { ...last } : last
+                );
+                this.timeDependentPolicy[stateId] = seq.concat(extension);
+            }
+        });
+    }
+
+    // Cycles a0 -> a1 -> ... -> 'random' -> a0 at a single (stateId, t) slot, mirroring the
+    // Stationary section's own deterministic-action-segment click cycling.
+    cycleTimeDependentAction(stateId, t, actions) {
+        if (!actions || actions.length === 0) return;
+        if (!this.timeDependentPolicy[stateId]) {
+            this.timeDependentPolicy[stateId] = Array(this.piHorizon).fill('random');
+        }
+        const seq = this.timeDependentPolicy[stateId];
+        const idx = Math.max(0, Math.min(seq.length - 1, t));
+        const current = seq[idx];
+        const currentActionIdx = actions.findIndex(a => Number(a) === Number(current));
+        const next = currentActionIdx === -1 || currentActionIdx === actions.length - 1
+            ? (current === 'random' ? actions[0] : 'random')
+            : actions[currentActionIdx + 1];
+        seq[idx] = next;
+    }
+
+    // Direct set (vs cycleTimeDependentAction's click-to-cycle) - backs the segmented-button
+    // selector mirroring Stationary's _renderPolicyActionSegments UI. value is a concrete
+    // actionId or the 'random' sentinel.
+    setTimeDependentAction(stateId, t, value) {
+        if (!this.timeDependentPolicy[stateId]) {
+            this.timeDependentPolicy[stateId] = Array(this.piHorizon).fill('random');
+        }
+        const seq = this.timeDependentPolicy[stateId];
+        const idx = Math.max(0, Math.min(seq.length - 1, t));
+        seq[idx] = value;
+    }
+
+    // Clamped read - null if the state has no time-dependent entry at all (terminal/single-action
+    // states never need one; selectActionForPolicy()/evaluateTimeIndexed() already treat "no
+    // entry" as "uniform among available actions", so this deliberately does not synthesize one).
+    getTimeDependentAction(stateId, t) {
+        const seq = this.timeDependentPolicy[stateId];
+        if (!seq || seq.length === 0) return null;
+        const idx = Math.max(0, Math.min(seq.length - 1, t));
+        return seq[idx];
+    }
+
+    // Tri-state read of a single (stateId, t) slot's configuration - mirrors getPolicyMode's
+    // Stationary counterpart, but there's no separate storage to check here: the raw slot value's
+    // own type IS the mode. A concrete actionId -> 'deterministic', a weight object ->
+    // 'weighted', the 'random' sentinel (or no entry at all) -> 'uniform'.
+    getTimeDependentActionMode(stateId, t) {
+        const value = this.getTimeDependentAction(stateId, t);
+        if (value === null || value === undefined || value === 'random') return 'uniform';
+        if (typeof value === 'object') return 'weighted';
+        return 'deterministic';
+    }
+
+    // Weight object at a single (stateId, t) slot, or null if that slot isn't in 'weighted' mode.
+    // Mirrors getPolicyWeights' Stationary counterpart.
+    getTimeDependentWeights(stateId, t) {
+        const value = this.getTimeDependentAction(stateId, t);
+        return (value && typeof value === 'object') ? value : null;
+    }
+
+    // Seeds an equal starting weight for every action the first time a (stateId, t) slot switches
+    // to weighted-random ("Random" in the π_t editor) - mirrors initPolicyWeightsUniform's
+    // Stationary counterpart exactly, just writing into timeDependentPolicy[stateId][t] instead
+    // of policyWeights[stateId].
+    initTimeDependentWeightsUniform(stateId, t, actionIds) {
+        const n = actionIds.length;
+        if (n === 0) return;
+        if (!this.timeDependentPolicy[stateId]) {
+            this.timeDependentPolicy[stateId] = Array(this.piHorizon).fill('random');
+        }
+        const seq = this.timeDependentPolicy[stateId];
+        const idx = Math.max(0, Math.min(seq.length - 1, t));
+        const weights = {};
+        actionIds.forEach(actionId => { weights[actionId] = 1 / n; });
+        seq[idx] = weights;
+    }
+
+    // Sets one action's raw weight within a (stateId, t) weighted-random slot, leaving sibling
+    // actions' weights untouched - mirrors setPolicyWeight's Stationary counterpart exactly.
+    setTimeDependentWeight(stateId, t, actionId, value) {
+        const clamped = Math.max(0, Math.min(1, value));
+        if (!this.timeDependentPolicy[stateId]) {
+            this.timeDependentPolicy[stateId] = Array(this.piHorizon).fill('random');
+        }
+        const seq = this.timeDependentPolicy[stateId];
+        const idx = Math.max(0, Math.min(seq.length - 1, t));
+        if (!seq[idx] || typeof seq[idx] !== 'object') seq[idx] = {};
+        seq[idx][actionId] = clamped;
+    }
+
+    // Single read path every consumer (TraceGenerator sampling, PolicyEvaluationState's backward
+    // induction, canvas rendering) should call instead of touching timeDependentPolicy directly -
+    // returns null whenever time-dependent mode isn't active or the state has no entry, so callers
+    // can uniformly fall through to their existing stationary-mode logic unchanged.
+    resolvePiTAction(stateId, elapsedT) {
+        if (this.piMode !== 'timeDependent') return null;
+        return this.getTimeDependentAction(stateId, elapsedT);
     }
 
     // Spinning arrow animation methods
@@ -406,11 +741,15 @@ class SimulationState {
 
     }
 
-    initStateSpinningArrow(actionIds, targetActionId) {
+    // stateId is optional - when provided and that state has an explicit weighted Random
+    // policy, the arrow's per-action probabilities reflect the configured weights instead of
+    // uniform 1/n.
+    initStateSpinningArrow(actionIds, targetActionId, stateId) {
         const n = actionIds.length;
         if (n === 0) return;
+        const weightedProbs = stateId !== undefined ? this._normalizedProbsForState(stateId, actionIds) : null;
         const edges = actionIds.map(actionId => ({
-            probability: 1 / n,
+            probability: weightedProbs ? (weightedProbs.get(Number(actionId)) ?? 0) : 1 / n,
             targetId: actionId
         }));
         const targetIndex = actionIds.findIndex(actionId => Number(actionId) === Number(targetActionId));

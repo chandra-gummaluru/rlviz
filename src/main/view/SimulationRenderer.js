@@ -55,7 +55,7 @@ class SimulationRenderer {
 
     // Returns { dashed, alpha, colorOverride } for an edge during sim phases.
     getEdgeRenderInfo(from, to) {
-        if (this._vm.interaction.mode !== 'simulate') return { dashed: false, alpha: this._ALPHA_FULL, colorOverride: null };
+        if (this._vm.interaction.mode !== 'build' && this._vm.interaction.mode !== 'policy') return { dashed: false, alpha: this._ALPHA_FULL, colorOverride: null };
         if (!this._vm.simulationState) return { dashed: false, alpha: this._ALPHA_FULL, colorOverride: null };
         const simState = this._vm.simulationState;
         const cur = simState.currentNode;
@@ -148,7 +148,7 @@ class SimulationRenderer {
 
     // Returns alpha (0-255) for a node during sim phases.
     getNodeAlpha(node) {
-        if (this._vm.interaction.mode !== 'simulate') return this._ALPHA_FULL;
+        if (this._vm.interaction.mode !== 'build' && this._vm.interaction.mode !== 'policy') return this._ALPHA_FULL;
         if (!this._vm.simulationState) return this._ALPHA_FULL;
         const simState = this._vm.simulationState;
         const cur = simState.currentNode;

@@ -298,6 +298,21 @@ class GeometricHelper {
     }
 
     /**
+     * Check if a click is on a text label's resize handle (its bottom-right corner) - mirrors
+     * isClickOnNodeEdge's "near the boundary" hit zone, but for a rectangular bounding box
+     * (label.contains()'s own geometry: label.x/label.y is the box's center, half-width/height
+     * are textWidth/2 and fontSize/2) instead of a circle.
+     */
+    static isClickOnTextLabelCorner(label, x, y, cornerThreshold = 10) {
+        const textWidth = label.text.length * label.fontSize * 0.6;
+        const halfW = textWidth / 2;
+        const halfH = label.fontSize / 2;
+        const cornerX = label.x + halfW;
+        const cornerY = label.y + halfH;
+        return Math.abs(x - cornerX) <= cornerThreshold && Math.abs(y - cornerY) <= cornerThreshold;
+    }
+
+    /**
      * Check if a click should be interpreted as double-click
      */
     static isDoubleClick(lastClickTime, lastClickedEntity, currentEntity, doubleClickThreshold = 500) {

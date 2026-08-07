@@ -25,21 +25,27 @@ const MV_ARROW_ANGLE         = Math.PI / 6;  // 30 degrees
 const MV_EDITOR_FOCUS_ALPHA_FULL  = 255;
 const MV_EDITOR_FOCUS_ALPHA_FADED = 45;
 
+// Reserved space at the top of Values mode's canvas so the VI graph doesn't render behind the
+// floating estimator pill overlapping the top of the canvas (matches expectationView.js's
+// EXPECTATION_TOP_CLEARANCE, used for the same reason on the Monte Carlo pane).
+const MV_VALUES_PILL_CLEARANCE = 90;
+
 // --- End constants ---
 
 class MainView {
-    constructor(canvasViewModel, canvasController, menuBar, toolBar, rightPanel) {
+    constructor(canvasViewModel, canvasController, topBar, rightPanel) {
         this.viewModel = canvasViewModel;
         this.controller = canvasController;
-        this.menuBar = menuBar;
-        this.toolBar = toolBar;
+        this.topBar = topBar;
         this.rightPanel = rightPanel;
 
         this.simRenderer = new SimulationRenderer(canvasViewModel);
 
-        this.MENU_BAR_HEIGHT = menuBar ? menuBar.getHeight() : 0;
-        this.TOOL_BAR_HEIGHT = toolBar ? toolBar.getHeight() : 0;
-        this.TOP_BARS_HEIGHT = this.MENU_BAR_HEIGHT + this.TOOL_BAR_HEIGHT;
+        // Kept as TOP_BARS_HEIGHT (not renamed to a singular TOP_BAR_HEIGHT) - many downstream
+        // call sites (canvas sizing, right-panel/chart-dock/floating-pill offsets) consume this
+        // purely as "how much vertical space the top chrome occupies," independent of how many
+        // bars compose it.
+        this.TOP_BARS_HEIGHT = topBar ? topBar.getHeight() : 0;
         this.RIGHT_PANEL_WIDTH = rightPanel ? rightPanel.getWidth() : 0;
 
         this.canvas = null;
@@ -59,6 +65,45 @@ class MainView {
 
         // Value Iteration view (set after construction)
         this.valueIterationView = null;
+
+        // Learning Iteration view (unknown:full quadrant real Q-learning; set after construction)
+        this.learningIterationView = null;
+        this.learningTreePill = null;
+
+        // Bottom chart dock (Values mode; instantiated in a later phase)
+        this.chartDock = null;
+
+        // Floating Build-mode tool palette (set after construction)
+        this.toolPalette = null;
+
+        // Floating zoom pill (set after construction)
+        this.zoomPill = null;
+
+        // Floating bottom-center trace scrubber, Build/Policy mode only (set after construction)
+        this.traceScrubber = null;
+
+        // Floating Values-mode estimator pill (set after construction)
+        this.estimatorPill = null;
+
+        // Floating Values-mode pills set after construction
+        this.mcRunsPill = null;
+        this.viSweepChip = null;
+
+        // Cached dot-grid background layer; rebuilt on resize/theme change, not every redraw()
+        this._dotGridLayer = null;
+        this._dotGridTheme = null;
+
+        // Tracks whether the previous frame was rendering Tree view - used to detect the
+        // Tree -> non-Tree transition (Graph pill, or leaving Build/Policy mode entirely) so any
+        // camera-follow pan Tree view left on the SHARED viewModel.viewport can be reset before
+        // Graph view (which renders through that same viewport) picks it up.
+        this._wasInTreeView = false;
+    }
+
+    // Policy's canvas is identical to Build's (fully editable - only the right panel differs),
+    // so every Build-only rendering/interaction branch here treats both modes the same.
+    _isEditableMode() {
+        return this.viewModel.mode === 'build' || this.viewModel.mode === 'policy';
     }
 
     setup() {
@@ -71,32 +116,121 @@ class MainView {
         // Suppress browser context menu so right-click can be used for canvas interactions
         this.canvas.elt.addEventListener('contextmenu', e => e.preventDefault());
 
-        // Set global text font to Calibri
-        textFont('Calibri, "Segoe UI", Tahoma, sans-serif');
+        // Set global text font
+        textFont(Typography.sans());
+
+        this.invalidateDotGrid();
 
         noLoop();
         redraw();
     }
 
-    draw() {
-        background(240);
+    // Rebuilt lazily on next draw() when canvas size or theme has changed.
+    invalidateDotGrid() {
+        this._dotGridLayer = null;
+    }
 
-        // Expectation mode: delegate to expectation view
-        if (this.viewModel.interaction.mode === 'expectation' && this.expectationView) {
-            const usableW = windowWidth - (this.rightPanel ? this.rightPanel.getWidth() : 300);
-            const usableH = windowHeight - 90;
-            this.expectationView.draw(usableW, usableH);
-            return;
+    // Height the chart dock currently reserves at the bottom of the values-mode canvas area
+    // (0 while closed or before it's mounted).
+    getDockHeight() {
+        if (this.viewModel.interaction.mode === 'values' && this.viewModel.valuesSubView === 'mc') return 0;
+        return this.chartDock ? this.chartDock.getReservedHeight() : 0;
+    }
+
+    // Called by ChartDock when the user drags/collapses it, so the values-mode layout
+    // (pane sizes, scrubber position) re-accounts for the new reserved height.
+    onDockResize() {
+        if (this.viewModel.interaction.mode !== 'values') return;
+        const canvasWidth = windowWidth - this.RIGHT_PANEL_WIDTH;
+        const canvasHeight = windowHeight - this.TOP_BARS_HEIGHT;
+        const paneWidths = this._valuesPaneWidths(canvasWidth);
+        const valuesHeight = canvasHeight - this.getDockHeight();
+        this._relayoutValueIterationIfActive(paneWidths.vi, valuesHeight);
+        if (this.expectationView && this.viewModel.valuesSubView === 'mc') {
+            this.expectationView.resize(paneWidths.mc, valuesHeight, this.TOP_BARS_HEIGHT);
         }
+        redraw();
+    }
 
-        // Value Iteration mode: delegate to VI view
-        if (this.viewModel.interaction.mode === 'value_iteration' && this.valueIterationView) {
-            push();
-            translate(this.viewModel.viewport.panX, this.viewModel.viewport.panY);
-            scale(this.viewModel.viewport.zoom);
-            this.valueIterationView.draw();
-            pop();
-            this.drawZoomIndicator();
+    _buildDotGridLayer(w, h) {
+        const spacing = 22;
+        const g = createGraphics(Math.max(1, Math.floor(w)), Math.max(1, Math.floor(h)));
+        g.clear();
+        g.noStroke();
+        g.fill(AppPalette.border.gridDot);
+        for (let x = spacing / 2; x < w; x += spacing) {
+            for (let y = spacing / 2; y < h; y += spacing) {
+                g.circle(x, y, 1.4);
+            }
+        }
+        return g;
+    }
+
+    _ensureDotGridLayer() {
+        const theme = AppPalette.getTheme();
+        if (this._dotGridLayer && this._dotGridTheme === theme
+            && this._dotGridLayer.width === width && this._dotGridLayer.height === height) {
+            return this._dotGridLayer;
+        }
+        if (this._dotGridLayer) this._dotGridLayer.remove();
+        this._dotGridLayer = this._buildDotGridLayer(width, height);
+        this._dotGridTheme = theme;
+        return this._dotGridLayer;
+    }
+
+    draw() {
+        background(AppPalette.surface.canvas);
+        image(this._ensureDotGridLayer(), 0, 0);
+
+        // Values mode: delegate to the MC / Method sub-view
+        if (this.viewModel.interaction.mode === 'values') {
+            const usableW = windowWidth - this.RIGHT_PANEL_WIDTH;
+            const usableH = windowHeight - this.TOP_BARS_HEIGHT - this.getDockHeight();
+            const subView = this.viewModel.valuesSubView;
+
+            if (subView === 'mc' && this.expectationView) {
+                this.expectationView.draw(usableW, usableH);
+            } else if (subView === 'vi' && this.valueIterationView) {
+                const quadrant = ValuesMethodMatrix.key(this.viewModel.modelKnown, this.viewModel.observability);
+                const viSplit = this._viSplitWidths(usableW);
+                const isSplit = viSplit !== null;
+                const leftW = isSplit ? viSplit.leftW : 0;
+
+                push();
+                if (isSplit) {
+                    drawingContext.save();
+                    drawingContext.beginPath();
+                    drawingContext.rect(leftW, 0, usableW - leftW, usableH);
+                    drawingContext.clip();
+                }
+                // Fixed screen-space shift (applied before pan/zoom, so it isn't affected by
+                // zoom scale) to clear the floating estimator pill, plus the left pane's width
+                // when the split applies (Phase 3b) - shifts the whole pan/zoom'd graph into the
+                // right 48% instead of the full canvas. Pan/zoom itself is untouched: it's pure
+                // incremental drag/wheel-delta accumulation with no absolute-recentering call
+                // active in VI mode (keyboard shortcuts, including 'r' reset-zoom, are already
+                // fully disabled while mode === 'values'), so it composes correctly with this
+                // constant shift with no special-casing needed.
+                translate(leftW, MV_VALUES_PILL_CLEARANCE);
+                translate(this.viewModel.viewport.panX, this.viewModel.viewport.panY);
+                scale(this.viewModel.viewport.zoom);
+                // The unknown:full quadrant (Learning Iteration) is a genuinely separate
+                // subsystem (real episodic Q-learning + search tree), not VI's rendering - never
+                // split, drawn full-width exactly as today (isSplit is false there, leftW is 0).
+                if (quadrant === 'unknown:full' && this.learningIterationView) {
+                    this.learningIterationView.draw();
+                } else if (this.viewModel.valueIterationViewModel.rightView === 'graph') {
+                    // 'graph' is no longer a reachable rightView value from the UI (viRightViewPill
+                    // only offers 'equation'/'chart' now) - this branch, and ValueIterationView
+                    // itself, are kept rather than deleted, just unreachable in practice. An
+                    // explicit '=== graph' check (rather than the old '!== equation') matters here:
+                    // 'chart' must NOT also fall into this branch and draw the live graph
+                    // underneath ViChartView's own DOM overlay.
+                    this.valueIterationView.draw();
+                }
+                if (isSplit) drawingContext.restore();
+                pop();
+            }
             return;
         }
 
@@ -105,34 +239,63 @@ class MainView {
         translate(this.viewModel.viewport.panX, this.viewModel.viewport.panY);
         scale(this.viewModel.viewport.zoom);
 
-        this.drawEdges();
-        this.drawNodes();
-        this.drawTextLabels();
+        if (this._isEditableMode() && this.viewModel.buildCanvasView === 'tree' && this.treeView) {
+            this.treeView.draw(windowWidth - this.RIGHT_PANEL_WIDTH);
+        } else {
+            this.drawEdges();
+            this.drawNodes();
+            this.drawTextLabels();
+        }
 
-        // Draw spinning arrow if in spinning arrow phase (action node) or state_spinning_arrow (state node)
-        if (this.viewModel.simulationState) {
+        // Draw spinning arrow if in spinning arrow phase (action node) or state_spinning_arrow
+        // (state node). Gated on NOT being in Tree view - these read real graph node world-
+        // coordinates (graph.getNodeById(id).x/.y), which are meaningless in Tree view's synthetic
+        // TreeLayout coordinate space. Tree view draws its own tree-positioned equivalents from
+        // inside treeView.draw() instead (see treeView.js's _drawTraceReveal(), added in Task 5-6
+        // of docs/superpowers/plans/2026-07-14-tree-view-simulation-animation.md).
+        const _inTreeView = this._isEditableMode() && this.viewModel.buildCanvasView === 'tree';
+        if (this._wasInTreeView && !_inTreeView && this.treeView) {
+            this.treeView.resetPanIfAutoFollowed();
+        }
+        this._wasInTreeView = _inTreeView;
+        if (!_inTreeView && this.viewModel.simulationState) {
             const _phase = this.viewModel.simulationState.phase;
             if (_phase === 'spinning_arrow') this.drawSpinningArrow();
             if (_phase === 'state_spinning_arrow') this.drawStateSpinningArrow();
         }
 
         // Draw travel ball during edge_highlight phase
-        this.drawHighlightedEdgeTravelBall();
+        if (!_inTreeView) this.drawHighlightedEdgeTravelBall();
 
         pop();
 
-        // Continuous redraw during animated simulation phases
+        // π badge (Evaluate redesign Phase 6) - screen-space, drawn after pop() so pan/zoom
+        // doesn't affect it (no resetMatrix() needed since we're already outside the push()).
+        if (this._isEditableMode()) this._drawPiBadge();
+
+        // Continuous redraw during animated simulation phases. Tree view's 'transition' phase is
+        // additionally included here (gated to Tree view only) because it now drives a real
+        // per-frame animation - the camera auto-follow lerp in treeView.js's _followCamera() (Task
+        // 7 of docs/superpowers/plans/2026-07-14-tree-view-simulation-animation.md). Without a
+        // continuous redraw loop during that phase, presentPhaseChange()'s one-shot redraw() at
+        // the phase's start is the ONLY frame rendered for the whole phase, so _followCamera's
+        // lerp only ever advances a single (~0) time-step and the camera never visibly pans - this
+        // was caught by live-testing in a headless browser, not by reading the code. Graph view's
+        // own 'transition' phase remains excluded (it's a timing pause only - nothing animates
+        // there, so a continuous redraw loop would be pure wasted work).
         const _simS = this.viewModel.simulationState;
         if (_simS && _simS.replayInitialized && !_simS.isPhaseComplete() &&
             (_simS.phase === 'reveal' ||
              _simS.phase === 'highlight' ||
              _simS.phase === 'spinning_arrow' ||
-             _simS.phase === 'state_spinning_arrow')) {
+             _simS.phase === 'state_spinning_arrow' ||
+             (_inTreeView && _simS.phase === 'transition'))) {
             requestAnimationFrame(() => { if (typeof redraw === 'function') redraw(); });
         }
 
-        // Draw zoom level indicator
-        this.drawZoomIndicator();
+        if (this._isEditableMode() && this.viewModel.buildCanvasView === 'tree' && this.treeView) {
+            this.treeView.drawChrome();
+        }
 
         // Draw info/error messages
         this.drawMessages();
@@ -163,6 +326,62 @@ class MainView {
         if (this.viewModel.interaction.heldTextLabel && this.viewModel.interaction.placingMode === 'textbox') {
             this.updateHeldNodePosition();
         }
+    }
+
+    // Effective pane widths for the current Values sub-view: 'mc'/'vi' are exclusive panes, each
+    // owning the whole canvas (canvas comparison lives in the charts, not a split canvas view).
+    _valuesPaneWidths(canvasWidth) {
+        return { mc: canvasWidth, vi: canvasWidth };
+    }
+
+    // Returns { leftW, rightW } for Values -> Iteration's split (Phase 3b), or null if the
+    // current quadrant doesn't split (Learning Iteration). Shared by the draw dispatch above and
+    // the resize handlers below so they can never disagree about the split geometry.
+    _viSplitWidths(usableW) {
+        if (!this.expectationView) return null;
+        const quadrant = ValuesMethodMatrix.key(this.viewModel.modelKnown, this.viewModel.observability);
+        if (quadrant === 'unknown:full') return null;
+        return this.expectationView.expectationViewModel.splitWidths(usableW);
+    }
+
+    // π badge (Evaluate redesign Phase 6): "π at t = k · <action>" while a time-dependent policy
+    // is active, "π · all t" while stationary - small top-left screen-space chip, positioned below
+    // the floating tool palette so it never overlaps it (see toolPalette.js's own placement).
+    _drawPiBadge() {
+        const simulationState = this.viewModel.simulationState;
+        if (!simulationState) return;
+
+        let label;
+        if (simulationState.isTimeDependent()) {
+            const t = this.viewModel.interaction.piTCursor || 0;
+            const states = this.viewModel.graph.nodes.filter(n => n.type === 'state' && (n.actions || []).length > 0);
+            const first = states[0];
+            const action = first ? simulationState.getTimeDependentAction(first.id, t) : null;
+            const actionNode = action && action !== 'random'
+                ? this.viewModel.graph.nodes.find(n => n.type === 'action' && n.id === action)
+                : null;
+            const actionLabel = actionNode ? actionNode.name : (action === 'random' ? 'random' : '—');
+            label = `π at t = ${t} · ${actionLabel}`;
+        } else {
+            label = 'π · all t';
+        }
+
+        push();
+        const badgeX = 14;
+        const badgeY = 236; // below toolPalette.js's own floating panel (topOffset+12, ~4 rows tall)
+        textSize(11);
+        textFont(Typography.mono());
+        const padX = 9;
+        const w = textWidth(label) + padX * 2;
+        fill(AppPalette.surface.card);
+        stroke(AppPalette.border.medium);
+        strokeWeight(1);
+        rect(badgeX, badgeY, w, 22, 6);
+        noStroke();
+        fill(AppPalette.text.dark);
+        textAlign(LEFT, CENTER);
+        text(label, badgeX + padX, badgeY + 11);
+        pop();
     }
 
     drawMessages() {
@@ -228,7 +447,7 @@ class MainView {
         const screenPos = this.viewModel.viewport.worldToScreen(node.x, node.y);
         const pageX = screenPos.x;
         const pageY = screenPos.y + this.TOP_BARS_HEIGHT;
-        const targetEl = document.querySelector('.reward-bar-container');
+        const targetEl = document.querySelector('.panel-utility-value');
         if (!targetEl) {
             this.viewModel.simulationState.commitReward();
             if (this.rightPanel) this.rightPanel.updateContent();
@@ -240,22 +459,12 @@ class MainView {
         });
     }
 
-    drawZoomIndicator() {
-        push();
-        fill(0, 0, 0, 150);
-        noStroke();
-        textAlign(RIGHT, BOTTOM);
-        textSize(12);
-        text(`Zoom: ${(this.viewModel.viewport.zoom * 100).toFixed(0)}%`, width - 10, height - 10);
-        pop();
-    }
-
     drawNodes() {
         const nodes = this.viewModel.graph.nodes;
 
         nodes.forEach(node => {
-            // In simulate mode with active simulation, check visibility
-            if (this.viewModel.interaction.mode === 'simulate' &&
+            // In build/policy mode with active simulation, check visibility
+            if (this._isEditableMode() &&
                 this.viewModel.simulationState &&
                 this.viewModel.simulationState.replayInitialized) {
                 if (!this.viewModel.simulationState.isNodeVisible(node.id)) {
@@ -304,29 +513,29 @@ class MainView {
 
             const isStartNode = this.viewModel.startNode &&
                 this.viewModel.startNode.id === node.id;
-            const isEditorStartNode = this.viewModel.mode === 'editor' && isStartNode;
-            const isSimStartNode = this.viewModel.mode === 'simulate' &&
-                isStartNode &&
-                (!this.viewModel.simulationState || !this.viewModel.simulationState.replayInitialized);
+            const isStartNodeInBuild = this._isEditableMode() && isStartNode;
 
-            if (isEditorStartNode) {
+            if (isStartNodeInBuild) {
                 stroke(AppPalette.node.startRing);
-                strokeWeight(3);
-            } else if (isSimStartNode) {
-                stroke(AppPalette.node.selected);
                 strokeWeight(3);
             } else {
                 stroke(this.applyAlphaToColor(AppPalette.text.black, nodeAlpha));
                 strokeWeight(2);
             }
 
-            if (isNodeFaded) {
+            // Partial-observability state nodes get the same dash pattern as faded nodes
+            // (reused rather than introducing a near-duplicate pair - see MV_DASH_NODE_LINE/GAP)
+            // to hint that the agent doesn't fully observe the state in this mode.
+            const isPartialObsNode = node.type === 'state' && this.viewModel.observability === 'partial';
+            const useDashedStroke = isNodeFaded || isPartialObsNode;
+
+            if (useDashedStroke) {
                 drawingContext.setLineDash([MV_DASH_NODE_LINE, MV_DASH_NODE_GAP]);
             }
 
             circle(node.x, node.y, node.size * 2);
 
-            if (isNodeFaded) {
+            if (useDashedStroke) {
                 drawingContext.setLineDash([]);
             }
 
@@ -368,8 +577,9 @@ class MainView {
                 textSize(16);
                 text(node.name, labelPos.x, labelPos.y);
             } else {
-                // Only draw text if no image
-                fill(255, 255, 255, nodeAlpha);
+                // Only draw text if no image - contrast-pick against the node's actual fill
+                // color so labels stay legible as node fill colors change with theme/palette.
+                fill(this.applyAlphaToColor(ColorUtils.contrastText(color), nodeAlpha));
                 noStroke();
                 textAlign(CENTER, CENTER);
                 textSize(14);
@@ -387,8 +597,8 @@ class MainView {
             const from = edge.getFromNode();
             const to = edge.getToNode();
 
-            // In simulate mode with active simulation, check visibility
-            if (this.viewModel.interaction.mode === 'simulate' &&
+            // In build/policy mode with active simulation, check visibility
+            if (this._isEditableMode() &&
                 this.viewModel.simulationState &&
                 this.viewModel.simulationState.replayInitialized) {
                 if (!this.viewModel.simulationState.isEdgeVisible(from.id, to.id)) {
@@ -401,11 +611,19 @@ class MainView {
             const isBidirectional = edgeVM.isBidirectional;
 
             // Calculate arrow size
-            // State → Action edges: uniform weight (probability not meaningful)
-            // Action → State edges: weight based on probability
+            // State → Action edges: deterministic policies keep the original flat bold/thin
+            // weights (3 / 2); weighted-random policies scale width by the action's share of
+            // the distribution (1 + 3p, matching the mockup). Action → State edges: weight
+            // based on transition probability.
             let weight;
             if (from.type === 'state' && to.type === 'action') {
-                weight = 2; // Consistent weight for State → Action edges
+                const policyMode = this.viewModel.simulationState ? this.viewModel.simulationState.getPolicyMode(from.id) : 'uniform';
+                const policyProb = edgeVM.policyEdgeProbability;
+                if (policyMode === 'weighted' && policyProb !== null) {
+                    weight = 1 + 3 * policyProb;
+                } else {
+                    weight = policyProb !== null ? 3 : 2;
+                }
             } else {
                 weight = 1 + 4 * edge.getProbability(); // Probability-based for Action → State
             }
@@ -602,7 +820,7 @@ class MainView {
     }
 
     getEditorFocusNodeAlpha(node) {
-        if (this.viewModel.mode !== 'editor') return 255;
+        if (!this._isEditableMode()) return 255;
         const interaction = this.viewModel.interaction;
         if (!interaction.hasEditorFocus()) return 255;
         return interaction.isNodeInEditorFocus(node)
@@ -611,7 +829,7 @@ class MainView {
     }
 
     getEditorFocusEdgeAlpha(edge) {
-        if (this.viewModel.mode !== 'editor') return 255;
+        if (!this._isEditableMode()) return 255;
         const interaction = this.viewModel.interaction;
         if (!interaction.hasEditorFocus()) return 255;
         return interaction.isEdgeInEditorFocus(edge)
@@ -621,62 +839,6 @@ class MainView {
 
     drawHighlightedEdgeTravelBall() {
         this.simRenderer.drawTravelBall();
-    }
-
-    // Draw a shaft+head arrow polygon in local (already-translated/rotated) coordinates.
-    // tipY = -length (up), head spans [-shaftLength..-length], shaft spans [tailY..-shaftLength].
-    _drawArrowPolygon(length, shaftLength, shaftWidth, headWidth, opts = {}) {
-        const { fillColor, strokeColor, strokeWt, scaleFactor, tailY = 0 } = opts;
-        const tipY    = -length;
-        const headY   = -shaftLength; // where shaft meets head
-        const halfS   = shaftWidth / 2;
-        const halfH   = headWidth  / 2;
-
-        push();
-        if (scaleFactor && scaleFactor !== 1) scale(scaleFactor);
-        if (fillColor)   fill(fillColor);   else noFill();
-        if (strokeColor) { stroke(strokeColor); strokeWeight(strokeWt || 1.5); } else noStroke();
-
-        beginShape();
-        vertex(0,      tipY);   // tip
-        vertex( halfH, headY);  // right head corner
-        vertex( halfS, headY);  // right shaft top
-        vertex( halfS, tailY);  // right shaft bottom
-        vertex(-halfS, tailY);  // left shaft bottom
-        vertex(-halfS, headY);  // left shaft top
-        vertex(-halfH, headY);  // left head corner
-        endShape(CLOSE);
-        pop();
-    }
-
-    // Full spinning-arrow glyph scaled to nodeSize so tip lands at the node circumference.
-    // Call inside push/translate/rotate … pop with origin at the node center.
-    drawSpinningArrowGlyph(nodeSize) {
-        const s          = nodeSize / 32;
-        const length     = nodeSize;
-        const shaftLen   = Math.max(4, Math.round(18 * s));
-        const shaftWidth = Math.max(3, Math.round(5  * s));
-        const headWidth  = Math.max(9, Math.round(17 * s));
-
-        this._drawArrowPolygon(length, shaftLen, shaftWidth, headWidth, {
-            fillColor: color(0, 0, 0, 120),
-            strokeColor: null,
-            scaleFactor: 1.12,
-            tailY: 0
-        });
-
-        this._drawArrowPolygon(length, shaftLen, shaftWidth, headWidth, {
-            fillColor: color(255, 87, 34),
-            strokeColor: color(20, 20, 20, 220),
-            strokeWt: 1.5,
-            scaleFactor: 1,
-            tailY: 0
-        });
-
-        fill(255, 255, 255, 230);
-        stroke(20, 20, 20, 180);
-        strokeWeight(1);
-        circle(0, 0, 6);
     }
 
     // Draw spinning arrow animation at action node during selection phase
@@ -710,7 +872,7 @@ class MainView {
         push();
         translate(actionNode.x, actionNode.y);
         rotate(arrowAngle);
-        this.drawSpinningArrowGlyph(actionNode.size);
+        SpinningArrowGlyph.draw(actionNode.size);
         pop();
 
         // Draw probability labels on each outgoing edge
@@ -773,7 +935,7 @@ class MainView {
         push();
         translate(stateNode.x, stateNode.y);
         rotate(arrowAngle);
-        this.drawSpinningArrowGlyph(stateNode.size);
+        SpinningArrowGlyph.draw(stateNode.size);
         pop();
 
         // Probability labels on each state→action edge
@@ -808,16 +970,43 @@ class MainView {
 
     drawTextLabels() {
         const labels = this.viewModel.graph.textLabels;
+        const selectedLabel = this.viewModel.selection.selectedTextLabel;
 
         labels.forEach(label => {
             // Simple color logic: yellow if selected
-            const color = this.viewModel.selection.selectedTextLabel === label ? AppPalette.node.selected : AppPalette.text.black;
+            const isSelected = selectedLabel === label;
+            const color = isSelected ? AppPalette.node.selected : AppPalette.text.black;
             fill(color);
             noStroke();
             textAlign(CENTER, CENTER);
             textSize(label.fontSize);
             text(label.text, label.x, label.y);
+
+            if (isSelected && this._isEditableMode()) {
+                this._drawTextLabelHitBox(label);
+            }
         });
+    }
+
+    // Visible bounding box + resize handle for the selected text label - drawn with the exact
+    // same geometry GeometricHelper.isClickOnTextLabelCorner hit-tests against, so the handle
+    // shown is always exactly where dragging resizes instead of moves.
+    _drawTextLabelHitBox(label) {
+        const textWidth = label.text.length * label.fontSize * 0.6;
+        const halfW = textWidth / 2;
+        const halfH = label.fontSize / 2;
+
+        push();
+        noFill();
+        stroke(AppPalette.node.selected);
+        strokeWeight(1);
+        rectMode(CENTER);
+        rect(label.x, label.y, textWidth, label.fontSize);
+
+        noStroke();
+        fill(AppPalette.node.selected);
+        rect(label.x + halfW, label.y + halfH, 8, 8);
+        pop();
     }
 
     updateHeldNodePosition() {
@@ -833,9 +1022,33 @@ class MainView {
             return;
         }
 
-        // Right-click in editor/simulate mode: set start node (s₀)
+        // Tree view owns its own synthetic layout (not the graph's real node positions), so it
+        // fully bypasses GeometricHelper-based hit-testing and edge/node click logic below. Right-
+        // click (set s0) and zoom still work normally - only plain left-click on the canvas routes
+        // here. Clicks on empty tree-canvas space still arm panning (mirroring Graph view's own
+        // empty-click handling further below) so drag-to-pan keeps working in Tree view.
+        if (this._isEditableMode() && this.viewModel.buildCanvasView === 'tree' &&
+            this.treeView && mouseButton !== RIGHT) {
+            if (this.topBar) {
+                this.topBar.closeAllDropdowns();
+            }
+            if (this.treeView.hitTestBadge(mouseX, mouseY)) {
+                this.treeView.handleClick(mouseX, mouseY);
+                redraw();
+            } else {
+                this.viewModel.viewport.isPanning = true;
+                this.viewModel.viewport.panStartX = mouseX;
+                this.viewModel.viewport.panStartY = mouseY;
+                this.viewModel.viewport.panStartOffsetX = this.viewModel.viewport.panX;
+                this.viewModel.viewport.panStartOffsetY = this.viewModel.viewport.panY;
+                cursor('grab');
+            }
+            return;
+        }
+
+        // Right-click in build/policy mode: set start node (s₀)
         if (mouseButton === RIGHT) {
-            if (this.viewModel.mode === 'editor' || this.viewModel.mode === 'simulate') {
+            if (this._isEditableMode()) {
                 const world = this.viewModel.viewport.screenToWorld(mouseX, mouseY);
                 const target = GeometricHelper.findEntityAtPosition(this.viewModel.graph, world.x, world.y);
                 if (target.type === 'node' && target.entity.type === 'state') {
@@ -848,8 +1061,8 @@ class MainView {
         }
 
         // Close menu dropdowns when clicking on canvas
-        if (this.menuBar) {
-            this.menuBar.closeAllDropdowns();
+        if (this.topBar) {
+            this.topBar.closeAllDropdowns();
         }
 
         // Note: Sidebar buttons are positioned absolutely to the left of the canvas
@@ -860,8 +1073,12 @@ class MainView {
         const world = this.viewModel.viewport.screenToWorld(mouseX, mouseY);
         const target = GeometricHelper.findEntityAtPosition(this.viewModel.graph, world.x, world.y);
 
-        // If clicking on empty canvas and not placing a node, start panning
-        if (target.type === 'none' && !this.viewModel.interaction.placingMode) {
+        // If clicking on empty canvas and not placing a node (or about to place a text
+        // label), start panning. Without the textLabelRequested check, clicking empty
+        // canvas to place a text label - the common case - was swallowed by panning and
+        // never reached the textLabelRequested handling below.
+        if (target.type === 'none' && !this.viewModel.interaction.placingMode &&
+            !this.viewModel.interaction.textLabelRequested) {
             this.viewModel.viewport.isPanning = true;
             this.viewModel.viewport.panStartX = mouseX;
             this.viewModel.viewport.panStartY = mouseY;
@@ -899,7 +1116,7 @@ class MainView {
 
         // Check if text label input was requested
         if (this.viewModel.interaction.textLabelRequested) {
-            this.promptForTextLabel();
+            this.promptForTextLabel(world.x, world.y);
         }
 
         // Check if rename was requested
@@ -908,9 +1125,13 @@ class MainView {
         }
 
         // Set cursor for resize
-        if (this.viewModel.interaction.resizingNode) {
+        if (this.viewModel.interaction.resizingNode || this.viewModel.interaction.resizingTextLabel) {
             cursor('nwse-resize');
         }
+
+        // A canvas click may have just finished a placement (dropping a held node/text label),
+        // reverting to the select tool - keep the palette's active-tool highlight in sync.
+        if (this.toolPalette) this.toolPalette.updateActiveTool(this.viewModel.interaction.placingMode);
 
         redraw();
     }
@@ -921,7 +1142,8 @@ class MainView {
             return;
         }
 
-        if (this.viewModel.interaction.mode === 'expectation') return;
+        // MC's mini-panel grid doesn't use pan/zoom; VI (including its pane in split view) does.
+        if (this.viewModel.interaction.mode === 'values' && this.viewModel.valuesSubView === 'mc') return;
 
         // Handle panning
         if (this.viewModel.viewport.isPanning) {
@@ -968,7 +1190,7 @@ class MainView {
         }
 
         // Reset cursor after resize
-        if (this.viewModel.interaction.resizingNode) {
+        if (this.viewModel.interaction.resizingNode || this.viewModel.interaction.resizingTextLabel) {
             cursor(ARROW);
         }
 
@@ -976,6 +1198,26 @@ class MainView {
     }
 
     mouseMoved() {
+        if (this._isEditableMode() && this.viewModel.buildCanvasView === 'tree' && this.treeView) {
+            const changed = this.treeView.handleMouseMove(mouseX, mouseY);
+            this.viewModel.interaction.hoveredNode = this.treeView.realHoveredNode;
+            this.viewModel.interaction.hoveredEdge = this.treeView.realHoveredEdge;
+            if (changed) {
+                redraw();
+                if (this.rightPanel) this.rightPanel.updateContent();
+            }
+            return;
+        }
+
+        if (this.viewModel.interaction.mode === 'values' && this.viewModel.valuesSubView === 'mc' && this.expectationView) {
+            const hoverChanged = this.expectationView.handleMouseMove(mouseX, mouseY);
+            if (hoverChanged) {
+                redraw();
+                if (this.chartDock) this.chartDock.refresh();
+            }
+            return;
+        }
+
         const hoverChanged = this.controller.handleMouseMove(mouseX, mouseY);
         if (hoverChanged && this.rightPanel) {
             this.rightPanel.updateContent();
@@ -1021,10 +1263,10 @@ class MainView {
         redraw();
     }
 
-    promptForTextLabel() {
+    promptForTextLabel(worldX, worldY) {
         const text = prompt('Enter text label:');
         if (text && text.trim()) {
-            this.controller.createTextLabel(text.trim());
+            this.controller.createTextLabel(text.trim(), worldX, worldY);
         }
         this.viewModel.interaction.textLabelRequested = false;
         redraw();
@@ -1047,18 +1289,35 @@ class MainView {
     }
 
     mouseWheel(event) {
-        // Only handle scroll on canvas
+        // Only handle scroll on canvas. mouseX/mouseY are canvas-relative and don't account for
+        // DOM chrome layered on top (right panel, chart dock, toolbar, pills) - check the actual
+        // event target too, so wheeling over e.g. the right panel scrolls it natively instead of
+        // zooming the canvas underneath.
         if (mouseX < 0 || mouseX > width || mouseY < 0 || mouseY > height) {
             return;
         }
+        if (event.target !== this.canvas.elt) {
+            return;
+        }
 
-        if (this.viewModel.interaction.mode === 'expectation') return;
+        // MC's mini-panel grid doesn't pan/zoom, but it can scroll vertically (Grid view, over
+        // the left pane specifically) once there are more rows than fit the viewport.
+        if (this.viewModel.interaction.mode === 'values' && this.viewModel.valuesSubView === 'mc') {
+            if (this.expectationView) {
+                const { leftW } = this.expectationView.expectationViewModel.splitWidths(width);
+                if (mouseX < leftW && this.expectationView.handleWheel(event.delta)) {
+                    return false;
+                }
+            }
+            return;
+        }
 
         // Zoom towards mouse position
         const zoomFactor = -event.delta * 0.001;
         const newZoom = this.viewModel.viewport.zoom * (1 + zoomFactor);
 
         this.viewModel.viewport.setZoom(newZoom, mouseX, mouseY);
+        if (this.zoomPill) this.zoomPill.refresh();
         redraw();
 
         // Prevent page scroll
@@ -1091,6 +1350,7 @@ class MainView {
                 const centerY = (this.touches[0].y + this.touches[1].y) / 2;
 
                 this.viewModel.viewport.setZoom(this.viewModel.viewport.zoom * zoomChange, centerX, centerY);
+                if (this.zoomPill) this.zoomPill.refresh();
                 redraw();
             }
 
@@ -1103,6 +1363,11 @@ class MainView {
     keyPressed() {
         // Delegate to controller
         const shouldPreventDefault = this.controller.handleKeyPress(key);
+
+        // Several shortcuts (e.g. 'r' resets zoom) mutate viewport.zoom directly via the
+        // controller; refresh is cheap and idempotent, so just always sync rather than trying
+        // to detect which key was pressed.
+        if (this.zoomPill) this.zoomPill.refresh();
 
         redraw();
 
@@ -1122,19 +1387,86 @@ class MainView {
 
         resizeCanvas(canvasWidth, canvasHeight);
         this.canvas.position(0, this.TOP_BARS_HEIGHT);
-        this._relayoutValueIterationIfActive(canvasWidth, canvasHeight);
-        if (this.expectationView && this.viewModel.interaction.mode === 'expectation') {
-            this.expectationView.resize(canvasWidth, canvasHeight, this.TOP_BARS_HEIGHT);
+        if (this.chartDock) this.chartDock.updateBounds(0, canvasWidth);
+        if (this.zoomPill) this.zoomPill.updateBounds(this.RIGHT_PANEL_WIDTH);
+        if (this.estimatorPill) this.estimatorPill.updateBounds(0, windowWidth - this.RIGHT_PANEL_WIDTH);
+        if (this.mcRunsPill) this.mcRunsPill.updateBounds(0, windowWidth - this.RIGHT_PANEL_WIDTH);
+        if (this.viSweepChip) this.viSweepChip.updateBounds(0, windowWidth - this.RIGHT_PANEL_WIDTH);
+        if (this.learningTreePill) this.learningTreePill.updateBounds(0, windowWidth - this.RIGHT_PANEL_WIDTH);
+        if (this.traceScrubber) this.traceScrubber.resize(0, 0, windowWidth - this.RIGHT_PANEL_WIDTH);
+        const valuesHeight = canvasHeight - this.getDockHeight();
+        const paneWidths = this._valuesPaneWidths(canvasWidth);
+        this._relayoutValueIterationIfActive(paneWidths.vi, valuesHeight);
+        if (this.expectationView && this.viewModel.interaction.mode === 'values'
+            && this.viewModel.valuesSubView === 'mc') {
+            this.expectationView.resize(paneWidths.mc, valuesHeight, this.TOP_BARS_HEIGHT);
+            if (this.mcLeftViewPill) {
+                const { leftW, rightW } = this.expectationView.expectationViewModel.splitWidths(paneWidths.mc);
+                this.mcLeftViewPill.updateBounds(leftW, rightW);
+            }
+        }
+        if (this.viStatesView && this.viewModel.interaction.mode === 'values'
+            && this.viewModel.valuesSubView === 'vi') {
+            const viSplit = this._viSplitWidths(paneWidths.vi);
+            if (viSplit) {
+                // +56 clears estimatorPill's top-left method badge - see main.js's
+                // setUpVISplitChrome() for the same inset applied on initial setup/mode-entry.
+                const topInset = 56;
+                // Left pane always shows States now - Chart moved to the right pane's own pill
+                // (merged with Equation), so there's no left-pane toggle left to respect.
+                this.viStatesView.updateBounds(0, this.TOP_BARS_HEIGHT + topInset, viSplit.leftW, valuesHeight - topInset);
+                this.viStatesView.show();
+
+                // Right pane shows exactly one of Equation/Backward/Chart, per viRightViewPill's
+                // own toggle (Backward only reachable while it's actually available - see
+                // ViRightViewPill.refresh()) - Graph is no longer a reachable rightView value (see
+                // draw()'s own comment), so nothing else needs to gate here.
+                const rightView = this.viewModel.valueIterationViewModel
+                    ? this.viewModel.valueIterationViewModel.rightView : 'equation';
+                if (this.viChartView) {
+                    if (rightView === 'chart') {
+                        this.viChartView.updateBounds(viSplit.leftW, this.TOP_BARS_HEIGHT + topInset, viSplit.rightW, valuesHeight - topInset);
+                        this.viChartView.show();
+                    } else {
+                        this.viChartView.hide();
+                    }
+                }
+                if (this.viEquationView) {
+                    if (rightView === 'equation') {
+                        this.viEquationView.updateBounds(viSplit.leftW, this.TOP_BARS_HEIGHT, viSplit.rightW, valuesHeight);
+                        this.viEquationView.show();
+                    } else {
+                        this.viEquationView.hide();
+                    }
+                }
+                if (this.viBackwardView) {
+                    if (rightView === 'backward') {
+                        this.viBackwardView.updateBounds(viSplit.leftW, this.TOP_BARS_HEIGHT, viSplit.rightW, valuesHeight);
+                        this.viBackwardView.show();
+                    } else {
+                        this.viBackwardView.hide();
+                    }
+                }
+                if (this.viRightViewPill) {
+                    this.viRightViewPill.updateBounds(viSplit.leftW, viSplit.rightW);
+                    this.viRightViewPill.show();
+                }
+                // Docks to the LEFT pane's own right edge, not the full canvas width - see
+                // main.js's _viSweepChipBounds() for why (avoids colliding with viRightViewPill,
+                // which right-anchors to the RIGHT pane on this same top row).
+                if (this.viSweepChip) this.viSweepChip.updateBounds(0, viSplit.leftW);
+            } else {
+                this.viStatesView.hide();
+                if (this.viChartView) this.viChartView.hide();
+                if (this.viRightViewPill) this.viRightViewPill.hide();
+                if (this.viEquationView) this.viEquationView.hide();
+                if (this.viBackwardView) this.viBackwardView.hide();
+            }
         }
 
-        // Update menu bar width
-        if (this.menuBar) {
-            this.menuBar.updateWidth(windowWidth);
-        }
-
-        // Update toolbar width
-        if (this.toolBar) {
-            this.toolBar.updateWidth(windowWidth);
+        // Update top bar width
+        if (this.topBar) {
+            this.topBar.updateWidth(windowWidth);
         }
 
         // Update right panel position and height
@@ -1152,52 +1484,95 @@ class MainView {
         const canvasHeight = windowHeight - this.TOP_BARS_HEIGHT;
         resizeCanvas(canvasWidth, canvasHeight);
         this.canvas.position(0, this.TOP_BARS_HEIGHT);
-        this._relayoutValueIterationIfActive(canvasWidth, canvasHeight);
-        if (this.expectationView && this.viewModel.interaction.mode === 'expectation') {
-            this.expectationView.resize(canvasWidth, canvasHeight, this.TOP_BARS_HEIGHT);
+        if (this.chartDock) this.chartDock.updateBounds(0, canvasWidth);
+        if (this.zoomPill) this.zoomPill.updateBounds(this.RIGHT_PANEL_WIDTH);
+        if (this.estimatorPill) this.estimatorPill.updateBounds(0, windowWidth - this.RIGHT_PANEL_WIDTH);
+        if (this.mcRunsPill) this.mcRunsPill.updateBounds(0, windowWidth - this.RIGHT_PANEL_WIDTH);
+        if (this.viSweepChip) this.viSweepChip.updateBounds(0, windowWidth - this.RIGHT_PANEL_WIDTH);
+        if (this.learningTreePill) this.learningTreePill.updateBounds(0, windowWidth - this.RIGHT_PANEL_WIDTH);
+        if (this.traceScrubber) this.traceScrubber.resize(0, 0, windowWidth - this.RIGHT_PANEL_WIDTH);
+        const valuesHeight = canvasHeight - this.getDockHeight();
+        const paneWidths = this._valuesPaneWidths(canvasWidth);
+        this._relayoutValueIterationIfActive(paneWidths.vi, valuesHeight);
+        if (this.expectationView && this.viewModel.interaction.mode === 'values'
+            && this.viewModel.valuesSubView === 'mc') {
+            this.expectationView.resize(paneWidths.mc, valuesHeight, this.TOP_BARS_HEIGHT);
+            if (this.mcLeftViewPill) {
+                const { leftW, rightW } = this.expectationView.expectationViewModel.splitWidths(paneWidths.mc);
+                this.mcLeftViewPill.updateBounds(leftW, rightW);
+            }
+        }
+        if (this.viStatesView && this.viewModel.interaction.mode === 'values'
+            && this.viewModel.valuesSubView === 'vi') {
+            const viSplit = this._viSplitWidths(paneWidths.vi);
+            if (viSplit) {
+                // +56 clears estimatorPill's top-left method badge - see main.js's
+                // setUpVISplitChrome() for the same inset applied on initial setup/mode-entry.
+                const topInset = 56;
+                // Left pane always shows States now - see the identical comment in
+                // windowResized() above.
+                this.viStatesView.updateBounds(0, this.TOP_BARS_HEIGHT + topInset, viSplit.leftW, valuesHeight - topInset);
+                this.viStatesView.show();
+
+                // Right pane shows exactly one of Equation/Backward/Chart - see the identical
+                // comment in windowResized() above.
+                const rightView = this.viewModel.valueIterationViewModel
+                    ? this.viewModel.valueIterationViewModel.rightView : 'equation';
+                if (this.viChartView) {
+                    if (rightView === 'chart') {
+                        this.viChartView.updateBounds(viSplit.leftW, this.TOP_BARS_HEIGHT + topInset, viSplit.rightW, valuesHeight - topInset);
+                        this.viChartView.show();
+                    } else {
+                        this.viChartView.hide();
+                    }
+                }
+                if (this.viEquationView) {
+                    if (rightView === 'equation') {
+                        this.viEquationView.updateBounds(viSplit.leftW, this.TOP_BARS_HEIGHT, viSplit.rightW, valuesHeight);
+                        this.viEquationView.show();
+                    } else {
+                        this.viEquationView.hide();
+                    }
+                }
+                if (this.viBackwardView) {
+                    if (rightView === 'backward') {
+                        this.viBackwardView.updateBounds(viSplit.leftW, this.TOP_BARS_HEIGHT, viSplit.rightW, valuesHeight);
+                        this.viBackwardView.show();
+                    } else {
+                        this.viBackwardView.hide();
+                    }
+                }
+                if (this.viRightViewPill) {
+                    this.viRightViewPill.updateBounds(viSplit.leftW, viSplit.rightW);
+                    this.viRightViewPill.show();
+                }
+                // Docks to the LEFT pane's own right edge, not the full canvas width - see
+                // main.js's _viSweepChipBounds() for why (avoids colliding with viRightViewPill,
+                // which right-anchors to the RIGHT pane on this same top row).
+                if (this.viSweepChip) this.viSweepChip.updateBounds(0, viSplit.leftW);
+            } else {
+                this.viStatesView.hide();
+                if (this.viChartView) this.viChartView.hide();
+                if (this.viRightViewPill) this.viRightViewPill.hide();
+                if (this.viEquationView) this.viEquationView.hide();
+                if (this.viBackwardView) this.viBackwardView.hide();
+            }
         }
         redraw();
     }
 
+    // Value Iteration now draws the single live graph at real node positions (like Build/Policy),
+    // so there is no synthetic column layout to recompute on resize. An open explanation card's
+    // fan-out geometry is derived from real node positions too, but is cleared here since a
+    // resize/dock-drag is a natural point to dismiss the overlay rather than re-anchor it.
     _relayoutValueIterationIfActive(canvasWidth, canvasHeight) {
-        if (this.viewModel.interaction.mode !== 'value_iteration') return;
-        const viState = this.viewModel.valueIterationState;
+        if (this.viewModel.interaction.mode !== 'values') return;
+        if (this.viewModel.valuesSubView !== 'vi') return;
         const viViewModel = this.viewModel.valueIterationViewModel;
-        if (!viState || !viViewModel || !viState.initialized) return;
-
-        const visibleCount = viViewModel.visibleColumnCount;
-
-        // Save reveal state — computeLayout clears both objects
-        const savedRevealedValues = {};
-        const savedRevealedQValues = {};
-        for (const colIdx of Object.keys(viViewModel.revealedValues || {})) {
-            savedRevealedValues[colIdx] = new Set(viViewModel.revealedValues[colIdx]);
+        if (!viViewModel) return;
+        if (viViewModel.explanationDetail) {
+            viViewModel.clearExplanationDetail();
+            if (this.rightPanel) this.rightPanel.updateContent();
         }
-        for (const colIdx of Object.keys(viViewModel.revealedQValues || {})) {
-            savedRevealedQValues[colIdx] = {};
-            for (const stateId of Object.keys(viViewModel.revealedQValues[colIdx] || {})) {
-                savedRevealedQValues[colIdx][stateId] = new Set(viViewModel.revealedQValues[colIdx][stateId]);
-            }
-        }
-
-        viViewModel.computeLayout(viState, canvasWidth, canvasHeight);
-        for (let i = 0; i < visibleCount; i++) {
-            viViewModel.showNextColumn();
-        }
-
-        // Restore reveal state so right-panel table stays populated
-        viViewModel.revealedValues = savedRevealedValues;
-        viViewModel.revealedQValues = savedRevealedQValues;
-
-        // backupDetail has stale absolute positions — clear it
-        // (animator regenerates it on next step via _callPresenterForSubPhase)
-        viViewModel.clearBackupDetail();
-
-        // Clear explanation: documented design clears explanationDetail on layout recompute
-        // (action diamond/transition positions in the detail are all stale after x-shift)
-        viViewModel.clearExplanationDetail();
-
-        // Refresh right panel HTML (reveal state changed, explanation cleared)
-        if (this.rightPanel) this.rightPanel.updateContent();
     }
 }

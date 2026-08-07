@@ -2,58 +2,78 @@
    CSS Custom Properties
    ============================================================ */
 :root {
-  /* Color palette */
-  --color-primary: #2196F3;
-  --color-success: #4CAF50;
-  --color-danger: #F44336;
-  --color-warning: #FF9800;
-  --color-purple: #9C27B0;
-  --color-gray: #757575;
-
-  /* Text colors */
-  --text-dark: #333333;
-  --text-medium: #444444;
-  --text-muted: #555555;
-  --text-light: #666666;
-  --text-lighter: #888888;
-  --text-placeholder: #999999;
-  --text-white: #FFFFFF;
-
-  /* Backgrounds */
-  --bg-black: #000000;
-  --bg-dark: #1A1A1A;
-  --bg-dark-hover: #333333;
-  --bg-white: #FFFFFF;
-  --bg-light: #F5F5F5;
-  --bg-card: #F9F9F9;
+  /* Color-bearing vars (--color-*, --text-*, --bg-black/dark/white/light/card, --border-*,
+     --reward-*, --surface-*, --accent-*, --radius-*, --font-family*) are set at runtime by
+     AppPalette.js's applyPaletteCssVars() as inline styles on this element, so both themes are
+     driven from one source of truth (src/main/view/helpers/AppPalette.js). Do not add
+     color literals here — add a new token to AppPalette.js instead. A couple of light-only
+     accent backgrounds not part of the redesign's token set are kept below as-is. */
   --bg-success-light: #E8F5E9;
   --bg-warning-light: #FFF3E0;
 
-  /* Borders */
-  --border-light: #DDDDDD;
-  --border-medium: #CCCCCC;
-  --border-card: #E0E0E0;
-  --border-row: #EEEEEE;
-
-  /* Reward colors (saturation-based) */
-  --reward-positive: hsl(140, 90%, 38%);
-  --reward-negative: hsl(0, 90%, 40%);
-  --reward-zero: #000000;
-
   /* Z-index layers */
-  --z-menubar: 1000;
-  --z-menubar-dropdown: 1001;
-  --z-toolbar: 999;
+  --z-topbar: 1000;
+  --z-topbar-dropdown: 1001;
   --z-panel: 998;
   --z-slider: 999;
 
   /* Sizing */
-  --menubar-height: 40px;
-  --toolbar-height: 50px;
-  --panel-width: 300px;
+  --panel-width: 272px;
 
-  /* Font */
-  --font-family: Calibri, 'Segoe UI', Tahoma, sans-serif;
+  /* Font fallbacks, used only until AppPalette.js's early inline-style pass overrides them. */
+  --font-family: 'IBM Plex Sans', Calibri, 'Segoe UI', Tahoma, sans-serif;
+  --font-family-mono: 'IBM Plex Mono', Consolas, monospace;
+  --font-family-math: 'STIX Two Text', Georgia, serif;
+}
+
+@font-face {
+  font-family: 'IBM Plex Sans';
+  src: url('libraries/fonts/IBMPlexSans-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'IBM Plex Sans';
+  src: url('libraries/fonts/IBMPlexSans-Medium.ttf') format('truetype');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'IBM Plex Sans';
+  src: url('libraries/fonts/IBMPlexSans-SemiBold.ttf') format('truetype');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'IBM Plex Sans';
+  src: url('libraries/fonts/IBMPlexSans-Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  src: url('libraries/fonts/IBMPlexMono-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  src: url('libraries/fonts/IBMPlexMono-Medium.ttf') format('truetype');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'STIX Two Text';
+  src: url('libraries/fonts/STIXTwoText-Italic.ttf') format('truetype');
+  font-weight: 400 700;
+  font-style: italic;
+  font-display: swap;
 }
 
 /* ============================================================
@@ -74,47 +94,77 @@ canvas {
 }
 
 /* ============================================================
-   MenuBar
+   TopBar (single merged chrome bar - logo/filename/undo-redo/mode toggle on the left,
+   theme/parameters/run-step-reset-renormalize on the right)
    ============================================================ */
-.menubar {
-  background-color: var(--bg-black);
+.topbar {
+  background-color: var(--surface-toolbar);
   display: flex;
   align-items: center;
-  padding: 0 10px;
+  justify-content: space-between;
+  padding: 0 14px;
+  /* Without this, the JS-set width (windowWidth) is the content box and padding is added on
+     top, so the bar (and its right-aligned content) render 20px wider than the viewport. */
+  box-sizing: border-box;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-  z-index: var(--z-menubar);
+  border-bottom: 1px solid var(--border-hairline);
+  z-index: var(--z-topbar);
+}
+
+.topbar-left,
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.topbar-logo {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-seg-thumb, 7px);
+  background: color-mix(in srgb, var(--accent-teal) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-teal) 45%, transparent);
+  color: var(--accent-teal, var(--text-white));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-family-mono);
+  font-weight: 600;
+  font-size: 12px;
+  flex-shrink: 0;
 }
 
 .menubar-btn {
-  color: var(--text-white);
-  padding: 8px 16px;
+  color: var(--text-dark);
+  padding: 7px 12px;
+  border-radius: var(--radius-btn, 7px);
   cursor: pointer;
   font-family: var(--font-family);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
   position: relative;
   user-select: none;
 }
 
 .menubar-btn:hover {
-  background-color: rgba(255, 255, 255, 0.1);
+  background-color: var(--surface-hover);
 }
 
 .menubar-dropdown {
   position: absolute;
   top: 100%;
   left: 0;
-  background-color: var(--bg-dark);
+  background-color: var(--surface-card2);
   min-width: 180px;
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
   border-radius: 0 0 4px 4px;
   display: none;
-  z-index: var(--z-menubar-dropdown);
+  z-index: var(--z-topbar-dropdown);
 }
 
 .menubar-item {
   padding: 10px 16px;
-  color: var(--text-white);
+  color: var(--text-dark);
   cursor: pointer;
   font-family: var(--font-family);
   font-size: 13px;
@@ -124,7 +174,7 @@ canvas {
 }
 
 .menubar-item:hover {
-  background-color: var(--bg-dark-hover);
+  background-color: var(--surface-hover);
 }
 
 .menubar-shortcut {
@@ -137,51 +187,329 @@ canvas {
   display: inline-block;
   width: 18px;
   font-size: 13px;
-  color: var(--text-white);
+  color: var(--text-dark);
   flex-shrink: 0;
 }
 
 .menubar-separator {
   height: 1px;
-  background-color: rgba(255, 255, 255, 0.15);
+  background-color: var(--border-hairline);
   margin: 4px 8px;
 }
 
-/* ============================================================
-   ToolBar
-   ============================================================ */
-.toolbar {
-  background-color: var(--bg-light);
+.menubar-theme-toggle {
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-btn, 7px);
+  border: 1px solid var(--border-input, rgba(255, 255, 255, 0.25));
+  background: var(--surface-btn, transparent);
+  color: var(--text-dark);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.menubar-theme-toggle:hover {
+  background: var(--surface-hover, rgba(255, 255, 255, 0.1));
+}
+
+/* Filename menu chip ("gridworld.mdp ▾") */
+.menubar-filename-btn {
+  font-family: var(--font-family-mono, var(--font-family));
+}
+
+/* Undo/redo icon buttons */
+.menubar-undo-redo {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 4px;
+}
+
+.menubar-icon-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-btn, 6px);
+  border: none;
+  background: transparent;
+  color: var(--text-dark);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.menubar-icon-btn:hover:not(:disabled) {
+  background-color: var(--surface-hover);
+}
+
+.menubar-icon-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* Parameters popover trigger + right-aligned dropdown content */
+.menubar-params-trigger {
+  font-family: var(--font-family-mono, var(--font-family));
+  font-size: 12px;
+}
+
+.menubar-params-trigger .menubar-dropdown {
+  left: auto;
+  right: 0;
+}
+
+.menubar-popover {
+  min-width: 200px;
+  padding: 10px 0;
+}
+
+.menubar-popover-section {
+  padding: 6px 16px;
+}
+
+.menubar-popover-section + .menubar-popover-section {
+  border-top: 1px solid var(--border-hairline);
+}
+
+.menubar-popover-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-lighter);
+  margin-bottom: 6px;
+}
+
+/* Parameters-popover pill switches (Spinning Arrow, "Animations · per mode"). Pill-shaped track
+   + sliding circular thumb (this codebase's other toggles are all either icon buttons or flush
+   segmented-pill button groups - no track/thumb switch existed before this). Reuses the
+   track/thumb radius tokens (AppPalette.shape.segTrack/segThumb, --radius-seg-track/
+   --radius-seg-thumb) already used by the Build/Policy/Values mode toggle, so the "track padding
+   + independently-rounded thumb" geometry stays consistent app-wide. */
+.menubar-anim-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 15px;
-  border-bottom: 1px solid var(--border-light);
-  z-index: var(--z-toolbar);
+  gap: 12px;
+  padding: 5px 0;
 }
 
-.toolbar-left {
+.menubar-anim-label {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.menubar-anim-label--mc {
+  color: var(--accent-orange);
+}
+
+.menubar-anim-label--iteration {
+  color: var(--accent-teal);
+}
+
+.menubar-anim-switch {
+  position: relative;
+  flex-shrink: 0;
+  width: 36px;
+  height: 20px;
+  box-sizing: border-box;
+  padding: 2px;
+  border-radius: var(--radius-seg-track, 10px);
+  background: var(--border-input, rgba(255, 255, 255, 0.25));
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.menubar-anim-switch--on.menubar-anim-switch--mc {
+  background: var(--accent-orange);
+}
+
+.menubar-anim-switch--on.menubar-anim-switch--iteration {
+  background: var(--accent-teal);
+}
+
+.menubar-anim-switch--on.menubar-anim-switch--neutral {
+  background: var(--color-primary);
+}
+
+.menubar-anim-switch-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: var(--radius-seg-thumb, 7px);
+  background: var(--text-white, #fff);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  transition: transform 0.15s ease;
+}
+
+.menubar-anim-switch--on .menubar-anim-switch-thumb {
+  transform: translateX(16px);
+}
+
+.menubar-segmented {
   display: flex;
-  gap: 10px;
-  align-items: center;
+  width: 100%;
+  border: 1px solid var(--border-input, rgba(255, 255, 255, 0.25));
+  border-radius: var(--radius-btn, 4px);
+  overflow: hidden;
+  box-sizing: border-box;
 }
 
-.toolbar-right {
-  display: flex;
-  gap: 0;
-  align-items: center;
-}
-
-.toolbar-btn {
-  padding: 8px 16px;
-  border: none;
-  border-radius: 4px;
+.menubar-segmented-btn {
+  flex: 1;
   font-family: var(--font-family);
-  font-size: 14px;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 4px 10px;
+  border: none;
+  background: transparent;
+  color: var(--text-lighter);
+  cursor: pointer;
+  text-align: center;
+}
+
+.menubar-segmented-btn:not(:first-child) {
+  border-left: 1px solid var(--border-input, rgba(255, 255, 255, 0.25));
+}
+
+.menubar-segmented-btn--active {
+  background: var(--color-primary);
+  color: var(--color-primary-contrast, var(--text-white));
+}
+
+/* Same fix as .toolbar-btn: the browser's default focus ring (Safari's blue/purple halo in
+   particular) draws outside the segmented group's rounded overflow:hidden clip, showing up as
+   a stray oval outline past the last button - replace it with a ring that respects the group's
+   own shape instead. */
+.menubar-segmented-btn:focus,
+.menubar-segmented-btn:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--color-primary) 45%, transparent);
+}
+
+.menubar-speed-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Same flush thumb/track treatment as .panel-param-row-slider (γ/t/steps) - thumb height
+   matches track height so it doesn't overhang the bar. Selectors are prefixed with
+   input[type="range"] so they actually out-specificity the base input[type="range"] rules
+   (a bare class selector alone loses that cascade fight - see .panel-param-row-slider). */
+input[type="range"].menubar-speed-slider {
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+  height: 10px;
+  --thumb-d: 10px;
+}
+
+input[type="range"].menubar-speed-slider::-webkit-slider-runnable-track {
+  height: 10px;
+  border-radius: 5px;
+}
+
+input[type="range"].menubar-speed-slider::-moz-range-track {
+  height: 10px;
+  border-radius: 5px;
+}
+
+input[type="range"].menubar-speed-slider::-moz-range-progress {
+  height: 10px;
+  border-radius: 5px;
+}
+
+input[type="range"].menubar-speed-slider::-webkit-slider-thumb {
+  width: 10px;
+  height: 10px;
+  margin-top: 0;
+}
+
+input[type="range"].menubar-speed-slider::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+}
+
+.menubar-speed-value {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-primary);
+  flex-shrink: 0;
+  min-width: 44px;
+  text-align: right;
+}
+
+.menubar-speed-endlabels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 9px;
+  color: var(--text-lighter);
+  margin-top: 2px;
+}
+
+/* ── Floating zoom pill ───────────────────────────────────────────────── */
+
+.zoom-pill {
+  position: fixed;
+  bottom: 16px;
+  z-index: 10;
+  display: flex;
+  align-items: stretch;
+  background: var(--surface-card2, var(--bg-card));
+  border: 1px solid var(--border-hairline, var(--border-light));
+  border-radius: var(--radius-btn, 6px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+}
+
+.zoom-pill-btn,
+.zoom-pill-percent {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-family-mono, var(--font-family));
+  cursor: pointer;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+.zoom-pill-btn:hover,
+.zoom-pill-percent:hover {
+  background: var(--surface-hover, var(--bg-dark-hover));
+}
+
+.zoom-pill-percent {
+  min-width: 44px;
+  text-align: center;
+  border-left: 1px solid var(--border-hairline, var(--border-light));
+  border-right: 1px solid var(--border-hairline, var(--border-light));
+}
+
+/* ============================================================
+   TopBar's mode-dependent action buttons (Run/Step/Reset/Renormalize/VI extras) and the
+   Build|Policy|Values mode-toggle segmented control - children of .topbar-left/.topbar-right.
+   ============================================================ */
+.toolbar-btn {
+  padding: 7px 14px;
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-btn, 8px);
+  font-family: var(--font-family);
+  font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  transition: opacity 0.2s;
-  color: var(--text-white);
+  transition: opacity 0.2s, background 0.2s;
+  background: var(--surface-btn);
+  color: var(--text-medium);
 }
 
 .toolbar-btn:hover {
@@ -193,68 +521,128 @@ canvas {
   cursor: not-allowed;
 }
 
-.toolbar-btn--state { background-color: var(--color-success); }
-.toolbar-btn--action { background-color: var(--color-primary); }
-.toolbar-btn--text { background-color: var(--color-gray); }
-.toolbar-btn--renormalize { background-color: var(--color-warning); }
-.toolbar-btn--play { background-color: var(--color-success); }
-.toolbar-btn--pause { background-color: var(--color-warning); }
-.toolbar-btn--step { background-color: var(--color-primary); }
-.toolbar-btn--rerun { background-color: var(--color-purple); }
+/* Replace the browser's default focus ring (Safari in particular draws a blue/purple halo that
+   clashes with the neutral Step/Reset/Renormalize styling and can look like the button itself
+   changed color) with a subtle, theme-consistent ring - text/border color are untouched. */
+.toolbar-btn:focus,
+.toolbar-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 45%, transparent);
+}
 
-/* Mode toggle (segmented control) */
+.toolbar-btn--state { background-color: var(--color-success); border-color: var(--color-success); color: var(--color-primary-contrast); }
+.toolbar-btn--action { background: var(--surface-btn); }
+.toolbar-btn--text { background-color: var(--color-gray); border-color: var(--color-gray); color: var(--color-primary-contrast); }
+.toolbar-btn--renormalize { background: var(--surface-btn); }
+
+/* Evaluate π (Build/Policy's top-right button): same tinted-outline-chip recipe as
+   .toolbar-btn--play/--pause below, using --color-primary (this app's existing "primary/exact
+   action" blue - already the OK/Renormalize modal-button color) so it reads as distinct from the
+   neutral Step/Reset/Renormalize cluster it sits in. */
+.toolbar-btn--evaluate-pi {
+  background: color-mix(in srgb, var(--color-primary) 16%, transparent);
+  border-color: color-mix(in srgb, var(--color-primary) 45%, transparent);
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+/* Find optimal π (Monte Carlo/Iteration's own top-right button, in Evaluate π's place) - same
+   recipe/purple as .panel-btn--find-optimal (rightPanel.js's identical Policy-log button). */
+.toolbar-btn--find-optimal {
+  background: color-mix(in srgb, var(--accent-purple) 16%, transparent);
+  border-color: color-mix(in srgb, var(--accent-purple) 45%, transparent);
+  color: var(--accent-purple);
+  font-weight: 600;
+}
+
+/* Run/Play and Pause: tinted outline chips (not solid fills), matching the mockup - Step/
+   Reset/Renormalize/Skip stay the neutral .toolbar-btn default above, undifferentiated by
+   action like the mockup's uniform button styling. */
+.toolbar-btn--play {
+  background: color-mix(in srgb, var(--color-success) 16%, transparent);
+  border-color: color-mix(in srgb, var(--color-success) 45%, transparent);
+  color: var(--color-success);
+  font-weight: 600;
+}
+
+.toolbar-btn--pause {
+  background: color-mix(in srgb, var(--color-warning) 16%, transparent);
+  border-color: color-mix(in srgb, var(--color-warning) 45%, transparent);
+  color: var(--color-warning);
+  font-weight: 600;
+}
+
+.toolbar-btn--step,
+.toolbar-btn--rerun {
+  background: var(--surface-btn);
+}
+
+/* Mode toggle (segmented control): a padded, rounded outer track with independently-rounded
+   inner segments (not edge-to-edge touching rectangles) - matches the mockup's pill styling. */
+.topbar-mode-toggle {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--surface-btn);
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-seg-track, 10px);
+  padding: 2px;
+}
+
 .toolbar-toggle {
-  padding: 8px 20px;
-  border: 1px solid var(--border-medium);
+  padding: 5px 14px;
+  border: none;
+  border-radius: var(--radius-seg-thumb, 7px);
   font-family: var(--font-family);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s;
-  background-color: var(--bg-white);
+  background: transparent;
   color: var(--text-light);
-  border-radius: 0;
 }
 
 .toolbar-toggle--active {
   background-color: var(--color-primary);
-  color: var(--text-white);
-  border-color: var(--color-primary);
+  color: var(--color-primary-contrast);
 }
 
-.toolbar-toggle--first {
-  border-radius: 4px 0 0 4px;
+/* Build|Policy|Values active-state accents: Build = cyan, Policy = teal, Values = orange
+   (overrides the generic .toolbar-toggle--active color above via equal-specificity
+   source-order cascade). */
+.toolbar-toggle--build.toolbar-toggle--active {
+  background-color: var(--accent-cyan);
+  color: var(--color-primary-contrast);
 }
 
-.toolbar-toggle--middle {
-  border-radius: 0;
-  border-left: none;
+.toolbar-toggle--policy.toolbar-toggle--active {
+  background-color: var(--accent-teal);
+  color: var(--color-primary-contrast);
 }
 
-.toolbar-toggle--last {
-  border-radius: 0 4px 4px 0;
-  border-left: none;
+/* Monte Carlo / Iteration: Evaluate redesign Phase 1 replaces the single Values segment with two
+   visually-separate scenes. Monte Carlo keeps the prior Values orange; Iteration uses VI's own
+   existing teal (ValuesMethodMatrix's known:full accent), turning purpleT (Learning Iteration's
+   accent) when P is unknown - matching the handoff's "Iteration ... becomes Learning Iteration,
+   purple, when P unknown." Tint only shows when the segment is the CURRENT sub-view
+   (.toolbar-toggle--active, toggled by _applyValuesSubViewButtons() same as Build/Policy's own
+   active state) - not permanently, matching Build/Policy's own active-only convention. The
+   .toolbar-toggle--iteration-unknown label swap still applies regardless of active state (it
+   tracks modelKnown, not which sub-view is current), but its purple tint is likewise gated on
+   .toolbar-toggle--active. */
+.toolbar-toggle--mc.toolbar-toggle--active {
+  background-color: color-mix(in srgb, var(--accent-orange) 16%, transparent);
+  color: var(--accent-orange);
 }
 
-/* Value Iteration T input */
-.toolbar-t-label {
-  font-family: var(--font-family);
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--text-dark);
-  margin-left: 16px;
-  margin-right: 4px;
-  line-height: 36px;
+.toolbar-toggle--iteration.toolbar-toggle--active {
+  background-color: color-mix(in srgb, var(--accent-teal) 16%, transparent);
+  color: var(--accent-teal);
 }
 
-.toolbar-t-input {
-  font-family: var(--font-family);
-  font-size: 14px;
-  padding: 6px 8px;
-  border: 1px solid var(--border-medium);
-  border-radius: 4px;
-  width: 50px;
-  text-align: center;
+.toolbar-toggle--iteration-unknown.toolbar-toggle--active {
+  background-color: color-mix(in srgb, var(--accent-purpleT) 16%, transparent);
+  color: var(--accent-purpleT);
 }
 
 .toolbar-checkbox {
@@ -272,8 +660,8 @@ canvas {
    Right Panel
    ============================================================ */
 .panel {
-  background-color: var(--bg-white);
-  border-left: 1px solid var(--border-light);
+  background-color: var(--surface-panel);
+  border-left: 1px solid var(--border-hairline);
   overflow-y: auto;
   padding: 15px;
   box-sizing: border-box;
@@ -310,6 +698,25 @@ canvas {
   margin-bottom: 8px;
 }
 
+/* Method panel header row (Values -> Iteration): title left, ε-convergence stop condition
+   right-aligned on the same line. */
+.panel-title-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 15px;
+}
+
+.panel-title-row .panel-title {
+  margin-bottom: 0;
+}
+
+.panel-title-row-status {
+  font-size: 14px;
+  white-space: nowrap;
+}
+
 .panel-latex {
   font-size: 16px;
   color: var(--text-muted);
@@ -317,17 +724,54 @@ canvas {
 }
 
 .panel-section-title {
-  font-size: 14px;
+  font-size: 10px;
   font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
   margin-top: 15px;
   margin-bottom: 10px;
-  color: var(--text-medium);
-  border-bottom: 2px solid var(--color-primary);
-  padding-bottom: 5px;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-hairline);
+  padding-bottom: 6px;
+}
+
+/* Scoped accent for Policy mode's "Policy π" section header only - added alongside
+   .panel-section-title (not instead of it), so every other section header stays muted-gray. */
+.panel-section-title--policy {
+  color: var(--accent-teal);
+}
+
+/* Flex-row variant of .panel-section-title - section label left, a right-aligned status
+   (e.g. Convergence's Δ-vs-ε readout) on the same line instead of below it. The row itself
+   carries the border-bottom/spacing .panel-section-title normally owns. */
+.panel-section-title-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 15px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--border-hairline);
+  padding-bottom: 6px;
+}
+
+.panel-section-title-row .panel-section-title {
+  margin: 0;
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.panel-section-title-row .panel-title-row-status {
+  font-size: 11px;
 }
 
 .panel-section-content {
   margin-bottom: 10px;
+  color: var(--text-dark);
+}
+
+.panel-section-content .katex {
+  color: var(--text-dark);
 }
 
 .panel-set-notation {
@@ -395,6 +839,523 @@ canvas {
 .q-table-cell--clickable:hover {
   background-color: rgba(33, 150, 243, 0.12);
   cursor: pointer;
+}
+
+.q-table-cell--editable {
+  cursor: pointer;
+}
+
+.q-table-cell--editable:hover {
+  background-color: var(--tint-vi-bg, rgba(92, 208, 179, 0.14));
+  outline: 1px dashed var(--border-input, var(--border-medium));
+  outline-offset: -1px;
+}
+
+.q-table-cell-input {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: var(--font-family-mono, var(--font-family));
+  font-size: 12px;
+  text-align: center;
+  border: 1px solid var(--accent-purpleT, var(--color-primary));
+  border-radius: 2px;
+  padding: 1px 2px;
+  background: var(--surface-btn, var(--bg-white));
+  color: var(--text-dark);
+}
+
+/* Policy log (Evaluate pi Phase 2) */
+
+.panel-link-muted {
+  font-size: 11px;
+  color: var(--text-placeholder);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.panel-link-muted:hover {
+  color: var(--text-medium);
+}
+
+.policy-log-row,
+.policy-log-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto auto;
+  gap: 0 6px;
+  align-items: baseline;
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  padding: 5px 4px;
+  border-radius: 6px;
+}
+
+.policy-log-row {
+  cursor: pointer;
+}
+
+.policy-log-row:hover {
+  background: var(--surface-hover, var(--bg-dark-hover));
+}
+
+.policy-log-header {
+  color: var(--text-lighter);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.policy-log-row-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.policy-log-row-t {
+  color: var(--text-lighter);
+  text-align: center;
+}
+
+.policy-log-row-value {
+  text-align: right;
+  font-weight: 600;
+  color: var(--text-dark);
+}
+
+.policy-log-row-value--best {
+  color: var(--accent-green);
+}
+
+.policy-log-row-mc {
+  text-align: right;
+  font-weight: 600;
+  color: var(--text-dark);
+}
+
+.policy-log-header .policy-log-row-value,
+.policy-log-header .policy-log-row-mc {
+  font-weight: inherit;
+  color: inherit;
+}
+
+.policy-log-row-remove {
+  color: var(--text-placeholder);
+  font-size: 14px;
+  line-height: 1;
+  text-align: center;
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+.policy-log-row-remove:hover {
+  color: var(--accent-red);
+}
+
+.policy-log-counter {
+  margin-top: 4px;
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+  color: var(--text-lighter);
+}
+
+.policy-log-rename-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 1px 4px;
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+}
+
+.panel-top-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+/* Shared param-row layout: [label] [slider, flex:1] [value] on one line - used by the γ slider
+   (Build + Method panels) and the Build panel's t progress bar below. */
+.panel-param-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.panel-param-row + .panel-param-row {
+  margin-top: 10px;
+}
+
+.panel-param-row-label {
+  font-family: var(--font-family-math, serif);
+  font-style: italic;
+  font-size: 15px;
+  color: var(--text-light);
+  flex-shrink: 0;
+}
+
+/* Smaller than the base input[type=range] size (which the animation-speed slider and the
+   transition-probability/policy-weight sliders still use at full size) - just the γ/steps
+   row sliders get this trimmed-down treatment, to match the slimmer t progress bar beside them.
+   Selectors are prefixed with input[type="range"] (not just the bare class) so they actually
+   out-specificity the base input[type="range"] rules below instead of silently losing to them -
+   input[type="range"] carries one more element-level specificity point than a class alone, so
+   ".panel-param-row-slider { height: 14px }" by itself never wins the cascade against
+   "input[type='range'] { height: 20px }" no matter what order the rules appear in.
+   Thumb and track share the same height (no thumb overflow past the bar) - a taller thumb
+   sitting proud of a thin track is what caused the "circle over square" clipped-edge artifact
+   (see --thumb-d below for why the diameter also has to match here). */
+input[type="range"].panel-param-row-slider {
+  flex: 1;
+  cursor: pointer;
+  min-width: 0;
+  height: 10px;
+  --thumb-d: 10px;
+}
+
+input[type="range"].panel-param-row-slider::-webkit-slider-runnable-track {
+  height: 10px;
+  border-radius: 5px;
+}
+
+input[type="range"].panel-param-row-slider::-moz-range-track {
+  height: 10px;
+  border-radius: 5px;
+}
+
+input[type="range"].panel-param-row-slider::-moz-range-progress {
+  height: 10px;
+  border-radius: 5px;
+}
+
+input[type="range"].panel-param-row-slider::-webkit-slider-thumb {
+  width: 10px;
+  height: 10px;
+  margin-top: 0;
+}
+
+input[type="range"].panel-param-row-slider::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+}
+
+/* γ-only cyan accent - modifier class layered on top of .panel-param-row-slider (not a
+   recolor of the shared base rule itself), so Monte Carlo's Max Steps slider - which also
+   uses .panel-param-row-slider for its size but not this modifier - stays the default color.
+   Selector is prefixed with input[type="range"] for the same specificity reason documented
+   above the base rule (a bare class selector loses the cascade fight against a plain
+   input[type="range"] rule). Mirrors the base rule's --fill/--thumb-d gradient technique
+   exactly, just swapping var(--color-primary) for var(--accent-cyan). */
+input[type="range"].panel-param-row-slider--gamma {
+  background: linear-gradient(to right,
+    var(--accent-cyan) 0,
+    var(--accent-cyan) calc(var(--thumb-d) / 2 + var(--fill) * (100% - var(--thumb-d))),
+    var(--track-color) calc(var(--thumb-d) / 2 + var(--fill) * (100% - var(--thumb-d))),
+    var(--track-color) 100%);
+}
+
+input[type="range"].panel-param-row-slider--gamma::-webkit-slider-thumb {
+  background: var(--accent-cyan);
+}
+
+input[type="range"].panel-param-row-slider--gamma::-moz-range-thumb {
+  background: var(--accent-cyan);
+}
+
+input[type="range"].panel-param-row-slider--gamma::-moz-range-progress {
+  background: var(--accent-cyan);
+}
+
+.panel-param-row-value {
+  font-family: var(--font-family-mono, monospace);
+  font-size: 12px;
+  color: var(--color-primary);
+  flex-shrink: 0;
+  min-width: 32px;
+  text-align: right;
+}
+
+/* Time-denominated params (t, MC max steps) get the orange accent instead of γ's primary blue -
+   purely a value-text color distinction, same track/thumb styling as every other slider. */
+.panel-param-row-value--time {
+  color: var(--accent-orange);
+}
+
+/* Every <input type="range"> in the app shares this track/thumb treatment. -webkit-appearance/
+   appearance: none hands track rendering over to the pseudo-elements below entirely - without
+   it, Chrome/Safari still paint a sliver of their own native track alongside the custom one,
+   showing up as a stray dark line. Without an explicit track background, browsers also fall
+   back to a near-white default that's nearly invisible against the (also light) panel
+   background in light theme. No accent-color here - the thumb/track below are already fully
+   custom-styled, and accent-color is unused/redundant with them. */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  /* Filled-portion gradient (WebKit/Blink only support a plain track, not a separate "filled"
+     pseudo-element like Firefox does) - kept in sync with the current value via JS on render
+     and on every input tick; --track-color/--fill default to "fully unfilled" so a slider that
+     never gets its inline style touched still renders with proper contrast.
+     --fill is a unitless 0-1 fraction, NOT a percentage: the boundary position has to be
+     "--thumb-d / 2 + fill * (100% - --thumb-d)", matching the browser's own thumb-center
+     formula (thumbRadius + fraction * (trackWidth - thumbDiameter)) - a naive "fill * 100%"
+     boundary ignores the thumb's radius inset, so near either end of the range the boundary
+     lands inside the thumb itself instead of at its center, visibly clipping one side of it. */
+  --track-color: var(--border-input);
+  --fill: 0;
+  --thumb-d: 20px;
+  background: linear-gradient(to right,
+    var(--color-primary) 0,
+    var(--color-primary) calc(var(--thumb-d) / 2 + var(--fill) * (100% - var(--thumb-d))),
+    var(--track-color) calc(var(--thumb-d) / 2 + var(--fill) * (100% - var(--thumb-d))),
+    var(--track-color) 100%);
+  height: 20px;
+}
+
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 3px;
+  background: transparent;
+}
+
+/* Firefox renders the filled portion via a real pseudo-element instead, so the JS gradient
+   trick above isn't needed there - the plain flat track + colored progress overlay Just Works. */
+input[type="range"]::-moz-range-track {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--track-color);
+}
+
+input[type="range"]::-moz-range-progress {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--color-primary);
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  margin-top: -7px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  cursor: pointer;
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 50%;
+  background: var(--color-primary);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  cursor: pointer;
+}
+
+/* Build panel's read-only "t" progress bar (v1: no scrub-to-any-step control, see
+   renderBuildPanel) - a plain div-based bar, not a styled <input type=range>, since Chrome
+   drops the accent-color fill entirely on disabled range inputs (renders as a flat, valueless
+   gray capsule regardless of position) - a div gives full, reliable control over the filled
+   portion instead of fighting each browser's disabled-control rendering. */
+.panel-t-progress-track {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border-input);
+  overflow: hidden;
+  min-width: 0;
+}
+
+.panel-t-progress-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent-yellow);
+  transition: width 0.2s ease;
+}
+
+.model-known-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border-input, var(--border-medium));
+  border-radius: var(--radius-btn, 4px);
+  overflow: hidden;
+}
+
+.model-known-toggle-btn {
+  font-family: var(--font-family);
+  font-size: 11px;
+  font-weight: 500;
+  padding: 4px 10px;
+  border: none;
+  background: var(--surface-btn, var(--bg-white));
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.model-known-toggle-btn:not(:first-child) {
+  border-left: 1px solid var(--border-input, var(--border-medium));
+}
+
+.model-known-toggle-btn--active {
+  background: var(--color-primary);
+  color: var(--color-primary-contrast, var(--text-white));
+}
+
+.policy-state-row {
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-hairline, var(--border-light));
+}
+
+.policy-state-row:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.policy-state-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-medium);
+  margin-bottom: 4px;
+}
+
+.policy-terminal-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.policy-det-random-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border-input, var(--border-medium));
+  border-radius: var(--radius-btn, 4px);
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+
+.policy-det-random-btn {
+  font-family: var(--font-family);
+  font-size: 10px;
+  font-weight: 500;
+  padding: 3px 8px;
+  border: none;
+  background: var(--surface-btn, var(--bg-white));
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.policy-det-random-btn:not(:first-child) {
+  border-left: 1px solid var(--border-input, var(--border-medium));
+}
+
+.policy-det-random-btn--active {
+  background: var(--color-primary);
+  color: var(--color-primary-contrast, var(--text-white));
+}
+
+.policy-segmented-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.policy-segmented-btn {
+  font-family: var(--font-family-mono, var(--font-family));
+  font-size: 11px;
+  font-weight: 500;
+  padding: 4px 10px;
+  border: 1px solid var(--border-input, var(--border-medium));
+  border-radius: var(--radius-btn, 4px);
+  background: var(--surface-btn, var(--bg-white));
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.policy-segmented-btn--active {
+  background: var(--accent-cyan, var(--color-primary));
+  color: var(--color-primary-contrast, var(--text-white));
+  border-color: var(--accent-cyan, var(--color-primary));
+}
+
+/* Random-mode weight sliders (Policy mode only) - one independent slider per action */
+.policy-weight-sliders {
+  margin-top: 4px;
+}
+
+.policy-weight-row {
+  margin-bottom: 6px;
+}
+
+.policy-weight-row:last-child {
+  margin-bottom: 0;
+}
+
+.policy-weight-name {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+
+.panel-hint-suffix {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+/* Time-dependent policy (π_t) pager + strip + per-timestep action display, Policy π section
+   (Evaluate redesign Phase 6). Mirrors .policy-det-random-toggle/.policy-segmented-btn's own
+   sizing/border conventions rather than inventing a new visual language. */
+.policy-pit-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--surface-input, var(--bg-light));
+  border: 1px solid var(--border-input, var(--border-medium));
+  border-radius: var(--radius-btn, 4px);
+  padding: 4px 6px;
+  margin-bottom: 6px;
+}
+
+.policy-pit-pager-btn {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-btn, 4px);
+  border: 1px solid var(--border-input, var(--border-medium));
+  background: var(--surface-btn, var(--bg-white));
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+
+.policy-pit-pager-label {
+  font-family: var(--font-family-mono, monospace);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-medium);
+}
+
+.policy-pit-strip {
+  display: flex;
+  gap: 3px;
+}
+
+.policy-pit-strip-seg {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border-light, var(--border-medium));
+  cursor: pointer;
+}
+
+.policy-pit-strip-seg--current {
+  background: var(--accent-yellow);
+}
+
+.policy-pit-strip-seg--differs {
+  background: var(--accent-gold, var(--accent-yellow));
+  opacity: 0.6;
 }
 
 .panel-explain-step {
@@ -498,6 +1459,13 @@ canvas {
   font-family: var(--font-family);
   font-size: 14px;
   box-sizing: border-box;
+  background: var(--surface-btn);
+  color: var(--text-dark);
+}
+
+.panel-input option {
+  background: var(--surface-btn);
+  color: var(--text-dark);
 }
 
 .panel-input--small {
@@ -509,7 +1477,10 @@ canvas {
 /* Buttons */
 .panel-btn {
   padding: 6px 12px;
-  border: none;
+  /* 1px transparent by default (not `none`) so every modifier renders the same box height
+     whether or not it actually draws a visible border - .panel-btn--secondary's real border
+     used to add 2px (1px top + 1px bottom) on top of the borderless modifiers' height. */
+  border: 1px solid transparent;
   border-radius: 4px;
   font-family: var(--font-family);
   font-size: 13px;
@@ -529,6 +1500,41 @@ canvas {
 
 .panel-btn--danger {
   background-color: var(--color-danger);
+}
+
+/* Neutral "Cancel" style - every other .panel-btn modifier (--primary/--success/--danger) sets a
+   solid background, but the base .panel-btn rule always sets color: var(--text-white) regardless
+   - a Cancel button using the bare class with no modifier ends up near-invisible white-on-white
+   (namePolicyModal.js/renormalizeConfirmModal.js were the first bare .panel-btn usages in this
+   codebase to expose it). */
+.panel-btn--secondary {
+  background-color: var(--surface-btn);
+  border: 1px solid var(--border-medium);
+  color: var(--text-dark);
+}
+
+.panel-btn--secondary:hover {
+  background-color: var(--border-light);
+}
+
+/* "★ Find optimal π" (rightPanel.js's Policy log section) - tinted outline chip, same
+   color-mix() recipe topBar.js's .toolbar-btn--play uses, not .panel-btn--primary's solid fill,
+   to match the mockup's light-purple look. */
+.panel-btn--find-optimal {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 8px;
+  padding: 8px 12px;
+  border: 1px solid color-mix(in srgb, var(--accent-purple) 45%, transparent);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent-purple) 16%, transparent);
+  color: var(--accent-purple);
+  font-weight: 600;
+}
+
+.panel-btn--find-optimal:hover {
+  background: color-mix(in srgb, var(--accent-purple) 24%, transparent);
 }
 
 /* Image preview */
@@ -630,91 +1636,48 @@ canvas {
 .panel-stat-value--primary { color: var(--color-primary); }
 .panel-stat-value--success { color: var(--color-success); }
 
-.panel-stat-value--large {
-  font-size: 24px;
-  font-weight: 700;
+/* Utility G: formula + value on one inline row, right-aligned value */
+.panel-utility-inline {
+  margin-top: 12px;
 }
 
-.panel-stat-value--large-primary {
-  font-size: 24px;
-  font-weight: 700;
-  color: var(--color-primary);
+.panel-utility-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 6px;
 }
 
-/* Reward bar */
-.reward-bar-container {
-  position: relative;
-  width: 100%;
+.panel-latex--inline {
+  font-size: 13px;
+  font-style: italic;
+}
+
+.panel-utility-value {
+  font-family: var(--font-family-mono, var(--font-family));
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* Utility G contribution bar: always-visible, one block per non-zero reward step, width
+   proportional to the discounted magnitude |gamma^t * r_t|, plus a trailing gray block for the
+   remaining episode tail with no more reward. */
+.utility-contribution-bar {
+  display: flex;
+  gap: 1px;
   height: 12px;
-  background: #f0f0f0;
-  border-radius: 6px;
-  margin-top: 8px;
+  border-radius: 4px;
   overflow: hidden;
 }
 
-.reward-bar-fill {
-  position: absolute;
-  top: 0;
+.utility-contribution-block {
   height: 100%;
-  border-radius: 6px;
-  transition: width 0.3s ease, left 0.3s ease;
 }
 
-.reward-bar-center {
-  position: absolute;
-  left: 50%;
-  top: -1px;
-  width: 2px;
-  height: 14px;
-  background: #333;
-  transform: translateX(-50%);
-}
-
-/* Utility hover panel */
-.utility-hover-panel {
-  position: relative;
-  outline: none;
-}
-
-.utility-hover-panel:focus-visible {
-  box-shadow: 0 0 0 2px var(--color-primary);
-  border-radius: 4px;
-}
-
-.utility-time-cards {
-  display: none;
-  grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
-  gap: 6px;
-  margin-top: 10px;
-}
-
-.utility-hover-panel:hover .utility-time-cards,
-.utility-hover-panel:focus-within .utility-time-cards {
-  display: grid;
-}
-
-.utility-time-card {
-  border: 1px solid var(--border-card);
-  border-radius: 4px;
-  padding: 6px;
-  background: var(--bg-card);
-}
-
-.utility-time-card-label {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-muted);
-}
-
-.utility-time-card-term {
-  font-size: 11px;
-  margin-top: 4px;
-}
-
-.utility-time-card-value {
-  font-size: 13px;
-  font-weight: 600;
-  margin-top: 3px;
+.utility-contribution-remainder {
+  flex: 1;
+  height: 100%;
+  background: var(--border-medium);
 }
 
 /* Decision probability rows */
@@ -848,38 +1811,1829 @@ canvas {
   transform: translate(-50%, -50%);
 }
 
-/* ── Expectation mode ─────────────────────────────────────────────────── */
+/* ── Unified trace scrubber (Build/Policy/MC) ────────────────────────── */
 
-.expectation-scrubber {
+.trace-scrubber {
   position: absolute;
-  height: 36px;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border-hairline, var(--border-light));
+  background: var(--surface-card2, var(--bg-card));
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  z-index: 10;
+}
+
+.trace-scrubber-arrow {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: transparent;
+  color: var(--text-medium);
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.trace-scrubber-arrow:hover { color: var(--text-dark); }
+.trace-scrubber-arrow:disabled { opacity: 0.3; cursor: default; }
+
+.trace-scrubber-track {
+  position: relative;
+  width: 320px;
+  height: 24px;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+}
+
+.trace-scrubber-track:active { cursor: grabbing; }
+
+.trace-scrubber-ticks {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  will-change: transform;
+}
+
+.trace-scrubber-tick {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  font-family: var(--font-family-mono, var(--font-family));
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.trace-scrubber-tick--active {
+  color: var(--text-dark);
+  font-weight: 700;
+  background: var(--accent-yellow-soft, rgba(245, 215, 110, 0.35));
+  border-radius: 4px;
+}
+
+.trace-scrubber-fade {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  width: 20px;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.trace-scrubber-fade--left {
+  left: 0;
+  background: linear-gradient(to right, var(--surface-card2, var(--bg-card)), transparent);
+}
+
+.trace-scrubber-fade--right {
+  right: 0;
+  background: linear-gradient(to left, var(--surface-card2, var(--bg-card)), transparent);
+}
+
+.trace-scrubber-divider {
+  width: 1px;
+  height: 18px;
+  background: var(--border-hairline, var(--border-light));
+  flex-shrink: 0;
+}
+
+.trace-scrubber-horizon {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.trace-scrubber-horizon-btn {
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--border-hairline, var(--border-light));
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-medium);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.trace-scrubber-horizon-btn:hover { color: var(--text-dark); }
+
+.trace-scrubber-horizon-value {
+  font-family: var(--font-family-mono, var(--font-family));
+  font-size: 11px;
+  color: var(--text-dark);
+  white-space: nowrap;
+}
+
+/* ── Floating Build-mode tool palette ────────────────────────────────── */
+
+.tool-palette {
+  position: absolute;
+  left: 12px;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  background: var(--surface-card2, var(--bg-card));
+  border: 1px solid var(--border-hairline, var(--border-light));
+  border-radius: var(--radius-panel, 12px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.tool-palette-btn {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 0 12px;
-  border-top: 0.5px solid var(--border-light);
-  background: var(--surface-light);
-  box-sizing: border-box;
+  padding: 8px 14px;
+  border: none;
+  border-radius: var(--radius-btn, 8px);
+  background: transparent;
+  font-family: var(--font-family);
+  cursor: pointer;
+}
+
+.tool-palette-btn:hover {
+  background: var(--surface-hover, var(--bg-dark-hover));
+}
+
+.tool-palette-btn-icon {
+  font-size: 18px;
+  line-height: 1;
+  width: 20px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.tool-palette-btn-label {
+  font-size: 15px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* Each tool's icon/label take on that tool's own on-canvas color (state=cyan, action=purple),
+   matching the node colors they create - Text stays a neutral gray since it has no dedicated
+   accent elsewhere in the app. Set on the button itself (icon/label inherit) so --active's
+   currentColor-based tint below picks up the right color per tool. */
+.tool-palette-btn--select,
+.tool-palette-btn--state {
+  color: var(--accent-cyan);
+}
+
+.tool-palette-btn--action {
+  color: var(--accent-purple);
+}
+
+.tool-palette-btn--textbox {
+  color: var(--text-muted);
+}
+
+.tool-palette-btn--active {
+  background: color-mix(in srgb, currentColor 16%, transparent);
+}
+
+/* ── Floating Values-mode method badge ───────────────────────────────── */
+
+.values-method-badge {
+  position: absolute;
+  left: 12px;
   z-index: 10;
-  pointer-events: all;
+  display: flex;
+  align-items: center;
+  /* Matches .vi-sweep-chip's own min-height (see below) so the two share one row height
+     regardless of which quadrant's badge label or the sweep chip's KaTeX formula is tallest. */
+  min-height: 30px;
+  box-sizing: border-box;
+  font-family: var(--font-family-mono, var(--font-family));
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border: 1px solid;
+  border-radius: var(--radius-btn, 6px);
+  background: var(--surface-card2, var(--bg-card));
+}
+
+/* ── Floating Monte Carlo "runs" pill (top-right) ─────────────────────── */
+
+.mc-runs-pill {
+  position: absolute;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mc-runs-pill-label {
+  font-size: 10px;
+  color: var(--text-lighter);
+}
+
+.mc-runs-pill-track {
+  display: flex;
+  gap: 2px;
+  background: var(--surface-card2, var(--bg-card));
+  border: 1px solid var(--border-hairline, var(--border-light));
+  border-radius: 8px;
+  padding: 2px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.mc-runs-pill-btn {
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-family-mono, var(--font-family));
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+
+.mc-runs-pill-btn:hover {
+  background: var(--surface-hover, var(--bg-dark-hover));
+}
+
+.mc-runs-pill-btn--active {
+  background: var(--accent-orange);
+  color: var(--color-primary-contrast, var(--text-white));
+}
+
+/* ── Learning Iteration Graph|Tree pill (Values -> Method, unknown:full) ─── */
+
+.learning-tree-pill {
+  position: absolute;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.learning-tree-pill-label {
+  font-size: 10px;
+  color: var(--text-lighter);
+}
+
+.learning-tree-pill-track {
+  display: flex;
+  gap: 2px;
+  background: var(--surface-card2, var(--bg-card));
+  border: 1px solid var(--border-hairline, var(--border-light));
+  border-radius: 8px;
+  padding: 2px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.learning-tree-pill-btn {
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-family);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+
+.learning-tree-pill-btn:hover {
+  background: var(--surface-hover, var(--bg-dark-hover));
+}
+
+.learning-tree-pill-btn--active {
+  background: var(--accent-purpleT);
+  color: var(--color-primary-contrast, var(--text-white));
+}
+
+/* ── Build/Policy Graph|Tree pill ─────────────────────────────────────── */
+
+.tree-view-pill {
+  position: absolute;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tree-view-pill-track {
+  display: flex;
+  gap: 2px;
+  background: var(--surface-card2, var(--bg-card));
+  border: 1px solid var(--border-hairline, var(--border-light));
+  border-radius: 8px;
+  padding: 2px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.tree-view-pill-btn {
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-family);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+
+.tree-view-pill-btn:hover {
+  background: var(--surface-hover, var(--bg-dark-hover));
+}
+
+.tree-view-pill-btn--active {
+  background: var(--accent-cyan);
+  color: var(--color-primary-contrast, var(--text-white));
+}
+
+/* ── MC left-pane [Grid | Chart] pill (Phase 3a) ─────────────────────────── */
+
+.mc-left-view-pill {
+  position: absolute;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mc-left-view-pill-track {
+  display: flex;
+  gap: 2px;
+  background: var(--surface-card2, var(--bg-card));
+  border: 1px solid var(--border-hairline, var(--border-light));
+  border-radius: 8px;
+  padding: 2px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.mc-left-view-pill-btn {
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-family);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+
+.mc-left-view-pill-btn:hover {
+  background: var(--surface-hover, var(--bg-dark-hover));
+}
+
+.mc-left-view-pill-btn--active {
+  background: var(--accent-cyan);
+  color: var(--color-primary-contrast, var(--text-white));
+}
+
+.mc-left-view-pill-btn--active:hover {
+  background: var(--accent-cyan);
+}
+
+/* ── Iteration [States | Chart] pill (Phase 3b follow-on) ────────────────── */
+
+.vi-left-view-pill {
+  position: absolute;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.vi-left-view-pill-track {
+  display: flex;
+  gap: 2px;
+  background: var(--surface-card2, var(--bg-card));
+  border: 1px solid var(--border-hairline, var(--border-light));
+  border-radius: 8px;
+  padding: 2px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.vi-left-view-pill-btn {
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-family);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+
+.vi-left-view-pill-btn:hover {
+  background: var(--surface-hover, var(--bg-dark-hover));
+}
+
+.vi-left-view-pill-btn--active {
+  background: var(--accent-teal);
+  color: var(--color-primary-contrast, var(--text-white));
+}
+
+.vi-left-view-pill-btn--active:hover {
+  background: var(--accent-teal);
+}
+
+/* ── Iteration [Equation | Graph] pill (2026-07-17 redesign) ─────────────── */
+
+.vi-right-view-pill {
+  position: absolute;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.vi-right-view-pill-track {
+  display: flex;
+  gap: 2px;
+  background: var(--surface-card2, var(--bg-card));
+  border: 1px solid var(--border-hairline, var(--border-light));
+  border-radius: 8px;
+  padding: 2px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.vi-right-view-pill-btn {
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-family);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+
+.vi-right-view-pill-btn:hover {
+  background: var(--surface-hover, var(--bg-dark-hover));
+}
+
+.vi-right-view-pill-btn--active {
+  background: var(--accent-teal);
+  color: var(--color-primary-contrast, var(--text-white));
+}
+
+.vi-right-view-pill-btn--active:hover {
+  background: var(--accent-teal);
+}
+
+/* ── Goal card (Evaluate redesign Phase 1) ───────────────────────────────── */
+
+.goal-card-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(6px);
+}
+
+.goal-card {
+  width: 420px;
+  max-width: 90vw;
+  box-sizing: border-box;
+  background: var(--surface-card2, var(--bg-card));
+  border: 1px solid var(--border-hairline, var(--border-light));
+  border-radius: 14px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  padding: 28px 32px;
+  text-align: center;
   font-family: var(--font-family);
 }
 
-.expectation-scrubber input[type="range"] {
-  flex: 1;
+.goal-card-eyebrow {
+  font-size: 10px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--text-lighter);
+  font-weight: 600;
+  margin-bottom: 10px;
 }
 
-.expectation-scrubber .timeline-label {
+.goal-card-equation {
+  font-size: 20px;
+  color: var(--text-dark);
+  line-height: 1.6;
+  margin-bottom: 22px;
+}
+
+.goal-card-scenes {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.goal-card-scene {
+  flex: 1;
+  padding: 14px 10px;
+  border-radius: 9px;
+  border: 1px solid var(--border-hairline, var(--border-light));
+  background: var(--surface-btn);
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.goal-card-scene--mc:hover {
+  border-color: var(--accent-orange);
+}
+
+.goal-card-scene--iteration:hover {
+  border-color: var(--accent-teal);
+}
+
+.goal-card-scene-label {
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 3px;
+}
+
+.goal-card-scene--mc .goal-card-scene-label {
+  color: var(--accent-orange);
+}
+
+.goal-card-scene--iteration .goal-card-scene-label {
+  color: var(--accent-teal);
+}
+
+.goal-card-scene-sublabel {
+  font-size: 10.5px;
+  color: var(--text-lighter);
+}
+
+.goal-card-compare {
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 14px;
+  padding: 9px;
+  border-radius: 9px;
+  background: transparent;
+  border: 1px dashed var(--border-hairline, var(--border-light));
+  color: var(--text-lighter);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: not-allowed;
+}
+
+.goal-card-footer {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.goal-card-mute {
+  font-size: 11px;
+  color: var(--text-lighter);
+  cursor: pointer;
+}
+
+.goal-card-mute:hover {
+  color: var(--text-dark);
+}
+
+/* ── Find Optimal π card (findOptimalCard.js) - reuses .goal-card-overlay/.goal-card/
+   .goal-card-eyebrow/.goal-card-equation/.goal-card-mute verbatim for the shared shell; only the
+   sub-equation and the single full-width run CTA need their own rules. ─────────────────────── */
+.find-optimal-card-subequation {
+  font-size: 13px;
+  color: var(--text-lighter);
+  line-height: 1.5;
+  margin-bottom: 20px;
+}
+
+.find-optimal-card-run {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 14px;
+  margin-bottom: 14px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--accent-purple) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-purple) 45%, transparent);
+  color: var(--accent-purple);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.find-optimal-card-run:hover {
+  background: color-mix(in srgb, var(--accent-purple) 24%, transparent);
+}
+
+/* ── Name Policy modal (namePolicyModal.js) - "Name this policy" text-input dialog, shown once
+   a Find-Optimal run converges. z-index sits above .goal-card-overlay's 50 so it can layer over
+   a still-visible find-optimal-card in principle, though in practice the card is always dismissed
+   first. ─────────────────────────────────────────────────────────────────────────────────────── */
+.name-policy-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(6px);
+}
+
+.name-policy-modal {
+  width: 340px;
+  max-width: 90vw;
+  box-sizing: border-box;
+  background: var(--surface-card2, var(--bg-card));
+  border: 1px solid var(--border-hairline, var(--border-light));
+  border-radius: 14px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  padding: 22px 24px;
+  font-family: var(--font-family);
+}
+
+.name-policy-modal-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-dark);
+  margin-bottom: 12px;
+}
+
+.name-policy-modal-input {
+  margin-bottom: 16px;
+}
+
+.name-policy-modal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* .panel-btn--primary's own margin-top: 8px (meant for its stacked, block-level usage elsewhere -
+   e.g. rightPanel.js's form sections) makes the OK/Log button's box 8px taller than the Don't
+   Log/Cancel button sitting next to it in this flex row, so align-items: center visibly offsets
+   them from each other despite same padding/font-size. Reset it back to 0 in this row only. */
+.name-policy-modal-actions .panel-btn--primary {
+  margin-top: 0;
+}
+
+/* ── No-start-node modal (noStartNodeModal.js) - themed replacement for the native alert()
+   previously shown by the Build/Policy "▶ Run" button when no start state is set. Same shell
+   shape as .name-policy-modal above. ─────────────────────────────────────────────────────────── */
+.no-start-node-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(6px);
+}
+
+.no-start-node-modal {
+  width: 340px;
+  max-width: 90vw;
+  box-sizing: border-box;
+  background: var(--surface-card2, var(--bg-card));
+  border: 1px solid var(--border-hairline, var(--border-light));
+  border-radius: 14px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  padding: 22px 24px;
+  font-family: var(--font-family);
+}
+
+.no-start-node-modal-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-dark);
+  margin-bottom: 10px;
+}
+
+.no-start-node-modal-body {
+  font-size: 13px;
+  color: var(--text-lighter);
+  line-height: 1.5;
+  margin-bottom: 18px;
+}
+
+.no-start-node-modal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.no-start-node-modal-actions .panel-btn--primary {
+  margin-top: 0;
+}
+
+/* ── Toast (toast.js) - single-instance, auto-dismissing notification. Bottom-center, no
+   backdrop/buttons (non-blocking, unlike the modals above) - fades/slides in on show(), fades
+   back out on hide()/auto-timeout. z-index above the modals' 60 so it's never hidden behind one,
+   though in practice main.js never shows both at once. ────────────────────────────────────────── */
+.app-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 32px;
+  z-index: 70;
+  transform: translate(-50%, 8px);
+  box-sizing: border-box;
+  max-width: 90vw;
+  background: var(--surface-card2, var(--bg-card));
+  border: 1px solid var(--border-hairline, var(--border-light));
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.3);
+  padding: 10px 18px;
+  font-family: var(--font-family);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-dark);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+.app-toast--visible {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+/* ── Renormalize confirm modal (renormalizeConfirmModal.js) - themed replacement for the native
+   confirm() previously used before starting a simulation / entering Monte Carlo with
+   unnormalized action probabilities. Same shell shape as .name-policy-modal above. ────────────── */
+.renormalize-confirm-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(6px);
+}
+
+.renormalize-confirm-modal {
+  width: 380px;
+  max-width: 90vw;
+  box-sizing: border-box;
+  background: var(--surface-card2, var(--bg-card));
+  border: 1px solid var(--border-hairline, var(--border-light));
+  border-radius: 14px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  padding: 22px 24px;
+  font-family: var(--font-family);
+}
+
+.renormalize-confirm-modal-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-dark);
+  margin-bottom: 10px;
+}
+
+.renormalize-confirm-modal-body {
+  font-size: 13px;
+  color: var(--text-lighter);
+  line-height: 1.5;
+  margin-bottom: 18px;
+}
+
+.renormalize-confirm-modal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* ── Q-learning Algorithm subsection (Learning Iteration right panel) ─────── */
+
+.ql-algo-toggle {
+  flex-wrap: wrap;
+}
+
+.ql-param-row {
+  display: flex;
+  align-items: center;
+  margin-top: 6px;
+}
+
+.ql-param-chip {
+  display: inline-block;
+  font-family: var(--font-family-mono, var(--font-family));
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary, var(--text-muted));
+  background: var(--surface-card2, var(--bg-card));
+  border: 1px solid var(--border-input, var(--border-medium));
+  border-radius: var(--radius-btn, 4px);
+  padding: 3px 8px;
+  cursor: pointer;
+}
+
+.ql-param-chip:hover {
+  border-color: var(--accent-purpleT);
+}
+
+/* ── Value Iteration stop-condition chip (Values -> Method) ──────────────
+   Docks immediately right of estimatorPill.js's method badge (see viSweepChip.js's
+   _applyLayout()) - same row, same border/padding language as .values-method-badge, just wider
+   to hold three parts (label / formula / live value) instead of one. */
+
+.vi-sweep-chip {
+  position: absolute;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  /* Matches .values-method-badge's own min-height so the two share one row height regardless of
+     which one's content (badge label vs. this chip's KaTeX formula) is naturally taller. */
+  min-height: 30px;
+  box-sizing: border-box;
+  background: var(--surface-card2, var(--bg-card));
+  border: 1px solid var(--border-hairline, var(--border-light));
+  border-radius: var(--radius-btn, 6px);
+  padding: 4px 12px;
+  white-space: nowrap;
+  /* No overflow:hidden here - only .vi-sweep-chip-label is ever clamped (see viSweepChip.js's
+     _applyLayout()); the formula/live value must never be clipped, even in the rare case where
+     they alone don't fit before the center [Monte Carlo|Value Iter] pill. */
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.vi-sweep-chip-plain {
+  display: none;
+  font-family: var(--font-family-mono, var(--font-family));
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.vi-sweep-chip--plain .vi-sweep-chip-plain {
+  display: inline;
+}
+
+.vi-sweep-chip--plain .vi-sweep-chip-label,
+.vi-sweep-chip--plain .vi-sweep-chip-formula,
+.vi-sweep-chip--plain .vi-sweep-chip-value {
+  display: none;
+}
+
+.vi-sweep-chip-label {
+  font-family: var(--font-family-mono, var(--font-family));
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  /* Least essential of the three parts (the formula already says "convergence") - shrinks and
+     truncates first when the chip's own max-width (set live in viSweepChip.js, clamped against
+     the center [Monte Carlo|Value Iter] pill sharing this row) leaves no room for everything. */
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vi-sweep-chip-formula,
+.vi-sweep-chip-value {
+  flex-shrink: 0;
+}
+
+.vi-sweep-chip-formula {
+  font-size: 14px;
+  color: var(--text-medium);
+}
+
+.vi-sweep-chip-value {
+  font-family: var(--font-family-mono, var(--font-family));
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.vi-sweep-chip--running .vi-sweep-chip-value {
+  color: var(--accent-yellow);
+}
+
+.vi-sweep-chip--done .vi-sweep-chip-value {
+  color: var(--reward-positive, var(--accent-teal));
+}
+
+/* Infinite Time | Finite Time segmented toggle, Method panel's Parameters section - mirrors
+   .policy-det-random-toggle/.policy-det-random-btn's own sizing/border conventions rather than
+   inventing a new visual language, but kept as its own classes since this toggle isn't
+   policy-specific. */
+.vi-time-mode-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border-input, var(--border-medium));
+  border-radius: var(--radius-btn, 4px);
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+
+.vi-time-mode-btn {
+  font-family: var(--font-family);
+  font-size: 10px;
+  font-weight: 500;
+  padding: 3px 8px;
+  border: none;
+  background: var(--surface-btn, var(--bg-white));
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.vi-time-mode-btn:not(:first-child) {
+  border-left: 1px solid var(--border-input, var(--border-medium));
+}
+
+.vi-time-mode-btn--active {
+  background: var(--color-primary);
+  color: var(--color-primary-contrast, var(--text-white));
+}
+
+/* ── Bottom chart dock ────────────────────────────────────────────────── */
+
+.chart-dock {
+  position: absolute;
+  z-index: 15;
+  background: var(--surface-dock, var(--surface-light));
+  border-top: 1px solid var(--border-hairline, var(--border-light));
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.chart-dock-handle {
+  height: 16px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: ns-resize;
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1;
+  user-select: none;
+  touch-action: none;
+}
+
+.chart-dock-slots {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.chart-dock-slot {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-left: 1px solid var(--border-hairline, var(--border-light));
+}
+
+.chart-dock-slot:first-child {
+  border-left: none;
+}
+
+.chart-dock-slot-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  flex-shrink: 0;
+}
+
+.chart-dock-picker {
+  font-family: var(--font-family);
+  font-size: 11px;
+  background: var(--surface-btn);
+  color: var(--text-dark);
+  border: 1px solid var(--border-input, var(--border-medium));
+  border-radius: var(--radius-btn, 4px);
+  padding: 2px 6px;
+}
+
+.chart-dock-caption {
+  font-family: var(--font-family-mono, var(--font-family));
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.chart-dock-slot-body {
+  flex: 1;
+  min-height: 0;
+  padding: 0 8px 8px;
+  position: relative;
+}
+
+.chart-dock-empty {
   font-size: 11px;
   color: var(--text-muted);
+  padding: 8px;
+}
+
+/* ── MC left-pane inline Chart view (Phase 3a) ───────────────────────────── */
+
+.expectation-chart-view {
+  position: fixed;
+  z-index: 8;
+  background: var(--surface-canvas);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.expectation-chart-view-slot {
+  /* Its own distinct rounded card, separated from the other chart and from the canvas
+     background - matches the reference design's individual chart boxes rather than one fused
+     panel with a divider line. */
+  flex: 0 0 220px;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-card, var(--bg-white));
+  border: 1px solid var(--border-hairline, var(--border-light));
+  border-radius: var(--radius-panel, 12px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+}
+
+.expectation-chart-view-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 8px 8px 2px;
+  flex-shrink: 0;
+}
+
+.expectation-chart-view-caption {
+  font-family: var(--font-family, var(--font-family-mono));
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-dark);
+}
+
+.expectation-chart-view-stat {
+  font-family: var(--font-family-mono, var(--font-family));
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.expectation-chart-view-body {
+  flex: 1;
+  min-height: 0;
+  padding: 0 8px 8px;
+  position: relative;
+}
+
+.expectation-chart-view-legend {
+  display: flex;
+  gap: 12px;
+  padding: 0 8px 8px;
+  flex-shrink: 0;
+}
+
+.expectation-chart-view-legend:empty {
+  display: none;
+}
+
+.expectation-chart-view-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-family-mono, var(--font-family));
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.expectation-chart-view-legend-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+/* ── Policy log chip strip (policy-logging.md §3) - "+ Log π" plus one toggle chip per logged
+   policy, sitting above expectationChartView.js's two chart cards. First toggle-chip precedent in
+   the app (--hidden = dimmed + strikethrough), styled off a per-chip CSS custom property
+   (--policy-chip-color) set inline from JS (AppPalette.expectation.runColors / accent.green),
+   since each chip's color is per-instance data, not a fixed theme token. ─────────────────────── */
+.policy-chip-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 8px 0;
+  flex-shrink: 0;
+}
+
+.policy-chip-strip-log-btn {
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px dashed var(--border-medium);
+  background: transparent;
+  color: var(--text-medium);
+  font-family: var(--font-family);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.policy-chip-strip-log-btn:hover {
+  border-color: var(--accent-purpleT, var(--color-primary));
+  color: var(--text-dark);
+}
+
+.policy-chip {
+  --policy-chip-color: var(--accent-orange);
+  max-width: 120px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--policy-chip-color);
+  background: color-mix(in srgb, var(--policy-chip-color) 16%, transparent);
+  color: var(--policy-chip-color);
+  font-family: var(--font-family);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.expectation-scrubber .t-readout {
-  font-size: 11px;
-  font-weight: 500;
-  white-space: nowrap;
+.policy-chip--hidden {
+  opacity: 0.45;
+  text-decoration: line-through;
+  background: transparent;
+}
+
+/* ── Iteration inline Chart view: Q-table + Convergence (Phase 3b follow-on) ─────────────── */
+
+.vi-chart-view {
+  position: fixed;
+  z-index: 8;
+  background: var(--surface-canvas);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.vi-chart-view-slot {
+  /* Its own distinct rounded card, matching expectation-chart-view-slot's own box treatment
+     (Monte Carlo's Chart view) rather than one fused panel with a divider line. */
+  flex: 0 0 220px;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-card, var(--bg-white));
+  border: 1px solid var(--border-hairline, var(--border-light));
+  border-radius: var(--radius-panel, 12px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+}
+
+.vi-chart-view-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 8px 8px 2px;
+  flex-shrink: 0;
+}
+
+.vi-chart-view-caption {
+  font-family: var(--font-family, var(--font-family-mono));
+  font-size: 13px;
+  font-weight: 700;
   color: var(--text-dark);
+}
+
+.vi-chart-view-stat {
+  font-family: var(--font-family-mono, var(--font-family));
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.vi-chart-view-body {
+  flex: 1;
+  min-height: 0;
+  padding: 0 8px 8px;
+  position: relative;
+  overflow-y: auto;
+}
+
+/* Multi-sweep-column "Expected value" Q-table (handoff 2 §4) - one Q column per sweep, t = 0
+   the all-zero init column, newest on the right. Header cells are plain <td>s (not <th>) so they
+   share .chart-dock-qtable's own cell padding/border rule instead of needing a duplicate ruleset. */
+.vi-chart-view-qtable-history {
+  width: max-content;
+  min-width: 100%;
+}
+
+/* Left-aligned by default, matching the body's own "state"/"action" cells (chart-dock-qtable-state
+   / plain <td>s, both browser-default left-aligned) - only the NUMERIC sweep-column headers
+   (--num, added alongside the t=k live marker below) right-align, to sit directly above their own
+   right-aligned .vi-chart-view-qtable-cell values instead of drifting out of column. */
+.vi-chart-view-qtable-headcell {
+  color: var(--text-muted);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.vi-chart-view-qtable-headcell--num {
+  text-align: right;
+}
+
+.vi-chart-view-qtable-col--live,
+.vi-chart-view-qtable-col--live.vi-chart-view-qtable-headcell {
+  color: var(--accent-yellow);
+}
+
+.vi-chart-view-qtable-gap,
+.vi-chart-view-qtable-gap-cell {
+  color: var(--text-lighter, var(--text-placeholder));
+  text-align: right;
+  white-space: nowrap;
+}
+
+.vi-chart-view-qtable-gap {
+  cursor: pointer;
+}
+
+.vi-chart-view-qtable-cell {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  border-radius: 4px;
+  outline: 2px dashed transparent;
+  outline-offset: -2px;
+  transition: outline-color 0.15s ease, opacity 0.2s ease;
+}
+
+.vi-chart-view-qtable-cell--dim {
+  opacity: 0.55;
+}
+
+/* Outlines the just-finished state's own row yellow (highlightFill()'s "this one, just computed")
+   for ~1s. */
+.vi-chart-view-qtable-cell--hot-live {
+  outline-color: var(--accent-yellow);
+}
+
+/* Outlines the t-1 cells of that state's successors green (highlightFill()'s "the values it just
+   read") for the same ~1s, at full opacity even though they're otherwise dimmed as history. */
+.vi-chart-view-qtable-cell--hot-source {
+  outline-color: var(--accent-green, #4CAF50);
+  opacity: 1;
+}
+
+/* ── Iteration right-pane Equation view (2026-07-17 redesign) ────────────── */
+
+.vi-equation-view {
+  position: fixed;
+  z-index: 8;
+  background: var(--surface-canvas);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 8px;
+}
+
+/* Plain-language narrator (handoff 2 Phase 5 - "Explain") - replaces the OLD canvas-diagram +
+   4-phase reveal this view used to own; see viEquationView.js's own file header for why. */
+.vi-equation-view-narrator {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 28px 18px 20px;
+  text-align: center;
+}
+
+.vi-equation-view-step {
+  font-family: var(--font-family-mono, var(--font-family));
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  min-height: 14px;
+  transition: color 0.2s ease;
+}
+
+.vi-equation-view-sentence {
+  font-family: var(--font-family, var(--font-family-mono));
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.45;
+  max-width: 380px;
+  text-wrap: balance;
+  min-height: 56px;
+  transition: color 0.2s ease;
+}
+
+.vi-equation-view-formula {
+  font-family: var(--font-family-mono, var(--font-family));
+  font-size: 13px;
+  min-height: 18px;
+  transition: color 0.2s ease;
+}
+
+.vi-equation-view-qtable {
+  flex: 1;
+  min-height: 0;
+  padding: 4px 8px;
+}
+
+/* ── Iteration right-pane Backward view (Evaluate redesign Phase 6) ─────── */
+
+.vi-backward-view {
+  position: fixed;
+  z-index: 8;
+  background: var(--surface-canvas);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 8px;
+}
+
+.vi-backward-view-header {
+  flex: 0 0 auto;
+  /* Clears viRightViewPill's own floating [Equation|Backward|Chart] toggle, which sits at
+     topOffset+64 relative to the same top-left corner this view's own y-bound starts from -
+     viEquationView.js avoids this by reserving a fixed-height canvas above its own content;
+     this view has no equivalent reserved element, so the padding does the same job explicitly. */
+  padding: 56px 8px 8px;
+  font-size: 15px;
+  text-align: center;
+}
+
+.vi-backward-view-rows {
+  flex: 1;
+  min-height: 0;
+  padding: 4px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.vi-backward-view-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border: 1px solid var(--border-hairline, var(--border-light));
+  border-radius: var(--radius-btn, 6px);
+  font-family: var(--font-family-mono, monospace);
+  font-size: 11.5px;
+}
+
+.vi-backward-view-row-from {
+  color: var(--text-medium);
+  font-weight: 600;
+}
+
+.vi-backward-view-row-via {
+  color: var(--text-muted);
+}
+
+.vi-backward-view-row-p {
+  color: var(--text-muted);
+}
+
+.vi-backward-view-row-r {
+  margin-left: auto;
+  color: var(--text-medium);
+}
+
+/* ── Iteration left-pane States view (Phase 3b) ──────────────────────────── */
+
+.vi-states-view-chip {
+  position: fixed;
+  z-index: 10;
+  font-family: var(--font-family-mono, var(--font-family));
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border: 1px solid var(--accent-teal);
+  border-radius: var(--radius-btn, 6px);
+  background: var(--surface-card2, var(--bg-card));
+  color: var(--accent-teal);
+  /* No `display: none` here (unlike a plain default) - ViStatesView.hide()/show() toggle this
+     element's OWN inline style.display between 'none' and '' (see viStatesView.js), the same
+     convention vi-sweep-chip's CSS already uses. Baking `display: none` into this rule would make
+     show()'s `style.display = ''` a no-op (clearing an inline override just falls back to this
+     rule's own value), leaving the chip permanently invisible even while "shown" - caught live in
+     a headless-browser check, not by reading the code. */
+}
+
+.vi-states-view {
+  position: fixed;
+  z-index: 8;
+  background: var(--surface-canvas);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.vi-states-view-sections {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.vi-states-view-section {
+  /* Gray by default (a completed, historical time step); .vi-states-view-section--live
+     overrides to yellow below for whichever one sweep is actually being computed right now -
+     matching the palette's existing "yellow = highlights: playhead, hover-links, ..." convention,
+     reserved for the CURRENT step rather than every step. Value Iteration's own brand teal stays
+     reserved for per-state V/Q values elsewhere in this view, unrelated to either color here. */
+  border: 2px dashed var(--border-hairline, var(--border-light));
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 8px;
+}
+
+.vi-states-view-section:last-child {
+  margin-bottom: 0;
+}
+
+.vi-states-view-section--live {
+  border-color: var(--accent-yellow);
+}
+
+.vi-states-view-section--active {
+  background: color-mix(in srgb, var(--accent-yellow) 10%, transparent);
+}
+
+/* Briefly highlights the SPECIFIC state's card (not the whole time box) a green prior-value
+   triangle's number actually came from - both automatically, as the live reveal's highlight
+   phase for that outcome begins, and on hovering the same triangle afterward (see
+   ViStatesView._flashCard()). A transitioned box-shadow swap rather than a keyframe pulse, so it
+   reads as "this one, right here" without extra motion competing with the diagram's own
+   backward-pass animation. */
+.vi-states-view-card--flash {
+  box-shadow: 0 0 0 2px var(--accent-green, #4CAF50);
+  transition: box-shadow 0.15s ease-out;
+}
+
+.vi-states-view-section-header {
+  font-family: var(--font-family-mono, var(--font-family));
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+  cursor: pointer;
+}
+
+.vi-states-view-section--live .vi-states-view-section-header {
+  color: var(--accent-yellow);
+  /* The live sweep's header click is a no-op (see ViStatesView's header click handler) - default
+     cursor rather than pointer avoids implying it's collapsible when it isn't. */
+  cursor: default;
+}
+
+/* Collapsing never changes the section's own dashed box or header - both stay exactly as they
+   look expanded (just gray, since only the live sweep is ever yellow). Only the cards row
+   changes: the tall per-state backup diagrams shrink to small, always-compact pills (name + V,
+   canvas hidden), still inside the same unbroken dashed wrapper - matching the reference design
+   where a collapsed `t = k` box still reads as one dashed timebox with small state pills inside
+   it, not a separate standalone chip. */
+.vi-states-view-section--collapsed .vi-states-view-cards {
+  display: flex;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+/* .vi-states-view-card--pill (below) is the same compact look applied to ONE card at a time,
+   independent of its section's own collapsed state - ViStatesView adds it the moment a live
+   sweep's card finishes its backward-pass reveal, so already-done states shrink out of the way
+   while whichever state is still calculating stays full-size. Grouped into the same rules as the
+   section-collapsed look since both are visually identical, just triggered differently. */
+.vi-states-view-section--collapsed .vi-states-view-card--diagram,
+.vi-states-view-card--diagram.vi-states-view-card--pill {
+  flex: 0 0 auto;
+  /* Resets the expanded rule's width:100% (see .vi-states-view-card--diagram below) - flex-basis
+     'auto' defers to an explicit width if one is set, so without this override every collapsed
+     pill would stay full-width instead of shrinking to its compact preview size. */
+  width: auto;
+  padding: 4px 12px;
+  cursor: pointer;
+}
+
+.vi-states-view-section--collapsed .vi-states-view-card--diagram canvas,
+.vi-states-view-card--diagram.vi-states-view-card--pill canvas,
+.vi-states-view-section--collapsed .vi-states-view-card--diagram .vi-backup-diagram-eqzone,
+.vi-states-view-card--diagram.vi-states-view-card--pill .vi-backup-diagram-eqzone {
+  display: none;
+}
+
+.vi-states-view-section--collapsed .vi-states-view-card-header,
+.vi-states-view-card--diagram.vi-states-view-card--pill .vi-states-view-card-header {
+  border-bottom: none;
+  padding-bottom: 0;
+  margin-bottom: 0;
+  gap: 20px;
+  justify-content: flex-start;
+}
+
+/* Plays while a live card's own reveal is shrinking it down to the pill footprint above (see
+   ViStatesView._collapseCardToPill()) - width/height are pinned to concrete pixel values by JS
+   just before this class is added, so the transition below animates a real, felt shrink instead
+   of an instant class swap. box-sizing:border-box lets those pinned values (raw
+   getBoundingClientRect() totals, padding included) be used directly as animation targets
+   without separately accounting for padding. */
+.vi-states-view-card--diagram.vi-states-view-card--shrinking {
+  box-sizing: border-box;
+  transition-property: width, height;
+  transition-timing-function: ease;
+  overflow: hidden;
+}
+
+.vi-states-view-card--diagram.vi-states-view-card--shrinking canvas,
+.vi-states-view-card--diagram.vi-states-view-card--shrinking .vi-backup-diagram-eqzone {
+  transition: opacity 200ms ease;
+  opacity: 0;
+}
+
+/* Fixed overlay holding "fly the prior value to the triangle" chips (see
+   ViStatesView._flyPriorValue()) - mirrors reward-particle-overlay's own convention. */
+.vi-states-view-fly-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+}
+
+.vi-states-view-fly-value {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform: translate(-50%, -50%);
+  font-family: var(--font-family-mono, var(--font-family));
+  font-size: 13px;
+  font-weight: 700;
+  /* No fixed color here (was a hardcoded #4CAF50, independent of theme/sign - a pre-existing
+     violation of "never hardcode a hex value at a call site" this redesign fixes) - the chip's own
+     content is now ViBackupDiagram.treeChipSVG()'s ghost-tree replica, which colors its value text
+     inline, by sign, through the same token set the diagram's own ghost-subtree marker uses. */
+  white-space: nowrap;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+
+.vi-states-view-fly-value--flying {
+  transition-property: left, top;
+  transition-timing-function: ease-in-out;
+  /* transition-duration set inline per-flight, already speed-scaled by the caller */
+}
+
+/* DOM equation zone (handoff 2's "Substitution" choreography - see viBackupDiagram.js's own file
+   header) - the accumulating `Q(S, a) = ...` line, dashed slot template, and expectation-combine
+   line, all above a diagram card's canvas. Token/slot colors are set inline per-token by
+   ViBackupDiagram (resolved once at card-build time from AppPalette, matching this view's existing
+   convention - see viStatesView.js's _diagramColors()), not through these rules - these only own
+   layout, typography defaults, and the shared fade-in transition. */
+.vi-backup-diagram-eqzone {
+  min-height: 0;
+  font-size: 15px;
+  line-height: 1.65;
+  padding: 2px 4px 4px;
+  color: var(--text-dark);
+}
+
+.vi-backup-diagram-acc-line,
+.vi-backup-diagram-work-line {
+  white-space: nowrap;
+  overflow-x: auto;
+}
+
+.vi-backup-diagram-acc-line {
+  min-height: 24px;
+}
+
+.vi-backup-diagram-work-line {
+  min-height: 26px;
+  font-size: 16px;
+  transition: opacity 0.2s ease;
+}
+
+/* A single symbolic/numeric token - starts hidden/offset, fades+slides in once
+   ViBackupDiagram._writeIn()/_showAll() add --shown (mirrors the "manim-ish token writing" the
+   prototype's own tok() helper establishes). */
+.vi-backup-diagram-tok {
+  display: inline-block;
+  opacity: 0;
+  transform: translateY(5px);
+  transition: opacity 0.28s ease, transform 0.28s ease, background 0.25s ease, color 0.25s ease;
+  border-radius: 4px;
+  padding: 0 1px;
+}
+
+/* A dashed "fly a number in here" slot (P(...)/r/Vt(s')) - starts hidden like a plain token
+   (--shown reveals it the same way), then ViBackupDiagram._fillSlot() swaps its border/background/
+   color once the flown-in number lands. */
+.vi-backup-diagram-slot {
+  display: inline-block;
+  opacity: 0;
+  transform: translateY(5px);
+  min-width: 34px;
+  text-align: center;
+  border: 1px dashed var(--border-light);
+  border-radius: 5px;
+  padding: 0 4px;
+  margin: 0 1px;
+  transition: border-color 0.25s ease, color 0.25s ease, background 0.25s ease, opacity 0.28s ease, transform 0.28s ease;
+}
+
+/* Compound (not bare-class) selectors here, on purpose: .vi-backup-diagram-slot above and this
+   rule have EQUAL bare-class specificity, so whichever one happened to be declared LATER in this
+   file would always win the opacity/transform tug-of-war regardless of which classes an element
+   actually carries at runtime - a real bug this fixes (slots never reached opacity:1, so their
+   P(...)/r/Vt(s') labels and dashed borders silently never appeared). Scoping --shown to each base
+   class gives it strictly higher specificity than either base rule alone, so it always wins. */
+.vi-backup-diagram-tok.vi-backup-diagram-tok--shown,
+.vi-backup-diagram-slot.vi-backup-diagram-tok--shown {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* A resolved action's Q, parked as a compact chip above the current accumulation line once its
+   own transitions have all landed (see ViBackupDiagram.drawAnimated()'s own "park" step). */
+.vi-backup-diagram-parked-chip {
+  display: inline-block;
+  margin: 2px 8px 2px 0;
+  font-family: var(--font-family-mono, var(--font-family));
+  font-size: 12px;
+  border: 1px solid var(--border-hairline, var(--border-light));
+  border-radius: 5px;
+  padding: 1px 7px;
+  transition: border-color 0.2s ease;
+}
+
+/* Fixed overlay holding ViBackupDiagram's own reward/probability/pi/Q flights - self-contained
+   flights that originate/land within a card's own DOM (unlike the cross-card value flight, which
+   stays on .vi-states-view-fly-overlay above, since ViStatesView owns that flight's origin). */
+.vi-backup-diagram-fly-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+}
+
+.vi-backup-diagram-fly-chip {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform: translate(-50%, -50%);
+  font-family: var(--font-family-mono, var(--font-family));
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+.vi-backup-diagram-fly-chip--flying {
+  transition-property: left, top;
+  transition-timing-function: ease-in-out;
+  /* transition-duration set inline per-flight, already speed-scaled by the caller */
+}
+
+.vi-states-view-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.vi-states-view-card {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: var(--surface-btn);
+  font-family: var(--font-family-mono, var(--font-family));
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.vi-states-view-card-name {
+  color: var(--text-muted);
+}
+
+.vi-states-view-card-value {
+  color: var(--text-dark);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.vi-states-view-card--diagram {
+  display: flex;
+  flex-direction: column;
+  /* Overrides the shared .vi-states-view-card rule's align-items:center (needed for the FLAT
+     card's single-row layout) - without this override, the header/canvas shrink-wrap to their
+     own content width instead of stretching to the card's full width, leaving the header's
+     justify-content:space-between with no room to actually space its two spans apart. */
+  align-items: stretch;
+  /* Forces one state per line regardless of how wide the pane is (rather than letting
+     .vi-states-view-cards' flex-wrap pack two narrow cards side by side), and gives the canvas a
+     real width to stretch to fill - see viStatesView.js's _renderDiagramJobs(), which sets the
+     canvas's pixel buffer from its own measured clientWidth once this rule has taken effect. */
+  width: 100%;
+  padding: 8px;
+  cursor: pointer;
+}
+
+.vi-states-view-card--diagram canvas {
+  display: block;
+  width: 100%;
+  /* Must stay in sync with viStatesView.js's `canvas.height = 310` (the pixel drawing buffer) -
+     nothing else in the codebase links these two numbers, and a mismatch vertically squishes the
+     drawing since width already stretches dynamically via clientWidth. */
+  height: 310px;
+}
+
+.vi-states-view-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-family: var(--font-family-mono, var(--font-family));
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dark);
+  border-bottom: 1px solid var(--border-hairline, var(--border-light));
+  padding-bottom: 4px;
+  margin-bottom: 4px;
+}
+
+.vi-states-view-card-header span:last-child {
+  color: var(--accent-teal);
+  font-weight: 700;
+}
+
+.chart-dock-qtable {
+  font-family: var(--font-family-mono, var(--font-family));
+  font-size: 10px;
+  border-collapse: collapse;
+  width: 100%;
+  color: var(--text-dark);
+}
+
+.chart-dock-qtable td {
+  padding: 2px 6px;
+  border-bottom: 1px solid var(--border-hairline, var(--border-light));
+}
+
+.chart-dock-qtable-state {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.chart-dock-qtable-best {
+  color: var(--accent-teal, var(--color-success));
+  font-weight: 600;
+}
+
+.chart-dock-mctree {
+  width: 100%;
+  height: 100%;
 }
 
 .expectation-back-btn {

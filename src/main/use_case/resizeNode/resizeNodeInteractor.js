@@ -1,4 +1,4 @@
-// Interactor for resizing nodes
+// Interactor for resizing nodes or text labels (font size)
 class ResizeNodeInteractor extends ResizeNodeInputBoundary {
     constructor(graph, commandHistory, outputBoundary) {
         super();
@@ -8,6 +8,18 @@ class ResizeNodeInteractor extends ResizeNodeInputBoundary {
     }
 
     resizeNode(inputData) {
+        if (inputData.textLabelId !== null && inputData.textLabelId !== undefined) {
+            const textLabel = this.graph.getTextLabelById(inputData.textLabelId);
+            if (!textLabel) {
+                this.outputBoundary.presentError('Text label not found');
+                return;
+            }
+            const command = new ResizeTextLabelCommand(textLabel, inputData.oldSize, inputData.newSize);
+            this.commandHistory.execute(command);
+            this.outputBoundary.presentNodeResized(textLabel);
+            return;
+        }
+
         const node = this.graph.getNodeById(inputData.nodeId);
 
         if (!node) {
