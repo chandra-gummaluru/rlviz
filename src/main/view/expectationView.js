@@ -42,6 +42,9 @@ class ExpectationView {
         // Active contT tween for the agent token animation in focused-run mode (Task 5).
         // { from, to, start, duration } or null.
         this._contTTween = null;
+
+        // Tree view renderer (Task 8)
+        this.treeView = new MCTreeView(expectationState, graph, expectationViewModel);
     }
 
     setRightPanel(rightPanel) {
@@ -104,6 +107,12 @@ class ExpectationView {
         }
         // Chart mode: ExpectationChartView (a DOM component) renders inside the panel div.
         // Nothing extra to draw on the canvas for chart mode.
+
+        // Tree mode: render the MC prefix tree inside the panel's canvas coordinate area.
+        if (vm.leftView === 'tree') {
+            const panelRect = this._getPanelCanvasBounds(canvasW, canvasH);
+            this.treeView.draw(canvasW, canvasH, panelRect);
+        }
     }
 
     // ── DOM panel lifecycle ──────────────────────────────────────────────────────────────────
@@ -1420,6 +1429,7 @@ class ExpectationView {
         // this is enough to stop it - no separate cancelAnimationFrame handle to track.
         this._graphPanelReveal = null;
         this._gridOrigin = null;
+        this.treeView.teardown();
     }
 
     // Hides the shared scrubber and clears this view's local reference/callbacks - does NOT

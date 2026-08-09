@@ -156,7 +156,8 @@ const AppPaletteLight = (function () {
         expectation: {
             runColors: ['#2a78d6', '#1baf7a', '#eda100', '#4a3aa7', '#e34948', '#e87ba4', '#eb6834', '#6b8e23'],
             scrubberLine: '#2a78d6',
-            markerYellow: '#FFD700'
+            markerYellow: '#FFD700',
+            treeEdge: '#eda100'
         },
         accent,
         tint,
@@ -322,7 +323,8 @@ const AppPaletteDark = (function () {
         expectation: {
             runColors: [accent.orange, accent.teal, accent.cyan, accent.purple, accent.red, accent.green, accent.yellow, accent.purpleT],
             scrubberLine: accent.orange,
-            markerYellow: accent.yellow
+            markerYellow: accent.yellow,
+            treeEdge: accent.yellow
         },
         accent,
         tint,

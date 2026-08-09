@@ -46,6 +46,26 @@ class ExpectationViewModel {
         // expectationView.js's own hoveredRun already uses). Thickens that policy's curve/leader
         // line in the value-over-time chart. null when nothing is hovered.
         this.hoveredPolicyId = null;
+
+        // Tree view pan/zoom state (Task 8). MCTreeView reads/writes these directly.
+        this.treePanX = 0;
+        this.treePanY = 0;
+        this.treeZoom = 1.0;
+
+        // Tree cache: rebuilt only when currentT changes.
+        this._treeCacheT = -1;
+        this._cachedTree = null;
+    }
+
+    // Returns the prefix tree for the given rollouts at currentT, using a cache so the
+    // (potentially large) tree is not rebuilt on every draw() call.
+    getOrBuildTree(rollouts, graph, currentT) {
+        if (this._treeCacheT === currentT && this._cachedTree !== null) {
+            return this._cachedTree;
+        }
+        this._cachedTree = MCPrefixTree.build(rollouts, graph, currentT);
+        this._treeCacheT = currentT;
+        return this._cachedTree;
     }
 
     // topOffset (default 0): pixels to push the grid's own viewport down by, e.g. to clear a

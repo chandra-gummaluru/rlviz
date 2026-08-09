@@ -3732,3 +3732,43 @@ input[type="range"]::-moz-range-thumb {
   word-break: break-word;
   margin-top: 2px;
 }
+
+/* ── MC Tree view leaf value cards (Task 8) ─────────────────────────────────── */
+
+.mc-tree-leaf-card {
+  position: absolute;
+  pointer-events: none;
+  z-index: 12;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 7px 5px;
+  border-radius: 6px;
+  background: var(--surface-card, rgba(30,30,35,0.90));
+  border: 0.5px solid var(--border-hairline, rgba(255,255,255,0.10));
+  box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+  min-width: 60px;
+  max-width: 130px;
+  white-space: nowrap;
+}
+
+.mc-tree-leaf-card__mean {
+  font-family: var(--font-family-mono, monospace);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.mc-tree-leaf-card__sub {
+  font-family: var(--font-family-mono, monospace);
+  font-size: 10px;
+  color: var(--text-muted);
+  line-height: 1.2;
+}
+
+.mc-tree-leaf-card__truncated {
+  font-family: var(--font-family, sans-serif);
+  font-size: 12px;
+  color: var(--text-placeholder);
+  line-height: 1;
+}
