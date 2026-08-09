@@ -23,6 +23,11 @@ class ExpectationViewModel {
         // cards. Clamped to [0, panelLayout.maxScrollY] at the end of every computeLayout() call.
         this.gridScrollY = 0;
 
+        // Pixels the full-bleed graph shifts right when the mc-panel overlay is present.
+        // 0 = graph centered in full canvas; set to panelRight + gap when panel is open.
+        // Snapped (no tween in Task 1 — animation added in Task 4).
+        this.graphLeftOffset = 0;
+
         // Policy log chart overlays (policy-logging.md §3/§4), Chart view only. Set(entry.id) of
         // policies the user has toggled OFF via the chip strip - presentation-only, excluded from
         // serialization, mirrors the hoveredRun/selectedRunIndex pair below rather than the
@@ -75,13 +80,18 @@ class ExpectationViewModel {
         this.layoutStale = false;
     }
 
-    // Fixed 52%/48% left/right split of whatever full canvas width ExpectationView already
-    // receives (mainView.js's _valuesPaneWidths() keeps handing MC the FULL usable width - this
-    // is where the actual split happens, internally, per the Phase 3a design). Not user-resizable
-    // in this phase - no drag handle.
+    // Fixed 52%/48% left/right split — kept for callers that still reference it during the
+    // Task 1 migration period. New code should use panelBounds() instead.
     splitWidths(canvasW) {
         const leftW = Math.floor(canvasW * 0.52);
         return { leftW, rightW: canvasW - leftW };
+    }
+
+    // Returns the DOM panel's geometry (matching .mc-panel CSS): used by callers that need
+    // the panel's right edge to compute graphLeftOffset without splitting the p5 canvas.
+    // These values mirror the CSS in style.css exactly so JS and CSS stay in sync.
+    panelBounds() {
+        return { top: 100, left: 12, bottomOffset: 64, widthPct: 0.44, minWidth: 340 };
     }
 
     _computeFitTransform(graph, panelW, panelH) {

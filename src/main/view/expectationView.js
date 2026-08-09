@@ -33,6 +33,8 @@ class ExpectationView {
         // only - dragging the scrubber directly always jumps instantly, see onScrub below).
         // null = nothing animating, render the selected run's path at full opacity.
         this._graphPanelReveal = null;
+        // DOM floating glass panel element (created on enter, destroyed on teardown).
+        this._mcPanel = null;
     }
 
     setRightPanel(rightPanel) {
@@ -69,45 +71,210 @@ class ExpectationView {
 
         this._ensureImagesLoaded();
 
-        const { leftW, rightW } = vm.splitWidths(canvasW);
+        // Full-bleed graph — always fills the whole canvas, shifted right of the overlay panel.
+        // The vertical divider line and the 52/48 split are gone; the panel is a DOM overlay.
+        this._drawFullBleedGraph(canvasW, canvasH);
 
+        // Grid mode: render the mini-panel grid on the canvas in the panel's coordinate area.
+        // The DOM panel element provides visual chrome (border, shadow, border-radius) on top.
         if (vm.leftView === 'grid') {
-            this._drawGrid(leftW, canvasH);
-        } else {
-            // Chart view (ExpectationChartView, a DOM component) renders over this region
-            // instead - just clear the canvas-space behind it so nothing from a previous
-            // grid-mode frame lingers visible at the pane's edges.
-            noStroke();
-            fill(AppPalette.surface.canvas);
-            rect(0, 0, leftW, canvasH);
+            const panelRect = this._getPanelCanvasBounds(canvasW, canvasH);
+            if (panelRect) {
+                this._drawGrid(panelRect.w, panelRect.h, panelRect.x, panelRect.y);
+            }
         }
-
-        push();
-        stroke(AppPalette.border.medium);
-        strokeWeight(1);
-        line(leftW, EXPECTATION_TOP_CLEARANCE, leftW, canvasH);
-        pop();
-
-        this._drawGraphPanel(leftW, rightW, canvasH);
+        // Chart mode: ExpectationChartView (a DOM component) renders inside the panel div.
+        // Nothing extra to draw on the canvas for chart mode.
     }
 
-    // Episode mini-panel grid, budgeted to the left pane's width (leftW) instead of the full
-    // canvas - this is exactly today's pre-split grid-mode rendering, just parameterized.
-    _drawGrid(leftW, canvasH) {
+    // ── DOM panel lifecycle ──────────────────────────────────────────────────────────────────
+
+    // Creates the floating glass panel <div class="mc-panel"> and appends it to document.body.
+    // Also sets expectationViewModel.graphLeftOffset so the graph centers in the right section.
+    // Called on mode entry (from resize() / setupScrubber() callers in main.js).
+    _createPanel() {
+        if (this._mcPanel) return; // already created
+        const panel = document.createElement('div');
+        panel.className = 'mc-panel';
+        document.body.appendChild(panel);
+        this._mcPanel = panel;
+
+        // Set graphLeftOffset to the panel's right edge + a small gap so the graph renders
+        // in the right section of the canvas (panel is 44% wide + 12px left + ~24px gap).
+        this._updateGraphOffset();
+    }
+
+    // Destroys the floating panel and resets graphLeftOffset to 0 (full-canvas graph).
+    _destroyPanel() {
+        if (this._mcPanel) {
+            this._mcPanel.parentNode && this._mcPanel.parentNode.removeChild(this._mcPanel);
+            this._mcPanel = null;
+        }
+        this.expectationViewModel.graphLeftOffset = 0;
+    }
+
+    // Computes the panel's right edge in screen pixels and writes graphLeftOffset accordingly.
+    // Called on _createPanel() and resize() so the offset stays in sync with window size.
+    _updateGraphOffset() {
+        if (!this._mcPanel) return;
+        // The CSS panel is 44% of window width (capped to min-width 340) + 12px left margin.
+        // We query the element's actual rendered width to stay in sync with CSS exactly.
+        const rect = this._mcPanel.getBoundingClientRect();
+        // +24px gap between panel right edge and graph area
+        this.expectationViewModel.graphLeftOffset = rect.right + 24;
+    }
+
+    // Returns the panel's bounding box in canvas/p5 coordinate space (accounting for the
+    // topbar offset so canvas-y=0 aligns with the top of the p5 drawing surface).
+    // Returns null if the panel element doesn't exist.
+    _getPanelCanvasBounds(canvasW, canvasH) {
+        if (!this._mcPanel) return null;
+        const rect = this._mcPanel.getBoundingClientRect();
+        const topBarH = this._topOffset || 0;
+        return {
+            x: rect.left,
+            y: rect.top - topBarH,
+            w: rect.width,
+            h: rect.height
+        };
+    }
+
+    // ── Full-bleed graph ─────────────────────────────────────────────────────────────────────
+
+    // Graph fills the whole canvas, centered in the region right of graphLeftOffset.
+    // Replaces the old _drawGraphPanel(leftW, rightW) which only rendered in the right 48%.
+    _drawFullBleedGraph(canvasW, canvasH) {
+        const state = this.expectationState;
+        const vm = this.expectationViewModel;
+        const leftOffset = vm.graphLeftOffset || 0;
+
+        const availW = canvasW - leftOffset;
+        const availH = canvasH - EXPECTATION_TOP_CLEARANCE;
+        const fitTransform = vm._computeFitTransform(this.graph, availW, availH);
+        if (!fitTransform) return;
+
+        const { offsetX, offsetY, fitScale } = fitTransform;
+
+        drawingContext.save();
+        drawingContext.beginPath();
+        drawingContext.rect(leftOffset, EXPECTATION_TOP_CLEARANCE, availW, availH);
+        drawingContext.clip();
+
+        push();
+        translate(leftOffset + offsetX, EXPECTATION_TOP_CLEARANCE + offsetY);
+        scale(fitScale);
+
+        for (const edge of this.graph.edges) {
+            this._drawEdge(edge.getFromNode(), edge.getToNode(), AppPalette.node.state, EXPECTATION_DIM_ALPHA);
+        }
+        for (const node of this.graph.nodes) {
+            this._drawNode(node, AppPalette.node.state, EXPECTATION_DIM_ALPHA, fitScale);
+        }
+
+        if (vm.selectedRunIndex !== null) {
+            const rollout = state.getDisplaySlice()[vm.selectedRunIndex];
+            if (rollout) {
+                const runColor = AppPalette.expectation.runColors[vm.selectedRunIndex % AppPalette.expectation.runColors.length];
+                const currentT = state.currentT;
+                const visitedSlice = rollout.trace.slice(0, this._revealedCountForRolloutAtT(rollout, currentT));
+
+                const reveal = this._graphPanelReveal;
+                const animating = reveal && reveal.toCount === visitedSlice.length;
+                const fadeFromIndex = animating ? reveal.fromCount : visitedSlice.length;
+                const fadeAlpha = animating
+                    ? Math.round(255 * EasingUtils.easeOut(Math.min(1, (performance.now() - reveal.startTime) / 280)))
+                    : 255;
+                const alphaForIndex = (idx) => idx < fadeFromIndex ? 255 : fadeAlpha;
+
+                for (let k = 0; k + 1 < visitedSlice.length; k++) {
+                    const fromNode = this.graph.getNodeById(visitedSlice[k].id);
+                    const toNode = this.graph.getNodeById(visitedSlice[k + 1].id);
+                    if (fromNode && toNode) this._drawEdge(fromNode, toNode, runColor, alphaForIndex(k + 1));
+                }
+                const lastIdx = visitedSlice.length - 1;
+                visitedSlice.forEach((entry, idx) => {
+                    const node = this.graph.getNodeById(entry.id);
+                    if (!node) return;
+                    const color = idx === lastIdx ? AppPalette.node.activeInitial : runColor;
+                    this._drawNode(node, color, alphaForIndex(idx), fitScale);
+                });
+
+                // Traveling ball along the newest chunk's path
+                if (animating && reveal.toCount - reveal.fromCount > 0) {
+                    const waypoints = visitedSlice
+                        .slice(reveal.fromCount - 1, reveal.toCount)
+                        .map(entry => this.graph.getNodeById(entry.id))
+                        .filter(Boolean);
+                    if (waypoints.length >= 2) {
+                        const t = Math.min(1, (performance.now() - reveal.startTime) / 280);
+                        const eased = EasingUtils.easeInOut(t);
+                        const segCount = waypoints.length - 1;
+                        const segProgress = eased * segCount;
+                        const segIndex = Math.min(segCount - 1, Math.floor(segProgress));
+                        const segT = segProgress - segIndex;
+                        const from = waypoints[segIndex];
+                        const to = waypoints[segIndex + 1];
+                        const bx = from.x + (to.x - from.x) * segT;
+                        const by = from.y + (to.y - from.y) * segT;
+                        noStroke();
+                        fill(AppPalette.simulation.travelBall);
+                        circle(bx, by, Math.max(4, (from.size || 20) * 0.35));
+                    }
+                }
+            }
+        }
+
+        this._drawTextLabels(fitScale);
+
+        pop();
+        drawingContext.restore();
+
+        // "Run XX · G = x.xx" label in the top-left of the graph area when a run is selected
+        if (vm.selectedRunIndex !== null) {
+            const rollout = state.getDisplaySlice()[vm.selectedRunIndex];
+            if (rollout) {
+                const utility = state._getUtility(rollout, state.currentT);
+                noStroke();
+                fill(AppPalette.accent.yellow);
+                textSize(13);
+                textAlign(LEFT, TOP);
+                textFont(Typography.mono());
+                text(`Run ${String(vm.selectedRunIndex + 1).padStart(2, '0')} · G = ${utility.toFixed(2)}`, leftOffset + 12, EXPECTATION_TOP_CLEARANCE + 10);
+            }
+        }
+    }
+
+    // ── Grid (rendered on canvas in the DOM panel's coordinate area) ───────────────────────
+
+    // Episode mini-panel grid rendered on the p5 canvas within the floating panel's bounds.
+    // panelW/H: the panel's rendered size; panelX/Y: its top-left in canvas coordinates.
+    // (The DOM panel provides border/shadow chrome on top; canvas provides pixel content below.)
+    _drawGrid(panelW, panelH, panelX, panelY) {
         const state = this.expectationState;
         const vm = this.expectationViewModel;
 
+        // Small inset so grid content clears the panel's border-radius corners.
+        const INSET = 8;
+        const gridW = panelW - INSET * 2;
+        const gridH = panelH - INSET * 2;
+        const gridX = panelX + INSET;
+        const gridY = panelY + INSET;
+
+        // Store grid origin for handleClick / handleMouseMove hit-testing.
+        this._gridOrigin = { x: gridX, y: gridY };
+
         if (vm.layoutStale) {
-            vm.computeLayout(leftW, canvasH - EXPECTATION_TOP_CLEARANCE, state.displayRuns, this.graph, EXPECTATION_TOP_CLEARANCE);
+            vm.computeLayout(gridW, gridH, state.displayRuns, this.graph, 0);
         }
         if (!vm.panelLayout) {
-            this._drawEmptyPrompt(leftW, canvasH);
+            // Draw prompt centered inside the panel area (not the full canvas).
+            this._drawEmptyPrompt(2 * panelX + panelW, 2 * panelY + panelH);
             return;
         }
 
         const { panels, fitTransform, topOffset } = vm.panelLayout;
         if (!fitTransform) {
-            this._drawEmptyPrompt(leftW, canvasH);
+            this._drawEmptyPrompt(2 * panelX + panelW, 2 * panelY + panelH);
             return;
         }
 
@@ -115,15 +282,14 @@ class ExpectationView {
         const currentT = state.currentT;
         const runColors = AppPalette.expectation.runColors;
         const scrollY = vm.gridScrollY;
-        const viewportTop = topOffset;
-        const viewportBottom = canvasH;
+        const viewportTop = gridY;
+        const viewportBottom = gridY + gridH;
 
-        // Outer clip for the whole scrollable viewport - without this, a panel scrolled
-        // partially above viewportTop would still paint over the floating pill/badge chrome
-        // anchored there.
+        // Outer clip for the whole scrollable viewport so panel content doesn't escape
+        // the rounded corners or bleed into the graph area behind it.
         drawingContext.save();
         drawingContext.beginPath();
-        drawingContext.rect(0, viewportTop, leftW, viewportBottom - viewportTop);
+        drawingContext.rect(gridX, viewportTop, gridW, gridH);
         drawingContext.clip();
 
         const displaySlice = state.getDisplaySlice();
@@ -133,13 +299,11 @@ class ExpectationView {
             const panel = panels[i];
             if (!panel) continue;
 
-            // Screen-space position: content-space panel.x/y, shifted down past the reserved
-            // top clearance and up by however far the user has scrolled.
-            const sx = panel.x;
+            // Screen-space position: content-space panel.x/y, offset into the panel's area.
+            const sx = gridX + panel.x;
             const sy = viewportTop + panel.y - scrollY;
 
-            // Cull panels fully outside the visible viewport - cheap, and keeps a 64-panel grid
-            // from doing full mini-graph render work for rows that aren't on screen.
+            // Cull panels fully outside the visible viewport.
             if (sy + panel.h < viewportTop || sy > viewportBottom) continue;
 
             const rollout = displaySlice[i];
@@ -169,7 +333,7 @@ class ExpectationView {
             }
 
             // Draw all nodes dim - no name labels in the grid's mini-panels (too small to be
-            // legible at this scale, and the shared right-pane graph panel is where node names
+            // legible at this scale, and the full-bleed graph panel is where node names
             // are meant to be read now).
             for (const node of this.graph.nodes) {
                 this._drawNode(node, AppPalette.node.state, EXPECTATION_DIM_ALPHA, fitScale, false);
@@ -268,123 +432,8 @@ class ExpectationView {
         requestAnimationFrame(tick);
     }
 
-    _drawGraphPanel(leftW, rightW, canvasH) {
-        const state = this.expectationState;
-        const vm = this.expectationViewModel;
-
-        const availH = canvasH - EXPECTATION_TOP_CLEARANCE;
-        const fitTransform = vm._computeFitTransform(this.graph, rightW, availH);
-        if (!fitTransform) return;
-
-        const { offsetX, offsetY, fitScale } = fitTransform;
-
-        drawingContext.save();
-        drawingContext.beginPath();
-        drawingContext.rect(leftW, EXPECTATION_TOP_CLEARANCE, rightW, availH);
-        drawingContext.clip();
-
-        fill(AppPalette.surface.card);
-        noStroke();
-        rect(leftW, EXPECTATION_TOP_CLEARANCE, rightW, availH);
-
-        push();
-        translate(leftW + offsetX, EXPECTATION_TOP_CLEARANCE + offsetY);
-        scale(fitScale);
-
-        for (const edge of this.graph.edges) {
-            this._drawEdge(edge.getFromNode(), edge.getToNode(), AppPalette.node.state, EXPECTATION_DIM_ALPHA);
-        }
-        for (const node of this.graph.nodes) {
-            this._drawNode(node, AppPalette.node.state, EXPECTATION_DIM_ALPHA, fitScale);
-        }
-
-        if (vm.selectedRunIndex !== null) {
-            const rollout = state.getDisplaySlice()[vm.selectedRunIndex];
-            if (rollout) {
-                const runColor = AppPalette.expectation.runColors[vm.selectedRunIndex % AppPalette.expectation.runColors.length];
-                const currentT = state.currentT;
-                const visitedSlice = rollout.trace.slice(0, this._revealedCountForRolloutAtT(rollout, currentT));
-
-                // Per-index alpha: entries already visible before the current reveal (or all of
-                // them, if nothing is animating - a scrub-drag jump or a fresh run selection)
-                // render at full opacity; only the newest Play/Step chunk eases in.
-                const reveal = this._graphPanelReveal;
-                const animating = reveal && reveal.toCount === visitedSlice.length;
-                const fadeFromIndex = animating ? reveal.fromCount : visitedSlice.length;
-                const fadeAlpha = animating
-                    ? Math.round(255 * EasingUtils.easeOut(Math.min(1, (performance.now() - reveal.startTime) / 280)))
-                    : 255;
-                const alphaForIndex = (idx) => idx < fadeFromIndex ? 255 : fadeAlpha;
-
-                for (let k = 0; k + 1 < visitedSlice.length; k++) {
-                    const fromNode = this.graph.getNodeById(visitedSlice[k].id);
-                    const toNode = this.graph.getNodeById(visitedSlice[k + 1].id);
-                    if (fromNode && toNode) this._drawEdge(fromNode, toNode, runColor, alphaForIndex(k + 1));
-                }
-                // The current node (always the last, and always a state entry - the trace
-                // alternates state/action/state/...) is filled with the same accent Build/Policy
-                // mode uses for "where the simulation currently is" (NodeViewModel.color),
-                // instead of the run's own color, so it reads as a distinct "you are here" marker
-                // rather than just another visited step.
-                const lastIdx = visitedSlice.length - 1;
-                visitedSlice.forEach((entry, idx) => {
-                    const node = this.graph.getNodeById(entry.id);
-                    if (!node) return;
-                    const color = idx === lastIdx ? AppPalette.node.activeInitial : runColor;
-                    this._drawNode(node, color, alphaForIndex(idx), fitScale);
-                });
-
-                // Traveling ball along the newest chunk's path (matches Build/Policy's own
-                // travel-ball convention, AppPalette.simulation.travelBall) - only while a
-                // Play/Step reveal is actually animating; scrub-drags and fresh selections
-                // render everything instantly with no ball.
-                if (animating && reveal.toCount - reveal.fromCount > 0) {
-                    const waypoints = visitedSlice
-                        .slice(reveal.fromCount - 1, reveal.toCount)
-                        .map(entry => this.graph.getNodeById(entry.id))
-                        .filter(Boolean);
-                    if (waypoints.length >= 2) {
-                        const t = Math.min(1, (performance.now() - reveal.startTime) / 280);
-                        const eased = EasingUtils.easeInOut(t);
-                        const segCount = waypoints.length - 1;
-                        const segProgress = eased * segCount;
-                        const segIndex = Math.min(segCount - 1, Math.floor(segProgress));
-                        const segT = segProgress - segIndex;
-                        const from = waypoints[segIndex];
-                        const to = waypoints[segIndex + 1];
-                        const bx = from.x + (to.x - from.x) * segT;
-                        const by = from.y + (to.y - from.y) * segT;
-                        noStroke();
-                        fill(AppPalette.simulation.travelBall);
-                        circle(bx, by, Math.max(4, (from.size || 20) * 0.35));
-                    }
-                }
-            }
-        }
-
-        this._drawTextLabels(fitScale);
-
-        pop();
-        drawingContext.restore();
-
-        noFill();
-        stroke(AppPalette.border.medium);
-        strokeWeight(1);
-        rect(leftW, EXPECTATION_TOP_CLEARANCE, rightW, availH);
-
-        if (vm.selectedRunIndex !== null) {
-            const rollout = state.getDisplaySlice()[vm.selectedRunIndex];
-            if (rollout) {
-                const utility = state._getUtility(rollout, state.currentT);
-                noStroke();
-                fill(AppPalette.accent.yellow);
-                textSize(13);
-                textAlign(LEFT, TOP);
-                textFont(Typography.mono());
-                text(`Run ${String(vm.selectedRunIndex + 1).padStart(2, '0')} · G = ${utility.toFixed(2)}`, leftW + 12, EXPECTATION_TOP_CLEARANCE + 10);
-            }
-        }
-    }
+    // _drawGraphPanel() removed — replaced by _drawFullBleedGraph() which renders the graph
+    // across the full canvas (right of the floating panel). See draw() above.
 
     _ensureImagesLoaded() {
         for (const node of this.graph.nodes) {
@@ -678,15 +727,16 @@ class ExpectationView {
         const state = this.expectationState;
         if (!state.computed || vm.leftView !== 'grid' || !vm.panelLayout) return;
 
-        // Panels are stored in content space (scroll/topOffset-independent) - convert the
-        // incoming screen-space click the same way _drawGrid() converts the other direction.
-        const cy = my - vm.panelLayout.topOffset + vm.gridScrollY;
+        // Map screen-space click into the grid's content space.
+        // _gridOrigin is set in _drawGrid to the top-left of the grid inset area.
+        const origin = this._gridOrigin || { x: 0, y: 0 };
+        const cx = mx - origin.x;
+        const cy = my - origin.y + vm.gridScrollY;
         const { panels } = vm.panelLayout;
         for (let i = 0; i < panels.length; i++) {
             const p = panels[i];
-            if (mx >= p.x && mx <= p.x + p.w && cy >= p.y && cy <= p.y + p.h) {
-                // Clicking an already-selected panel deselects it (toggle), matching this
-                // codebase's other click-to-select-or-clear conventions.
+            if (cx >= p.x && cx <= p.x + p.w && cy >= p.y && cy <= p.y + p.h) {
+                // Clicking an already-selected panel deselects it (toggle).
                 this.selectRun(vm.selectedRunIndex === i ? null : i);
                 return;
             }
@@ -733,12 +783,14 @@ class ExpectationView {
             return prevHovered !== null;
         }
 
-        const cy = my - vm.panelLayout.topOffset + vm.gridScrollY;
+        const origin = this._gridOrigin || { x: 0, y: 0 };
+        const cx = mx - origin.x;
+        const cy = my - origin.y + vm.gridScrollY;
         const { panels } = vm.panelLayout;
         let hovered = null;
         for (let i = 0; i < panels.length; i++) {
             const p = panels[i];
-            if (mx >= p.x && mx <= p.x + p.w && cy >= p.y && cy <= p.y + p.h) {
+            if (cx >= p.x && cx <= p.x + p.w && cy >= p.y && cy <= p.y + p.h) {
                 hovered = i;
                 break;
             }
@@ -755,10 +807,12 @@ class ExpectationView {
     teardown() {
         this.stopPlay();
         this._removeScrubber();
+        this._destroyPanel();
         this._imageCache.clear();
         // Its rAF loop checks `if (!this._graphPanelReveal) return;` every frame, so clearing
         // this is enough to stop it - no separate cancelAnimationFrame handle to track.
         this._graphPanelReveal = null;
+        this._gridOrigin = null;
     }
 
     // Hides the shared scrubber and clears this view's local reference/callbacks - does NOT
@@ -779,12 +833,21 @@ class ExpectationView {
             this._positionScrubberAboveDock();
         }
         this.expectationViewModel.invalidateLayout();
+        // Keep the floating panel's graphLeftOffset in sync with the new window size.
+        this._updateGraphOffset();
         if (this._expectationChartView) {
-            const { leftW } = this.expectationViewModel.splitWidths(canvasW);
-            // +56 clears estimatorPill's top-left badge - see main.js's setUpMCSplitChrome()
-            // for the same inset applied on initial setup/mode-entry.
-            const chartTopInset = 56;
-            this._expectationChartView.updateBounds(0, topOffset + chartTopInset, leftW, canvasH - chartTopInset);
+            // Chart view lives inside the floating mc-panel. Use the panel's actual rendered
+            // bounds so the chart fills the panel correctly after a window resize.
+            if (this._mcPanel) {
+                const rect = this._mcPanel.getBoundingClientRect();
+                const chartTopInset = 56; // clears estimatorPill's top-left method badge
+                this._expectationChartView.updateBounds(rect.left, topOffset + chartTopInset, rect.width, rect.height - chartTopInset);
+            } else {
+                // Fallback: use old split-based bounds when panel hasn't been created yet.
+                const { leftW } = this.expectationViewModel.splitWidths(canvasW);
+                const chartTopInset = 56;
+                this._expectationChartView.updateBounds(0, topOffset + chartTopInset, leftW, canvasH - chartTopInset);
+            }
         }
     }
 }

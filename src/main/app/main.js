@@ -423,25 +423,36 @@ function _shouldShowMcChartView() {
 // both paths need this and the geometry math is identical either way.
 function setUpMCSplitChrome() {
     if (!mainView) return;
-    const panelW = rightPanel ? rightPanel.getWidth() : 272;
-    const fullCanvasW = windowWidth - panelW;
-    const canvasW = mainView._valuesPaneWidths(fullCanvasW).mc;
     const topOffset = mainView.TOP_BARS_HEIGHT;
     const canvasH = windowHeight - topOffset - mainView.getDockHeight();
-    const { leftW, rightW } = expectationViewModel.splitWidths(canvasW);
 
-    // Anchored to the RIGHT (MDP graph) pane's bounds, not the left grid/chart pane it actually
-    // controls - a deliberate cosmetic placement so it reads as "which view is shown beside the
-    // graph" rather than crowding the left pane's own grid/chart content.
+    // Create the floating glass panel (no-op if already created).
+    if (mainView.expectationView) {
+        mainView.expectationView._createPanel();
+    }
+
+    // Anchor the pill to the mc-panel's top-left corner.
     if (mainView.mcLeftViewPill) {
-        mainView.mcLeftViewPill.updateBounds(leftW, rightW);
+        const panelEl = mainView.expectationView ? mainView.expectationView._mcPanel : null;
+        mainView.mcLeftViewPill.updateBounds(panelEl);
         mainView.mcLeftViewPill.show();
         mainView.mcLeftViewPill.refresh();
     }
-    if (mainView.expectationChartView) {
-        // +56 clears estimatorPill's top-left "Monte Carlo"/method badge (values-method-badge,
-        // topOffset+24, ~24px tall) - without this inset the chart view's own box starts right at
-        // the canvas top and its content visually crowds/bleeds into that badge's corner.
+
+    // Chart view bounds: use the mc-panel's rendered bounds so it fills the panel.
+    if (mainView.expectationChartView && mainView.expectationView && mainView.expectationView._mcPanel) {
+        const panelRect = mainView.expectationView._mcPanel.getBoundingClientRect();
+        // +56 clears estimatorPill's top-left "Monte Carlo"/method badge.
+        const chartTopInset = 56;
+        mainView.expectationChartView.updateBounds(panelRect.left, topOffset + chartTopInset, panelRect.width, panelRect.height - chartTopInset);
+        if (_shouldShowMcChartView()) mainView.expectationChartView.show();
+        else mainView.expectationChartView.hide();
+    } else if (mainView.expectationChartView) {
+        // Fallback when panel not yet available (e.g. very first call).
+        const panelW = rightPanel ? rightPanel.getWidth() : 272;
+        const fullCanvasW = windowWidth - panelW;
+        const canvasW = mainView._valuesPaneWidths(fullCanvasW).mc;
+        const { leftW } = expectationViewModel.splitWidths(canvasW);
         const chartTopInset = 56;
         mainView.expectationChartView.updateBounds(0, topOffset + chartTopInset, leftW, canvasH - chartTopInset);
         if (_shouldShowMcChartView()) mainView.expectationChartView.show();

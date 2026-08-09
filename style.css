@@ -3649,4 +3649,27 @@ input[type="range"]::-moz-range-thumb {
   color: var(--text-dark);
   pointer-events: all;
 }
+
+/* ── MC floating glass panel (Task 1 — full-bleed graph + overlay panel) ──── */
+
+.mc-panel {
+  position: absolute;
+  top: 100px;
+  left: 12px;
+  bottom: 64px;
+  width: 44%;
+  min-width: 340px;
+  border-radius: 14px;
+  border: 0.5px solid var(--border-hairline, rgba(255,255,255,0.12));
+  box-shadow: 0 4px 24px rgba(0,0,0,0.18);
+  overflow: hidden;
+  z-index: 10;
+  /* pointer-events: none allows canvas interactions to pass through (grid click/hover handled
+     on the p5 canvas underneath); chart view inside the panel re-enables pointer-events on
+     its own container. */
+  pointer-events: none;
+  /* Transparent background: the p5 canvas renders grid/chart content at the panel's position.
+     The panel provides border, shadow, and border-radius chrome only. */
+  background: transparent;
+}
 .expectation-back-btn:hover { background: var(--surface-white); }

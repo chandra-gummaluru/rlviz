@@ -1301,11 +1301,22 @@ class MainView {
         }
 
         // MC's mini-panel grid doesn't pan/zoom, but it can scroll vertically (Grid view, over
-        // the left pane specifically) once there are more rows than fit the viewport.
+        // the floating panel specifically) once there are more rows than fit the viewport.
         if (this.viewModel.interaction.mode === 'values' && this.viewModel.valuesSubView === 'mc') {
             if (this.expectationView) {
-                const { leftW } = this.expectationView.expectationViewModel.splitWidths(width);
-                if (mouseX < leftW && this.expectationView.handleWheel(event.delta)) {
+                // Check whether the mouse is inside the mc-panel's coordinate area.
+                const panelEl = this.expectationView._mcPanel;
+                let inPanel = false;
+                if (panelEl) {
+                    const rect = panelEl.getBoundingClientRect();
+                    inPanel = mouseX >= rect.left && mouseX <= rect.right
+                           && mouseY >= rect.top  && mouseY <= rect.bottom;
+                } else {
+                    // Fallback: use the old 52% split boundary.
+                    const { leftW } = this.expectationView.expectationViewModel.splitWidths(width);
+                    inPanel = mouseX < leftW;
+                }
+                if (inPanel && this.expectationView.handleWheel(event.delta)) {
                     return false;
                 }
             }
@@ -1401,8 +1412,8 @@ class MainView {
             && this.viewModel.valuesSubView === 'mc') {
             this.expectationView.resize(paneWidths.mc, valuesHeight, this.TOP_BARS_HEIGHT);
             if (this.mcLeftViewPill) {
-                const { leftW, rightW } = this.expectationView.expectationViewModel.splitWidths(paneWidths.mc);
-                this.mcLeftViewPill.updateBounds(leftW, rightW);
+                const panelEl = this.expectationView._mcPanel || null;
+                this.mcLeftViewPill.updateBounds(panelEl);
             }
         }
         if (this.viStatesView && this.viewModel.interaction.mode === 'values'
@@ -1498,8 +1509,8 @@ class MainView {
             && this.viewModel.valuesSubView === 'mc') {
             this.expectationView.resize(paneWidths.mc, valuesHeight, this.TOP_BARS_HEIGHT);
             if (this.mcLeftViewPill) {
-                const { leftW, rightW } = this.expectationView.expectationViewModel.splitWidths(paneWidths.mc);
-                this.mcLeftViewPill.updateBounds(leftW, rightW);
+                const panelEl = this.expectationView._mcPanel || null;
+                this.mcLeftViewPill.updateBounds(panelEl);
             }
         }
         if (this.viStatesView && this.viewModel.interaction.mode === 'values'

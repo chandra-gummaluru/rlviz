@@ -1,5 +1,5 @@
-// Floating pill, top-right of the LEFT 52% pane specifically (not the whole canvas) in Values ->
-// Monte Carlo: a [Grid | Chart] segmented switch for expectationViewModel.leftView. Modeled
+// Floating pill, top-LEFT of the floating mc-panel in Values -> Monte Carlo:
+// a [Grid | Chart] segmented switch for expectationViewModel.leftView. Modeled
 // directly on treeViewPill.js (same two-option DOM/CSS skeleton) - kept as a separate file rather
 // than a shared parameterized component, matching this codebase's one-file-per-floating-pill
 // convention (mcRunsPill.js, treeViewPill.js, zoomPill.js are all separate files too).
@@ -19,16 +19,10 @@ class McLeftViewPill {
 
     setup(topOffset) {
         if (this.containerEl) return;
-        // +64 (not treeViewPill's +12, which this was originally modeled on) - Values mode
-        // already has estimatorPill/mcRunsPill sharing the topOffset+24 row, and this pill's
-        // right-edge anchor (the LEFT PANE's ~52% boundary) sits close enough to estimatorPill's
-        // centered (50%) position that sharing a row visibly overlaps both pills. Dropping to a
-        // second row clears that regardless of window width.
-        this._topOffset = topOffset + 64;
+        this._topOffset = topOffset;
 
         const container = document.createElement('div');
         container.className = 'mc-left-view-pill';
-        container.style.top = this._topOffset + 'px';
         document.body.appendChild(container);
         this.containerEl = container;
 
@@ -53,18 +47,27 @@ class McLeftViewPill {
         this.refresh();
     }
 
-    // x, width: the LEFT PANE's bounds specifically (leftW from ExpectationViewModel.splitWidths),
-    // not the full canvas - right-edge anchored within that narrower region, same convention as
-    // every other floating pill in this codebase.
-    updateBounds(x, width) {
-        this._bounds = { x, width };
+    // panelEl: the mc-panel DOM element whose top-left the pill anchors to.
+    // Falls back to a fixed screen position if no panel element is given.
+    updateBounds(panelEl) {
+        this._panelEl = panelEl || null;
         this._applyLayout();
     }
 
     _applyLayout() {
-        if (!this.containerEl || !this._bounds) return;
-        this.containerEl.style.left = (this._bounds.x + this._bounds.width - 12) + 'px';
-        this.containerEl.style.transform = 'translateX(-100%)';
+        if (!this.containerEl) return;
+        if (this._panelEl) {
+            // Anchor pill to top-left corner of the mc-panel, with a small inset.
+            const rect = this._panelEl.getBoundingClientRect();
+            this.containerEl.style.left = (rect.left + 10) + 'px';
+            this.containerEl.style.top = (rect.top + 10) + 'px';
+            this.containerEl.style.transform = '';
+        } else {
+            // Fallback: fixed top-left position when panel element isn't available.
+            this.containerEl.style.left = '22px';
+            this.containerEl.style.top = ((this._topOffset || 0) + 64) + 'px';
+            this.containerEl.style.transform = '';
+        }
     }
 
     refresh() {
