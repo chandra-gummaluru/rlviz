@@ -3772,3 +3772,81 @@ input[type="range"]::-moz-range-thumb {
   color: var(--text-placeholder);
   line-height: 1;
 }
+
+/* ── MC Tree view header (Task 9) ────────────────────────────────────────────── */
+
+.mc-tree-header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 13;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 12px 6px;
+  background: var(--surface-card, rgba(24,24,28,0.88));
+  border-bottom: 0.5px solid var(--border-hairline, rgba(255,255,255,0.10));
+  border-radius: 14px 14px 0 0;
+  pointer-events: all;
+  user-select: none;
+}
+
+.mc-tree-header-title {
+  font-family: var(--font-family, sans-serif);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dark);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.mc-tree-header-stat {
+  font-family: var(--font-family-mono, monospace);
+  font-size: 10px;
+  color: var(--text-muted);
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.mc-tree-header-zoom {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  pointer-events: all;
+}
+
+.mc-tree-zoom-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 0.5px solid var(--border-medium, rgba(255,255,255,0.18));
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.12s, color 0.12s;
+  pointer-events: all;
+}
+
+.mc-tree-zoom-btn:hover {
+  background: var(--surface-white, rgba(255,255,255,0.10));
+  color: var(--text-dark);
+}
+
+.mc-tree-zoom-readout {
+  font-family: var(--font-family-mono, monospace);
+  font-size: 10px;
+  color: var(--text-muted);
+  min-width: 34px;
+  text-align: center;
+}

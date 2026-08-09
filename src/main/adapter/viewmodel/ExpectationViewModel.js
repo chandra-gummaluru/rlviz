@@ -51,6 +51,10 @@ class ExpectationViewModel {
         this.treePanX = 0;
         this.treePanY = 0;
         this.treeZoom = 1.0;
+        // Auto-follow: when true, the tree view's setInterval loop eases the viewport so the
+        // growth frontier (rightmost revealed column) stays at ~60% of panel width. Set to false
+        // by any drag or wheel interaction; re-enabled on tree view entry or t-reset. (Task 9)
+        this.autoFollow = true;
 
         // Tree cache: rebuilt only when currentT changes.
         this._treeCacheT = -1;

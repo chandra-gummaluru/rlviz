@@ -100,6 +100,10 @@ class ExpectationView {
         // Grid mode: render the mini-panel grid on the canvas in the panel's coordinate area.
         // The DOM panel element provides visual chrome (border, shadow, border-radius) on top.
         if (vm.leftView === 'grid') {
+            // Restore panel to pointer-events:none when in non-tree mode (tree sets it to 'auto').
+            if (this._mcPanel) { this._mcPanel.style.pointerEvents = 'none'; this._mcPanel.style.cursor = ''; }
+            // Notify treeView that we've left tree mode (allows it to reset re-entry detection).
+            this.treeView.notifyLeftTreeView();
             const panelRect = this._getPanelCanvasBounds(canvasW, canvasH);
             if (panelRect) {
                 this._drawGrid(panelRect.w, panelRect.h, panelRect.x, panelRect.y);
@@ -107,6 +111,10 @@ class ExpectationView {
         }
         // Chart mode: ExpectationChartView (a DOM component) renders inside the panel div.
         // Nothing extra to draw on the canvas for chart mode.
+        if (vm.leftView === 'chart') {
+            if (this._mcPanel) { this._mcPanel.style.pointerEvents = 'none'; this._mcPanel.style.cursor = ''; }
+            this.treeView.notifyLeftTreeView();
+        }
 
         // Tree mode: render the MC prefix tree inside the panel's canvas coordinate area.
         if (vm.leftView === 'tree') {
@@ -130,10 +138,15 @@ class ExpectationView {
         // Set graphLeftOffset to the panel's right edge + a small gap so the graph renders
         // in the right section of the canvas (panel is 44% wide + 12px left + ~24px gap).
         this._updateGraphOffset();
+        // Give MCTreeView a reference to the panel element so it can attach events and
+        // build the header DOM (Task 9).
+        this.treeView.setPanelEl(this._mcPanel);
     }
 
     // Destroys the floating panel and resets graphLeftOffset to 0 (full-canvas graph).
     _destroyPanel() {
+        // Detach MCTreeView from the panel before removing the element (Task 9).
+        this.treeView.setPanelEl(null);
         if (this._mcPanel) {
             this._mcPanel.parentNode && this._mcPanel.parentNode.removeChild(this._mcPanel);
             this._mcPanel = null;

@@ -13,15 +13,102 @@ class MCTreeView {
         this._vm = expectationViewModel;
         this._leafCards = []; // active DOM leaf card elements
         this._imageCache = new Map(); // nodeId:src → HTMLImageElement
+
+        // Task 9 — panel element reference (set via setPanelEl)
+        this._panelEl = null;
+        // Track whether draw() was called in the previous frame (used to detect re-entry
+        // into tree view so we can re-enable auto-follow).
+        this._wasDrawing = false;
+        // Auto-follow interval
+        this._followInterval = null;
+        // Header DOM element (appended inside _panelEl)
+        this._headerEl = null;
+        // Drag state
+        this._dragStart = null;
+        // Bound event handlers (stored so we can remove them on teardown)
+        this._onPointerDown = this._handlePointerDown.bind(this);
+        this._onPointerMove = this._handlePointerMove.bind(this);
+        this._onPointerUp = this._handlePointerUp.bind(this);
+        this._onWheel = this._handleWheel.bind(this);
+        // Cached panel bounds for auto-follow tick (set in draw())
+        this._lastPanelBounds = null;
     }
 
     // ── Public API ───────────────────────────────────────────────────────────────────────────
+
+    // Called from ExpectationView._createPanel() and _destroyPanel().
+    // When el is non-null, attaches pointer/wheel events and builds the header.
+    // When el is null, cleans up and detaches.
+    setPanelEl(el) {
+        // Clean up old element first
+        if (this._panelEl) {
+            this._panelEl.removeEventListener('pointerdown', this._onPointerDown);
+            this._panelEl.removeEventListener('pointermove', this._onPointerMove);
+            this._panelEl.removeEventListener('pointerup', this._onPointerUp);
+            this._panelEl.removeEventListener('pointercancel', this._onPointerUp);
+            this._panelEl.removeEventListener('wheel', this._onWheel);
+            // Remove header from old panel
+            if (this._headerEl && this._headerEl.parentNode === this._panelEl) {
+                this._panelEl.removeChild(this._headerEl);
+            }
+        }
+
+        this._panelEl = el;
+
+        if (el) {
+            // Enable pointer-events on the panel (it's normally pointer-events:none, but we
+            // need pointer capture for drag-to-pan). The panel will selectively re-enable
+            // pointer-events only when leftView === 'tree' via the cursor style logic below.
+            // NOTE: The panel already sets pointer-events:none in CSS for grid/chart mode,
+            // so we toggle it here depending on context in the event handlers.
+            el.addEventListener('pointerdown', this._onPointerDown);
+            el.addEventListener('pointermove', this._onPointerMove);
+            el.addEventListener('pointerup', this._onPointerUp);
+            el.addEventListener('pointercancel', this._onPointerUp);
+            el.addEventListener('wheel', this._onWheel, { passive: false });
+
+            // Build header DOM
+            this._headerEl = this._buildHeader();
+            el.insertBefore(this._headerEl, el.firstChild);
+        } else {
+            this._headerEl = null;
+        }
+    }
+
+    // Called by ExpectationView.draw() when leftView is NOT 'tree', so MCTreeView can
+    // reset its re-entry detection flag and stop the auto-follow interval while idle.
+    notifyLeftTreeView() {
+        this._wasDrawing = false;
+        this.stopAutoFollow();
+    }
 
     // Called from ExpectationView.draw() when vm.leftView === 'tree'.
     // panelBounds: { x, y, w, h } in canvas coordinates (the mc-panel area).
     draw(canvasW, canvasH, panelBounds) {
         const vm = this._vm;
         const state = this._state;
+
+        // Cache panel bounds for auto-follow tick
+        this._lastPanelBounds = panelBounds;
+
+        // Re-enable auto-follow on re-entry into tree view (coming from grid/chart).
+        if (!this._wasDrawing) {
+            vm.autoFollow = true;
+        }
+        this._wasDrawing = true;
+
+        // Start auto-follow interval on first draw() call while in tree view
+        if (this._followInterval === null) {
+            this.startAutoFollow();
+        }
+
+        // Keep cursor style in sync and ensure pointer-events are active in tree mode
+        if (this._panelEl) {
+            this._panelEl.style.pointerEvents = 'auto';
+            if (!this._dragStart) {
+                this._panelEl.style.cursor = 'grab';
+            }
+        }
 
         if (!panelBounds) {
             this._clearLeafCards();
@@ -31,6 +118,7 @@ class MCTreeView {
         if (!state.computed || !state.rollouts || state.rollouts.length === 0) {
             this._clearLeafCards();
             this._drawEmptyState(panelBounds);
+            this._updateHeader(state, vm);
             return;
         }
 
@@ -38,6 +126,7 @@ class MCTreeView {
         if (!tree) {
             this._clearLeafCards();
             this._drawEmptyState(panelBounds);
+            this._updateHeader(state, vm);
             return;
         }
 
@@ -65,11 +154,261 @@ class MCTreeView {
 
         // Position leaf DOM cards after the transform so we can compute screen coords
         this._updateLeafCards(tree, panelBounds, vm);
+
+        // Update header stat text and zoom readout
+        this._updateHeader(state, vm);
     }
 
     // Remove leaf card DOM elements and stop any intervals.
     teardown() {
+        this.stopAutoFollow();
+        // Remove header
+        if (this._headerEl && this._headerEl.parentNode) {
+            this._headerEl.parentNode.removeChild(this._headerEl);
+        }
+        this._headerEl = null;
+        // Detach event listeners and clear panel ref
+        if (this._panelEl) {
+            this._panelEl.removeEventListener('pointerdown', this._onPointerDown);
+            this._panelEl.removeEventListener('pointermove', this._onPointerMove);
+            this._panelEl.removeEventListener('pointerup', this._onPointerUp);
+            this._panelEl.removeEventListener('pointercancel', this._onPointerUp);
+            this._panelEl.removeEventListener('wheel', this._onWheel);
+            this._panelEl = null;
+        }
         this._clearLeafCards();
+        this._wasDrawing = false;
+        this._dragStart = null;
+        this._lastPanelBounds = null;
+    }
+
+    // ── Auto-follow ──────────────────────────────────────────────────────────────────────────
+
+    startAutoFollow() {
+        if (this._followInterval !== null) return;
+        this._followInterval = setInterval(() => this._tickAutoFollow(), 16);
+    }
+
+    stopAutoFollow() {
+        if (this._followInterval !== null) {
+            clearInterval(this._followInterval);
+            this._followInterval = null;
+        }
+    }
+
+    _tickAutoFollow() {
+        const vm = this._vm;
+        if (!vm.autoFollow) return;
+        if (vm.leftView !== 'tree') return;
+
+        const panelBounds = this._lastPanelBounds;
+        if (!panelBounds) return;
+
+        const state = this._state;
+        if (!state.computed || !state.rollouts || state.rollouts.length === 0) return;
+
+        // Get the current tree
+        const tree = vm.getOrBuildTree(state.rollouts, this._graph, state.currentT);
+        if (!tree) return;
+
+        // Find the "growth frontier": the rightmost visible column at currentT.
+        // State nodes at depth d have t = d/2; the rightmost revealed depth is currentT*2.
+        const frontierDepth = state.currentT * 2; // state nodes at this depth
+        const frontierNodes = [];
+        MCPrefixTree._forEach(tree.root, node => {
+            if (node.depth === frontierDepth && node.type === 'state') {
+                frontierNodes.push(node);
+            }
+        });
+
+        // Fallback: root node if no frontier found
+        if (frontierNodes.length === 0) return;
+
+        const frontierX = frontierNodes[0].x; // all nodes in same depth column share x
+        const frontierMeanY = frontierNodes.reduce((sum, n) => sum + n.y, 0) / frontierNodes.length;
+
+        // Target pan so frontier sits at 60% of panel width horizontally and vertically centered
+        const targetX = panelBounds.w * 0.6 - frontierX * vm.treeZoom;
+        const targetY = panelBounds.h * 0.5 - frontierMeanY * vm.treeZoom;
+
+        // Ease toward target (lerp ~0.05 per 16ms ≈ cubic ease-out over ~500ms)
+        const prevX = vm.treePanX;
+        const prevY = vm.treePanY;
+        vm.treePanX += (targetX - vm.treePanX) * 0.05;
+        vm.treePanY += (targetY - vm.treePanY) * 0.05;
+
+        // Snap to target when within 1px on both axes
+        if (Math.abs(targetX - vm.treePanX) < 1 && Math.abs(targetY - vm.treePanY) < 1) {
+            vm.treePanX = targetX;
+            vm.treePanY = targetY;
+        }
+
+        const moved = Math.abs(vm.treePanX - prevX) > 0.01 || Math.abs(vm.treePanY - prevY) > 0.01;
+        if (moved && typeof redraw === 'function') {
+            redraw();
+        }
+    }
+
+    // ── Pointer event handlers (drag-to-pan) ─────────────────────────────────────────────────
+
+    _handlePointerDown(e) {
+        const vm = this._vm;
+        if (vm.leftView !== 'tree') return;
+        this._dragStart = {
+            x: e.clientX,
+            y: e.clientY,
+            panX: vm.treePanX,
+            panY: vm.treePanY
+        };
+        if (this._panelEl) {
+            this._panelEl.style.cursor = 'grabbing';
+        }
+        try { e.target.setPointerCapture(e.pointerId); } catch (_) {}
+        e.preventDefault();
+    }
+
+    _handlePointerMove(e) {
+        const vm = this._vm;
+        if (!this._dragStart || vm.leftView !== 'tree') return;
+        vm.treePanX = this._dragStart.panX + (e.clientX - this._dragStart.x);
+        vm.treePanY = this._dragStart.panY + (e.clientY - this._dragStart.y);
+        vm.autoFollow = false;
+        if (typeof redraw === 'function') redraw();
+    }
+
+    _handlePointerUp(e) {
+        this._dragStart = null;
+        if (this._panelEl) {
+            this._panelEl.style.cursor = 'grab';
+        }
+    }
+
+    // ── Wheel event handler (zoom) ────────────────────────────────────────────────────────────
+
+    _handleWheel(e) {
+        const vm = this._vm;
+        if (vm.leftView !== 'tree') return;
+        e.preventDefault();
+
+        const zoomFactor = Math.pow(1.12, -e.deltaY / 100);
+        const newZoom = Math.min(2.5, Math.max(0.5, vm.treeZoom * zoomFactor));
+
+        // Anchor zoom at cursor position
+        const rect = this._panelEl.getBoundingClientRect();
+        const cx = e.clientX - rect.left;
+        const cy = e.clientY - rect.top;
+
+        // World point under cursor before zoom
+        const wx = (cx - vm.treePanX) / vm.treeZoom;
+        const wy = (cy - vm.treePanY) / vm.treeZoom;
+
+        vm.treeZoom = newZoom;
+        vm.treePanX = cx - wx * newZoom;
+        vm.treePanY = cy - wy * newZoom;
+
+        vm.autoFollow = false;
+        this._updateZoomReadout();
+        if (typeof redraw === 'function') redraw();
+    }
+
+    // ── Header DOM ───────────────────────────────────────────────────────────────────────────
+
+    _buildHeader() {
+        const header = document.createElement('div');
+        header.className = 'mc-tree-header';
+
+        const title = document.createElement('span');
+        title.className = 'mc-tree-header-title';
+        title.textContent = 'Rollout tree from s₀'; // s₀
+
+        const stat = document.createElement('span');
+        stat.className = 'mc-tree-header-stat';
+        this._headerStatEl = stat;
+
+        const zoomWrap = document.createElement('span');
+        zoomWrap.className = 'mc-tree-header-zoom';
+
+        const zoomOut = document.createElement('button');
+        zoomOut.className = 'mc-tree-zoom-btn';
+        zoomOut.id = 'mc-zoom-out';
+        zoomOut.textContent = '−'; // −
+        zoomOut.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this._stepZoom(-1);
+        });
+
+        const zoomReadout = document.createElement('span');
+        zoomReadout.className = 'mc-tree-zoom-readout';
+        this._zoomReadoutEl = zoomReadout;
+
+        const zoomIn = document.createElement('button');
+        zoomIn.className = 'mc-tree-zoom-btn';
+        zoomIn.id = 'mc-zoom-in';
+        zoomIn.textContent = '+';
+        zoomIn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this._stepZoom(1);
+        });
+
+        zoomWrap.appendChild(zoomOut);
+        zoomWrap.appendChild(zoomReadout);
+        zoomWrap.appendChild(zoomIn);
+
+        header.appendChild(title);
+        header.appendChild(stat);
+        header.appendChild(zoomWrap);
+
+        this._updateHeaderContent(null, this._vm);
+        return header;
+    }
+
+    _stepZoom(direction) {
+        const vm = this._vm;
+        const panelBounds = this._lastPanelBounds;
+        const factor = direction > 0 ? 1.12 : (1 / 1.12);
+        const newZoom = Math.min(2.5, Math.max(0.5, vm.treeZoom * factor));
+
+        if (panelBounds) {
+            // Anchor zoom at panel center
+            const cx = panelBounds.w / 2;
+            const cy = panelBounds.h / 2;
+            const wx = (cx - vm.treePanX) / vm.treeZoom;
+            const wy = (cy - vm.treePanY) / vm.treeZoom;
+            vm.treeZoom = newZoom;
+            vm.treePanX = cx - wx * newZoom;
+            vm.treePanY = cy - wy * newZoom;
+        } else {
+            vm.treeZoom = newZoom;
+        }
+
+        vm.autoFollow = false;
+        this._updateZoomReadout();
+        if (typeof redraw === 'function') redraw();
+    }
+
+    _updateZoomReadout() {
+        if (this._zoomReadoutEl) {
+            this._zoomReadoutEl.textContent = `${Math.round(this._vm.treeZoom * 100)}%`;
+        }
+    }
+
+    _updateHeader(state, vm) {
+        this._updateHeaderContent(state, vm);
+        this._updateZoomReadout();
+    }
+
+    _updateHeaderContent(state, vm) {
+        if (this._headerStatEl) {
+            if (state && state.computed && state.rollouts) {
+                const N = state.rollouts.length;
+                const H = state.maxSteps || state.maxT || 0;
+                const t = state.currentT || 0;
+                this._headerStatEl.textContent = `${N} rollouts · horizon ${H} · revealed to t = ${t}`;
+            } else {
+                this._headerStatEl.textContent = '';
+            }
+        }
+        this._updateZoomReadout();
     }
 
     // ── Private helpers ──────────────────────────────────────────────────────────────────────
