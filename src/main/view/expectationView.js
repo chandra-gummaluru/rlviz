@@ -381,12 +381,13 @@ class ExpectationView {
 
             textAlign(RIGHT, TOP);
             fill(utility >= 0 ? AppPalette.reward.positive : AppPalette.reward.negative);
-            text(`G = ${utility.toFixed(2)}`, sx + panel.w - 4, sy + 3);
+            const sign = utility >= 0 ? '+' : '−';
+            text(`${sign}${Math.abs(utility).toFixed(1)}`, sx + panel.w - 4, sy + 3);
 
             // Panel border - color reflects hover OR selection; stroke weight never changes so
             // the border doesn't visually "jump" in thickness.
             noFill();
-            stroke((isHovered || isSelected) ? AppPalette.accent.orange : AppPalette.border.medium);
+            stroke((isHovered || isSelected) ? runColor : AppPalette.border.medium);
             strokeWeight(1);
             rect(sx, sy, panel.w, panel.h, 9);
         }
