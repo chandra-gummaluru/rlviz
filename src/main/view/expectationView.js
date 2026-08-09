@@ -1465,19 +1465,14 @@ class ExpectationView {
         this.expectationViewModel.invalidateLayout();
         // Keep the floating panel's graphLeftOffset in sync with the new window size.
         this._updateGraphOffset();
-        if (this._expectationChartView) {
+        if (this._expectationChartView && this._mcPanel) {
             // Chart view lives inside the floating mc-panel. Use the panel's actual rendered
             // bounds so the chart fills the panel correctly after a window resize.
-            if (this._mcPanel) {
-                const rect = this._mcPanel.getBoundingClientRect();
-                const chartTopInset = 56; // clears estimatorPill's top-left method badge
-                this._expectationChartView.updateBounds(rect.left, topOffset + chartTopInset, rect.width, rect.height - chartTopInset);
-            } else {
-                // Fallback: use old split-based bounds when panel hasn't been created yet.
-                const { leftW } = this.expectationViewModel.splitWidths(canvasW);
-                const chartTopInset = 56;
-                this._expectationChartView.updateBounds(0, topOffset + chartTopInset, leftW, canvasH - chartTopInset);
-            }
+            // When the panel doesn't exist yet there is nothing to update — the chart view
+            // has no visible container, so skip the call entirely.
+            const rect = this._mcPanel.getBoundingClientRect();
+            const chartTopInset = 56; // clears estimatorPill's top-left method badge
+            this._expectationChartView.updateBounds(rect.left, topOffset + chartTopInset, rect.width, rect.height - chartTopInset);
         }
     }
 }

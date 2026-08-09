@@ -1920,6 +1920,9 @@ function setup() {
             Object.assign({}, simulationState.policyWeights),
             simulationState.isTimeDependent() ? simulationState.timeDependentPolicy : null
         ));
+        // New rollouts reset currentT to 0, so the tree frontier moves back to the start.
+        // Re-enable auto-follow so the tree view re-centers on the growth frontier.
+        expectationViewModel.autoFollow = true;
         if (expectationView) expectationView.updateScrubberMax();
     };
 
