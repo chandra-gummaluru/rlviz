@@ -35,6 +35,10 @@ class ExpectationView {
         this._graphPanelReveal = null;
         // DOM floating glass panel element (created on enter, destroyed on teardown).
         this._mcPanel = null;
+        // DOM compact card overlay shown in focused-run mode (Task 4).
+        this._compactCard = null;
+        // Active graphLeftOffset tween: { from, to, start, duration } or null.
+        this._graphOffsetTween = null;
     }
 
     setRightPanel(rightPanel) {
@@ -70,6 +74,15 @@ class ExpectationView {
         }
 
         this._ensureImagesLoaded();
+
+        // Advance active graphLeftOffset tween (Task 4 - smooth offset animation).
+        this._tickGraphOffsetTween();
+
+        // Focused-run mode: full-canvas graph + compact DOM card, no grid.
+        if (vm.focusedRun) {
+            this._drawFocusedRun(canvasW, canvasH);
+            return;
+        }
 
         // Full-bleed graph — always fills the whole canvas, shifted right of the overlay panel.
         // The vertical divider line and the 52/48 split are gone; the panel is a DOM overlay.
@@ -111,6 +124,247 @@ class ExpectationView {
             this._mcPanel = null;
         }
         this.expectationViewModel.graphLeftOffset = 0;
+    }
+
+    // ── Focused-run mode (Task 4) ────────────────────────────────────────────────────────────
+
+    // Destroys the compact DOM card shown in focused mode.
+    _destroyCompactCard() {
+        if (this._compactCard) {
+            this._compactCard.parentNode && this._compactCard.parentNode.removeChild(this._compactCard);
+            this._compactCard = null;
+        }
+    }
+
+    // Starts a smooth tween from the current graphLeftOffset to `targetOffset` over `durationMs`.
+    _startGraphOffsetTween(targetOffset, durationMs) {
+        const currentOffset = this.expectationViewModel.graphLeftOffset;
+        if (Math.abs(currentOffset - targetOffset) < 1) return; // no-op if already there
+        this._graphOffsetTween = {
+            from: currentOffset,
+            to: targetOffset,
+            start: performance.now(),
+            duration: durationMs
+        };
+    }
+
+    // Called each draw() frame: advances the in-progress tween and writes graphLeftOffset.
+    // Schedules a redraw while the tween is active so the animation keeps running.
+    _tickGraphOffsetTween() {
+        const tween = this._graphOffsetTween;
+        if (!tween) return;
+        const elapsed = performance.now() - tween.start;
+        const t = Math.min(1, elapsed / tween.duration);
+        // easeInOut for smooth start+end
+        const eased = EasingUtils.easeInOut(t);
+        this.expectationViewModel.graphLeftOffset = tween.from + (tween.to - tween.from) * eased;
+        if (t < 1) {
+            if (typeof redraw === 'function') requestAnimationFrame(() => redraw());
+        } else {
+            this.expectationViewModel.graphLeftOffset = tween.to;
+            this._graphOffsetTween = null;
+        }
+    }
+
+    // Compact card graphLeftOffset target: wide enough for the 274px card + 12px left + gap.
+    _focusedGraphOffset() { return 12 + 274 + 16; } // 302px
+
+    // Enter focused-run mode: hide the DOM panel, show compact card, animate offset.
+    // index: the run to focus (should equal vm.selectedRunIndex, passed for clarity).
+    enterFocusMode(index) {
+        const vm = this.expectationViewModel;
+        vm.selectedRunIndex = index;
+        vm.focusedRun = true;
+
+        // Animate graphLeftOffset from panel-right edge to compact-card width.
+        const targetOffset = this._focusedGraphOffset();
+        this._startGraphOffsetTween(targetOffset, 350);
+
+        // Hide the main DOM panel (keep it in the DOM but invisible - avoids recreating it
+        // on exit; we'll show it again in exitFocusMode).
+        if (this._mcPanel) this._mcPanel.style.display = 'none';
+
+        // Build compact card.
+        this._destroyCompactCard();
+        const state = this.expectationState;
+        const rollout = state.getDisplaySlice()[index];
+        const runNum = String(index + 1).padStart(2, '0');
+        const utility = rollout ? state._getUtility(rollout, state.currentT) : 0;
+        const sign = utility >= 0 ? '+' : '−';
+        const utilityStr = `${sign}${Math.abs(utility).toFixed(1)}`;
+        const utilityColor = utility >= 0
+            ? (AppPalette.reward ? AppPalette.reward.positive : '#3fb950')
+            : (AppPalette.reward ? AppPalette.reward.negative : '#f85149');
+
+        // Build trajectory: state names only, truncated.
+        let trajectoryStr = '';
+        if (rollout && rollout.trace) {
+            const stateNames = rollout.trace
+                .filter(e => e.type === 'state')
+                .map(e => e.name || e.id);
+            const fullStr = stateNames.join(' → ');
+            trajectoryStr = fullStr.length > 40 ? fullStr.slice(0, 39) + '…' : fullStr;
+        }
+
+        const card = document.createElement('div');
+        card.className = 'mc-compact-card';
+
+        const backLink = document.createElement('a');
+        backLink.className = 'mc-back-link';
+        backLink.href = '#';
+        backLink.textContent = '← All runs';
+        backLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            this.exitFocusMode();
+        });
+
+        const title = document.createElement('div');
+        title.className = 'mc-run-title';
+        title.textContent = `Run ${runNum}`;
+
+        const ret = document.createElement('div');
+        ret.className = 'mc-run-return';
+        ret.style.color = utilityColor;
+        ret.textContent = utilityStr;
+
+        const traj = document.createElement('div');
+        traj.className = 'mc-run-trajectory';
+        traj.textContent = trajectoryStr;
+
+        card.appendChild(backLink);
+        card.appendChild(title);
+        card.appendChild(ret);
+        card.appendChild(traj);
+        document.body.appendChild(card);
+        this._compactCard = card;
+
+        if (typeof redraw === 'function') redraw();
+    }
+
+    // Exit focused-run mode: show the DOM panel again, destroy compact card, animate offset back.
+    exitFocusMode() {
+        const vm = this.expectationViewModel;
+        vm.focusedRun = false;
+
+        // Destroy compact card.
+        this._destroyCompactCard();
+
+        // Restore main DOM panel.
+        if (this._mcPanel) {
+            this._mcPanel.style.display = '';
+        }
+
+        // Animate graphLeftOffset back to panel right edge.
+        // We need the panel's current right edge; use _updateGraphOffset() to set the target.
+        // First temporarily set graphLeftOffset to the compact-card value so the tween starts
+        // from the correct "from" position (it may already be there if no tween was running).
+        const fromOffset = vm.graphLeftOffset;
+        // Compute panel right edge by querying the element.
+        let panelRightEdge = 0;
+        if (this._mcPanel) {
+            const rect = this._mcPanel.getBoundingClientRect();
+            panelRightEdge = rect.right + 24;
+        }
+        vm.graphLeftOffset = fromOffset; // preserve current for tween start
+        this._graphOffsetTween = {
+            from: fromOffset,
+            to: panelRightEdge,
+            start: performance.now(),
+            duration: 350
+        };
+
+        if (typeof redraw === 'function') redraw();
+    }
+
+    // Renders the graph in focused mode: full canvas (right of compact card area), dimmer base.
+    _drawFocusedRun(canvasW, canvasH) {
+        const FOCUSED_DIM_ALPHA = 22; // dimmer than normal (45) to make the run path pop
+        const state = this.expectationState;
+        const vm = this.expectationViewModel;
+        const leftOffset = vm.graphLeftOffset || 0;
+
+        const availW = canvasW - leftOffset;
+        const availH = canvasH - EXPECTATION_TOP_CLEARANCE;
+        const fitTransform = vm._computeFitTransform(this.graph, availW, availH);
+        if (!fitTransform) return;
+
+        const { offsetX, offsetY, fitScale } = fitTransform;
+
+        drawingContext.save();
+        drawingContext.beginPath();
+        drawingContext.rect(leftOffset, EXPECTATION_TOP_CLEARANCE, availW, availH);
+        drawingContext.clip();
+
+        push();
+        translate(leftOffset + offsetX, EXPECTATION_TOP_CLEARANCE + offsetY);
+        scale(fitScale);
+
+        // Draw all edges/nodes dim.
+        for (const edge of this.graph.edges) {
+            this._drawEdge(edge.getFromNode(), edge.getToNode(), AppPalette.node.state, FOCUSED_DIM_ALPHA);
+        }
+        for (const node of this.graph.nodes) {
+            this._drawNode(node, AppPalette.node.state, FOCUSED_DIM_ALPHA, fitScale);
+        }
+
+        // Highlight the focused run's visited path.
+        if (vm.selectedRunIndex !== null) {
+            const rollout = state.getDisplaySlice()[vm.selectedRunIndex];
+            if (rollout) {
+                const runColor = AppPalette.expectation.runColors[vm.selectedRunIndex % AppPalette.expectation.runColors.length];
+                const currentT = state.currentT;
+                const visitedSlice = rollout.trace.slice(0, this._revealedCountForRolloutAtT(rollout, currentT));
+
+                const reveal = this._graphPanelReveal;
+                const animating = reveal && reveal.toCount === visitedSlice.length;
+                const fadeFromIndex = animating ? reveal.fromCount : visitedSlice.length;
+                const fadeAlpha = animating
+                    ? Math.round(255 * EasingUtils.easeOut(Math.min(1, (performance.now() - reveal.startTime) / 280)))
+                    : 255;
+                const alphaForIndex = (idx) => idx < fadeFromIndex ? 255 : fadeAlpha;
+
+                for (let k = 0; k + 1 < visitedSlice.length; k++) {
+                    const fromNode = this.graph.getNodeById(visitedSlice[k].id);
+                    const toNode = this.graph.getNodeById(visitedSlice[k + 1].id);
+                    if (fromNode && toNode) this._drawEdge(fromNode, toNode, runColor, alphaForIndex(k + 1));
+                }
+                const lastIdx = visitedSlice.length - 1;
+                visitedSlice.forEach((entry, idx) => {
+                    const node = this.graph.getNodeById(entry.id);
+                    if (!node) return;
+                    const color = idx === lastIdx ? AppPalette.node.activeInitial : runColor;
+                    this._drawNode(node, color, alphaForIndex(idx), fitScale);
+                });
+
+                // Traveling ball along the newest chunk's path.
+                if (animating && reveal.toCount - reveal.fromCount > 0) {
+                    const waypoints = visitedSlice
+                        .slice(reveal.fromCount - 1, reveal.toCount)
+                        .map(entry => this.graph.getNodeById(entry.id))
+                        .filter(Boolean);
+                    if (waypoints.length >= 2) {
+                        const t = Math.min(1, (performance.now() - reveal.startTime) / 280);
+                        const eased = EasingUtils.easeInOut(t);
+                        const segCount = waypoints.length - 1;
+                        const segProgress = eased * segCount;
+                        const segIndex = Math.min(segCount - 1, Math.floor(segProgress));
+                        const segT = segProgress - segIndex;
+                        const from = waypoints[segIndex];
+                        const to = waypoints[segIndex + 1];
+                        const bx = from.x + (to.x - from.x) * segT;
+                        const by = from.y + (to.y - from.y) * segT;
+                        noStroke();
+                        fill(AppPalette.simulation.travelBall);
+                        circle(bx, by, Math.max(4, (from.size || 20) * 0.35));
+                    }
+                }
+            }
+        }
+
+        this._drawTextLabels(fitScale);
+
+        pop();
+        drawingContext.restore();
     }
 
     // Computes the panel's right edge in screen pixels and writes graphLeftOffset accordingly.
@@ -832,11 +1086,16 @@ class ExpectationView {
         for (let i = 0; i < panels.length; i++) {
             const p = panels[i];
             if (cx >= p.x && cx <= p.x + p.w && cy >= p.y && cy <= p.y + p.h) {
-                // Clicking an already-selected panel deselects it (toggle).
-                this.selectRun(vm.selectedRunIndex === i ? null : i);
+                // selectRun() handles all state transitions:
+                // - first click on a new card: highlight in graph
+                // - click on already-selected card: enter focused mode
+                // - click while in focused mode: switch focused run
+                this.selectRun(i);
                 return;
             }
         }
+        // Click landed on empty canvas outside any card → deselect and exit focused mode.
+        this.selectRun(null);
     }
 
     // Scrolls the Grid view's fixed-size panel layout vertically. deltaY follows the native
@@ -853,17 +1112,77 @@ class ExpectationView {
         return true;
     }
 
-    // Sets which rollout's path the shared right-pane graph panel highlights. index === null
-    // clears the selection (bare graph). Replaces the old enterFocusMode(index) - no longer
-    // triggers any canvas mode switch, just updates which run is highlighted.
+    // Sets which rollout's path the graph highlights.
+    // - index === null: deselect and exit focused mode.
+    // - First click on a new card: highlight run in graph (panel stays open).
+    // - Clicking the already-selected card: enter focused mode (panel hides, full-canvas graph).
+    // - Clicking any card while already in focused mode: stay focused, just switch run.
     selectRun(index) {
         const vm = this.expectationViewModel;
+
+        if (index === null) {
+            // Deselect: exit focused mode if active, clear selection.
+            if (vm.focusedRun) this.exitFocusMode();
+            vm.selectedRunIndex = null;
+            this._graphPanelReveal = null;
+            this._notifyDataChanged();
+            if (typeof redraw === 'function') redraw();
+            return;
+        }
+
+        if (vm.focusedRun) {
+            // Already in focused mode - just switch to the new run without toggling mode.
+            vm.selectedRunIndex = index;
+            this._graphPanelReveal = null;
+            this._updateCompactCard(index);
+            this._notifyDataChanged();
+            if (typeof redraw === 'function') redraw();
+            return;
+        }
+
+        if (vm.selectedRunIndex === index) {
+            // Second click on the already-selected card → enter focused mode.
+            this.enterFocusMode(index);
+            return;
+        }
+
+        // First click on a new card: highlight in graph, panel stays open.
         vm.selectedRunIndex = index;
-        // A new selection renders instantly (it's a jump to a different run, not a step forward
-        // in the current one) - cancel any reveal fade left over from the previous selection.
         this._graphPanelReveal = null;
         this._notifyDataChanged();
         if (typeof redraw === 'function') redraw();
+    }
+
+    // Updates the compact card's content when the focused run changes without rebuilding the DOM.
+    _updateCompactCard(index) {
+        if (!this._compactCard) return;
+        const state = this.expectationState;
+        const rollout = state.getDisplaySlice()[index];
+        if (!rollout) return;
+
+        const runNum = String(index + 1).padStart(2, '0');
+        const title = this._compactCard.querySelector('.mc-run-title');
+        if (title) title.textContent = `Run ${runNum}`;
+
+        const utility = state._getUtility(rollout, state.currentT);
+        const sign = utility >= 0 ? '+' : '−';
+        const utilityStr = `${sign}${Math.abs(utility).toFixed(1)}`;
+        const utilityColor = utility >= 0
+            ? (AppPalette.reward ? AppPalette.reward.positive : '#3fb950')
+            : (AppPalette.reward ? AppPalette.reward.negative : '#f85149');
+        const ret = this._compactCard.querySelector('.mc-run-return');
+        if (ret) { ret.textContent = utilityStr; ret.style.color = utilityColor; }
+
+        let trajectoryStr = '';
+        if (rollout.trace) {
+            const stateNames = rollout.trace
+                .filter(e => e.type === 'state')
+                .map(e => e.name || e.id);
+            const fullStr = stateNames.join(' → ');
+            trajectoryStr = fullStr.length > 40 ? fullStr.slice(0, 39) + '…' : fullStr;
+        }
+        const traj = this._compactCard.querySelector('.mc-run-trajectory');
+        if (traj) traj.textContent = trajectoryStr;
     }
 
     // Updates expectationViewModel.hoveredRun for the grid's own hover highlight and (later
@@ -895,15 +1214,22 @@ class ExpectationView {
         return hovered !== prevHovered;
     }
 
-    // No-op: "focused mode" (and its Escape-to-exit) no longer exists after the MC screen split
-    // - kept as a method (rather than removed) because main.js's global keyPressed() calls it
-    // unconditionally while Values -> Monte Carlo is active.
-    handleKey(key) {}
+    // Escape key exits focused mode (if active); otherwise no-op.
+    // Called unconditionally by main.js's keyPressed() while Monte Carlo is active.
+    handleKey(key) {
+        if (key === 'Escape' || key === 'Esc') {
+            const vm = this.expectationViewModel;
+            if (vm.focusedRun) this.exitFocusMode();
+        }
+    }
 
     teardown() {
         this.stopPlay();
         this._removeScrubber();
         this._destroyPanel();
+        this._destroyCompactCard();
+        this._graphOffsetTween = null;
+        this.expectationViewModel.focusedRun = false;
         this._imageCache.clear();
         // Its rAF loop checks `if (!this._graphPanelReveal) return;` every frame, so clearing
         // this is enough to stop it - no separate cancelAnimationFrame handle to track.

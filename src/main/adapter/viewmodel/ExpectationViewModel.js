@@ -3,12 +3,14 @@ class ExpectationViewModel {
         this.panelLayout = null;
         this.layoutStale = true;
         this.isPlaying = false;
-        // Which mini-panel/rollout is pinned as "selected" - highlights its path on the shared
-        // right-pane graph panel (expectationView.js's _drawGraphPanel). Renamed from the old
-        // "focused run index" field: selecting a run no longer triggers a full-canvas takeover
-        // (that "focused mode" concept was removed - see the MC screen split plan), it just drives
-        // which run's path the always-visible right pane highlights.
+        // Which mini-panel/rollout is pinned as "selected" - highlights its path on the graph.
+        // When focusedRun is false, the full-bleed graph highlights this run while the panel
+        // remains visible. When focusedRun is true, the view enters focused mode (panel hidden,
+        // compact card shown, graph fills full canvas).
         this.selectedRunIndex = null;
+        // True when the user has double-clicked (or clicked the already-selected card) to enter
+        // full-canvas focused mode for the selected run. False = normal split-panel mode.
+        this.focusedRun = false;
         // 'grid' (default) or 'chart' - which view the LEFT 52% pane currently shows. Presentation
         // only, mirrors buildCanvasView/valuesSubView's own presentation-state convention.
         this.leftView = 'grid';
