@@ -194,21 +194,14 @@ class MCTreeView {
             }
         }
 
-        // Name text above node
-        const hasVisibleImage = node.image && (() => {
-            const img = this._getImage(node);
-            return img && img !== 'failed' && img.complete && img.naturalWidth > 0;
-        })();
-
-        if (!hasVisibleImage) {
-            fill(AppPalette.text.muted);
-            noStroke();
-            textSize(11);
-            textAlign(CENTER, BOTTOM);
-            textFont(Typography.sans());
-            const label = node.name && node.name.length > 6 ? node.name.slice(0, 5) + '…' : (node.name || '');
-            text(label, node.x, node.y - R - 4);
-        }
+        // Name text above node (always visible, even with image)
+        fill(AppPalette.text.muted);
+        noStroke();
+        textSize(11);
+        textAlign(CENTER, BOTTOM);
+        textFont(Typography.sans());
+        const label = node.name && node.name.length > 6 ? node.name.slice(0, 5) + '…' : (node.name || '');
+        text(label, node.x, node.y - R - 4);
 
         pop();
     }
