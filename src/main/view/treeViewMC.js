@@ -80,6 +80,8 @@ class MCTreeView {
     notifyLeftTreeView() {
         this._wasDrawing = false;
         this.stopAutoFollow();
+        this._clearLeafCards();
+        if (this._headerEl) this._headerEl.style.display = 'none';
     }
 
     // Called from ExpectationView.draw() when vm.leftView === 'tree'.
@@ -101,6 +103,9 @@ class MCTreeView {
         if (this._followInterval === null) {
             this.startAutoFollow();
         }
+
+        // Show header when entering tree view (may have been hidden in notifyLeftTreeView)
+        if (this._headerEl) this._headerEl.style.display = '';
 
         // Keep cursor style in sync and ensure pointer-events are active in tree mode
         if (this._panelEl) {

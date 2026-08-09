@@ -61,6 +61,14 @@ class ExpectationViewModel {
         this._cachedTree = null;
     }
 
+    // Invalidate the cached prefix tree so the next getOrBuildTree() call forces a rebuild.
+    // Call this whenever rollout utilities (Ḡ/min/max on leaves) may have changed without
+    // currentT changing — e.g. after a γ change or a new rollout batch.
+    invalidateTreeCache() {
+        this._treeCacheT = -1;
+        this._cachedTree = null;
+    }
+
     // Returns the prefix tree for the given rollouts at currentT, using a cache so the
     // (potentially large) tree is not rebuilt on every draw() call.
     getOrBuildTree(rollouts, graph, currentT) {

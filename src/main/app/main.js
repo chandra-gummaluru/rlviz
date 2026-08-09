@@ -1909,6 +1909,9 @@ function setup() {
     // Right panel Expectation callbacks
     const _runExpectationBatch = () => {
         if (mainView && mainView.expectationView) mainView.expectationView.stopPlay();
+        // New rollouts produce new leaf utilities — invalidate the cached tree so the tree
+        // view rebuilds with fresh Ḡ/min/max values instead of showing stale data.
+        expectationViewModel.invalidateTreeCache();
         const startNode = canvasViewModel.startNode;
         if (!startNode) return;
         runExpectationInteractor.execute(new RunExpectationInputData(
@@ -1950,6 +1953,9 @@ function setup() {
 
     rightPanel.callbacks.onExpectationGammaChange = (gamma) => {
         updateExpectationGammaInteractor.execute(new UpdateExpectationGammaInputData(gamma));
+        // γ changes recompute leaf utilities in-place without changing currentT, so the
+        // tree cache key (currentT) would still match — force a rebuild on next draw().
+        expectationViewModel.invalidateTreeCache();
     };
 
     rightPanel.callbacks.onInitialStateChange = () => {
