@@ -512,34 +512,129 @@ class ExpectationView {
     }
 
     _drawEdge(from, to, color, alpha) {
+        // Self-loop guard
+        if (from.id === to.id) return;
+
         const dx = to.x - from.x;
         const dy = to.y - from.y;
         const len = Math.sqrt(dx * dx + dy * dy);
         if (len < 1) return;
-        const ux = dx / len;
-        const uy = dy / len;
+
         const fromR = from.size || 20;
         const toR = to.size || 20;
-        const x1 = from.x + ux * fromR;
-        const y1 = from.y + uy * fromR;
-        const x2 = to.x - ux * toR;
-        const y2 = to.y - uy * toR;
 
+        // Check whether a reverse edge exists to determine bow amount
+        const reverseExists = this.graph.edges.some(e =>
+            e.getFromNode().id === to.id && e.getToNode().id === from.id
+        );
+        const bow = reverseExists
+            ? Math.min(34, len * 0.18)
+            : Math.min(14, len * 0.07);
+
+        // Perpendicular unit vector (rotate chord 90° CCW)
+        const ux = dx / len;
+        const uy = dy / len;
+        const perpX = -uy;
+        const perpY = ux;
+
+        // Control point C = midpoint + perp * bow
+        const midX = (from.x + to.x) / 2;
+        const midY = (from.y + to.y) / 2;
+        const cx = midX + perpX * bow;
+        const cy = midY + perpY * bow;
+
+        // Quadratic Bézier helpers
+        // P(t) = (1-t)^2 * P0 + 2*(1-t)*t * C + t^2 * P1
+        const P0x = from.x, P0y = from.y;
+        const P1x = to.x,   P1y = to.y;
+
+        const bezierPt = (t) => {
+            const mt = 1 - t;
+            return {
+                x: mt * mt * P0x + 2 * mt * t * cx + t * t * P1x,
+                y: mt * mt * P0y + 2 * mt * t * cy + t * t * P1y
+            };
+        };
+
+        const bezierTangent = (t) => {
+            const mt = 1 - t;
+            return {
+                x: 2 * mt * (cx - P0x) + 2 * t * (P1x - cx),
+                y: 2 * mt * (cy - P0y) + 2 * t * (P1y - cy)
+            };
+        };
+
+        // Binary search: find t_start where |P(t) - P0| = fromR
+        let tStartLo = 0, tStartHi = 1;
+        for (let i = 0; i < 10; i++) {
+            const tMid = (tStartLo + tStartHi) / 2;
+            const pt = bezierPt(tMid);
+            const distFromP0 = Math.sqrt((pt.x - P0x) * (pt.x - P0x) + (pt.y - P0y) * (pt.y - P0y));
+            if (distFromP0 < fromR) {
+                tStartLo = tMid;
+            } else {
+                tStartHi = tMid;
+            }
+        }
+        const tStart = (tStartLo + tStartHi) / 2;
+
+        // Binary search: find t_end where |P(t) - P1| = toR
+        // Search from tStart to 1.0; we want the last t where dist > toR
+        let tEndLo = tStart, tEndHi = 1;
+        for (let i = 0; i < 10; i++) {
+            const tMid = (tEndLo + tEndHi) / 2;
+            const pt = bezierPt(tMid);
+            const distFromP1 = Math.sqrt((pt.x - P1x) * (pt.x - P1x) + (pt.y - P1y) * (pt.y - P1y));
+            if (distFromP1 > toR) {
+                tEndLo = tMid;
+            } else {
+                tEndHi = tMid;
+            }
+        }
+        const tEnd = (tEndLo + tEndHi) / 2;
+
+        // Ensure t_start < t_end (degenerate case: nodes too close)
+        if (tEnd <= tStart) return;
+
+        const startPt = bezierPt(tStart);
+        const endPt   = bezierPt(tEnd);
+
+        // Parse color string once for drawingContext use
         const col = ColorUtils.applyAlpha(color, alpha);
-        push();
-        stroke(col);
-        strokeWeight(1);
-        noFill();
-        line(x1, y1, x2, y2);
 
-        // Arrowhead
-        const ax = x2 - ux * EXPECTATION_ARROW_SIZE;
-        const ay = y2 - uy * EXPECTATION_ARROW_SIZE;
-        const px = -uy;
-        const py = ux;
-        line(x2, y2, ax + px * EXPECTATION_ARROW_SIZE * 0.4, ay + py * EXPECTATION_ARROW_SIZE * 0.4);
-        line(x2, y2, ax - px * EXPECTATION_ARROW_SIZE * 0.4, ay - py * EXPECTATION_ARROW_SIZE * 0.4);
-        pop();
+        // Draw curve as polyline (20 segments from tStart to tEnd) using drawingContext
+        drawingContext.save();
+        drawingContext.strokeStyle = col;
+        drawingContext.lineWidth = 1;
+        drawingContext.beginPath();
+        drawingContext.moveTo(startPt.x, startPt.y);
+        const SEGMENTS = 20;
+        for (let i = 1; i <= SEGMENTS; i++) {
+            const t = tStart + (tEnd - tStart) * (i / SEGMENTS);
+            const pt = bezierPt(t);
+            drawingContext.lineTo(pt.x, pt.y);
+        }
+        drawingContext.stroke();
+
+        // Arrowhead aligned to tangent at tEnd
+        const tan = bezierTangent(tEnd);
+        const tanLen = Math.sqrt(tan.x * tan.x + tan.y * tan.y);
+        if (tanLen > 0) {
+            const tx = tan.x / tanLen;
+            const ty = tan.y / tanLen;
+            const ax = endPt.x - tx * EXPECTATION_ARROW_SIZE;
+            const ay = endPt.y - ty * EXPECTATION_ARROW_SIZE;
+            const px = -ty;
+            const py = tx;
+            drawingContext.beginPath();
+            drawingContext.moveTo(endPt.x, endPt.y);
+            drawingContext.lineTo(ax + px * EXPECTATION_ARROW_SIZE * 0.4, ay + py * EXPECTATION_ARROW_SIZE * 0.4);
+            drawingContext.moveTo(endPt.x, endPt.y);
+            drawingContext.lineTo(ax - px * EXPECTATION_ARROW_SIZE * 0.4, ay - py * EXPECTATION_ARROW_SIZE * 0.4);
+            drawingContext.stroke();
+        }
+
+        drawingContext.restore();
     }
 
     _drawEmptyPrompt(canvasW, canvasH) {
