@@ -30,6 +30,11 @@ class ExpectationViewModel {
         // Snapped (no tween in Task 1 — animation added in Task 4).
         this.graphLeftOffset = 0;
 
+        // Interpolated clock for the agent token animation in focused-run mode (Task 5).
+        // Floated between integer values as a 450ms smoothstep tween whenever currentT changes
+        // while focusedRun is true. Starts at 0 (= no animation pending).
+        this.contT = 0;
+
         // Policy log chart overlays (policy-logging.md §3/§4), Chart view only. Set(entry.id) of
         // policies the user has toggled OFF via the chip strip - presentation-only, excluded from
         // serialization, mirrors the hoveredRun/selectedRunIndex pair below rather than the

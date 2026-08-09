@@ -39,6 +39,9 @@ class ExpectationView {
         this._compactCard = null;
         // Active graphLeftOffset tween: { from, to, start, duration } or null.
         this._graphOffsetTween = null;
+        // Active contT tween for the agent token animation in focused-run mode (Task 5).
+        // { from, to, start, duration } or null.
+        this._contTTween = null;
     }
 
     setRightPanel(rightPanel) {
@@ -77,6 +80,9 @@ class ExpectationView {
 
         // Advance active graphLeftOffset tween (Task 4 - smooth offset animation).
         this._tickGraphOffsetTween();
+
+        // Advance active contT tween for agent token animation (Task 5).
+        this._tickContTTween();
 
         // Focused-run mode: full-canvas graph + compact DOM card, no grid.
         if (vm.focusedRun) {
@@ -166,6 +172,41 @@ class ExpectationView {
         }
     }
 
+    // Called each draw() frame: advances the contT tween and writes vm.contT.
+    // Schedules a redraw while the tween is active so the token animation keeps running.
+    _tickContTTween() {
+        const tween = this._contTTween;
+        if (!tween) return;
+        const elapsed = performance.now() - tween.start;
+        const raw = Math.min(1, elapsed / tween.duration);
+        // Smoothstep: t² * (3 - 2t)
+        const eased = raw * raw * (3 - 2 * raw);
+        this.expectationViewModel.contT = tween.from + (tween.to - tween.from) * eased;
+        if (raw < 1) {
+            if (typeof redraw === 'function') requestAnimationFrame(() => redraw());
+        } else {
+            this.expectationViewModel.contT = tween.to;
+            this._contTTween = null;
+        }
+    }
+
+    // Starts a contT tween from vm.contT to newT over 450ms (smoothstep easing).
+    // Only starts when in focused-run mode; otherwise snaps contT immediately.
+    _startContTTween(newT) {
+        const vm = this.expectationViewModel;
+        if (!vm.focusedRun) {
+            vm.contT = newT;
+            return;
+        }
+        this._contTTween = {
+            from: vm.contT,
+            to: newT,
+            start: performance.now(),
+            duration: 450
+        };
+        if (typeof redraw === 'function') requestAnimationFrame(() => redraw());
+    }
+
     // Compact card graphLeftOffset target: wide enough for the 274px card + 12px left + gap.
     _focusedGraphOffset() { return 12 + 274 + 16; } // 302px
 
@@ -175,6 +216,10 @@ class ExpectationView {
         const vm = this.expectationViewModel;
         vm.selectedRunIndex = index;
         vm.focusedRun = true;
+        // Snap contT to currentT so the token starts at the current position immediately,
+        // without an unwanted tween from 0 (Task 5).
+        this._contTTween = null;
+        vm.contT = this.expectationState.currentT;
 
         // Animate graphLeftOffset from panel-right edge to compact-card width.
         const targetOffset = this._focusedGraphOffset();
@@ -276,6 +321,40 @@ class ExpectationView {
         if (typeof redraw === 'function') redraw();
     }
 
+    // ── Agent token helpers (Task 5) ─────────────────────────────────────────────────────────
+
+    // Evaluates a quadratic Bézier at parameter t.
+    // P0, C, P1 are { x, y } objects; returns { x, y }.
+    _pointOnBezier(P0, C, P1, t) {
+        const mt = 1 - t;
+        return {
+            x: mt * mt * P0.x + 2 * mt * t * C.x + t * t * P1.x,
+            y: mt * mt * P0.y + 2 * mt * t * C.y + t * t * P1.y
+        };
+    }
+
+    // Returns the bézier control point for the edge from→to, using the same bow formula as
+    // _drawEdge() so the token follows the rendered curve exactly.
+    _controlPointFor(from, to) {
+        const dx = to.x - from.x;
+        const dy = to.y - from.y;
+        const len = Math.sqrt(dx * dx + dy * dy);
+        if (len < 1) return { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 };
+        const reverseExists = this.graph.edges.some(e =>
+            e.getFromNode().id === to.id && e.getToNode().id === from.id
+        );
+        const bow = reverseExists ? Math.min(34, len * 0.18) : Math.min(14, len * 0.07);
+        const ux = dx / len;
+        const uy = dy / len;
+        // Perpendicular (rotate 90° CCW, same as _drawEdge)
+        const px = -uy;
+        const py = ux;
+        return {
+            x: (from.x + to.x) / 2 + px * bow,
+            y: (from.y + to.y) / 2 + py * bow
+        };
+    }
+
     // Renders the graph in focused mode: full canvas (right of compact card area), dimmer base.
     _drawFocusedRun(canvasW, canvasH) {
         const FOCUSED_DIM_ALPHA = 22; // dimmer than normal (45) to make the run path pop
@@ -307,55 +386,141 @@ class ExpectationView {
             this._drawNode(node, AppPalette.node.state, FOCUSED_DIM_ALPHA, fitScale);
         }
 
-        // Highlight the focused run's visited path.
+        // Highlight the focused run's visited path with agent token animation (Task 5).
         if (vm.selectedRunIndex !== null) {
             const rollout = state.getDisplaySlice()[vm.selectedRunIndex];
             if (rollout) {
                 const runColor = AppPalette.expectation.runColors[vm.selectedRunIndex % AppPalette.expectation.runColors.length];
                 const currentT = state.currentT;
-                const visitedSlice = rollout.trace.slice(0, this._revealedCountForRolloutAtT(rollout, currentT));
+                const contT = vm.contT;
 
-                const reveal = this._graphPanelReveal;
-                const animating = reveal && reveal.toCount === visitedSlice.length;
-                const fadeFromIndex = animating ? reveal.fromCount : visitedSlice.length;
-                const fadeAlpha = animating
-                    ? Math.round(255 * EasingUtils.easeOut(Math.min(1, (performance.now() - reveal.startTime) / 280)))
-                    : 255;
-                const alphaForIndex = (idx) => idx < fadeFromIndex ? 255 : fadeAlpha;
+                // The number of trace entries revealed at currentT (integer time steps).
+                const revealedCount = this._revealedCountForRolloutAtT(rollout, currentT);
+                const visitedSlice = rollout.trace.slice(0, revealedCount);
 
-                for (let k = 0; k + 1 < visitedSlice.length; k++) {
-                    const fromNode = this.graph.getNodeById(visitedSlice[k].id);
-                    const toNode = this.graph.getNodeById(visitedSlice[k + 1].id);
-                    if (fromNode && toNode) this._drawEdge(fromNode, toNode, runColor, alphaForIndex(k + 1));
+                // ── Fading trail: last 3 completed hops behind the token ──────────────────
+                // A "hop" is one edge (state→action or action→state). The last completed hop
+                // ends at the floor of contT, so we walk backwards up to 3 hops from there.
+                const trailEndStep = Math.floor(contT); // integer step where trail ends
+                const TRAIL_HOPS = 3;
+                // Draw trail edges (in pairs: state→action, action→state per step)
+                // We draw from oldest to newest so newer hops paint over older ones.
+                for (let age = TRAIL_HOPS; age >= 1; age--) {
+                    const stepIdx = trailEndStep - age; // the step that was completed 'age' ago
+                    if (stepIdx < 0) continue;
+                    const opacity = Math.max(0.12, 1 - age / 3);
+                    const alpha = Math.round(255 * opacity);
+                    // Each full step covers trace indices [step*2, step*2+1, step*2+2]
+                    // Draw the two half-hop edges of that step.
+                    const sIdx = stepIdx * 2;
+                    if (sIdx + 2 < visitedSlice.length) {
+                        const stateEntry = visitedSlice[sIdx];
+                        const actionEntry = visitedSlice[sIdx + 1];
+                        const nextStateEntry = visitedSlice[sIdx + 2];
+                        const stateNode = this.graph.getNodeById(stateEntry.id);
+                        const actionNode = this.graph.getNodeById(actionEntry.id);
+                        const nextStateNode = this.graph.getNodeById(nextStateEntry.id);
+                        if (stateNode && actionNode) {
+                            this._drawEdge(stateNode, actionNode, runColor, alpha);
+                            this._drawNode(stateNode, runColor, alpha, fitScale);
+                        }
+                        if (actionNode && nextStateNode) {
+                            this._drawEdge(actionNode, nextStateNode, runColor, alpha);
+                            this._drawNode(actionNode, runColor, alpha, fitScale);
+                        }
+                    }
                 }
-                const lastIdx = visitedSlice.length - 1;
-                visitedSlice.forEach((entry, idx) => {
-                    const node = this.graph.getNodeById(entry.id);
-                    if (!node) return;
-                    const color = idx === lastIdx ? AppPalette.node.activeInitial : runColor;
-                    this._drawNode(node, color, alphaForIndex(idx), fitScale);
-                });
 
-                // Traveling ball along the newest chunk's path.
-                if (animating && reveal.toCount - reveal.fromCount > 0) {
-                    const waypoints = visitedSlice
-                        .slice(reveal.fromCount - 1, reveal.toCount)
-                        .map(entry => this.graph.getNodeById(entry.id))
-                        .filter(Boolean);
-                    if (waypoints.length >= 2) {
-                        const t = Math.min(1, (performance.now() - reveal.startTime) / 280);
-                        const eased = EasingUtils.easeInOut(t);
-                        const segCount = waypoints.length - 1;
-                        const segProgress = eased * segCount;
-                        const segIndex = Math.min(segCount - 1, Math.floor(segProgress));
-                        const segT = segProgress - segIndex;
-                        const from = waypoints[segIndex];
-                        const to = waypoints[segIndex + 1];
-                        const bx = from.x + (to.x - from.x) * segT;
-                        const by = from.y + (to.y - from.y) * segT;
+                // Also draw the current step's completed portion at full opacity (the arc
+                // already traveled by the token at contT fractional position).
+                const curStep = Math.floor(contT);
+                const curFrac = contT - curStep;
+                if (curStep >= 0 && curStep * 2 + 1 < visitedSlice.length) {
+                    const stateEntry = visitedSlice[curStep * 2];
+                    const actionEntry = visitedSlice[curStep * 2 + 1];
+                    const stateNode = this.graph.getNodeById(stateEntry.id);
+                    const actionNode = this.graph.getNodeById(actionEntry.id);
+                    if (stateNode && actionNode) {
+                        this._drawNode(stateNode, runColor, 255, fitScale);
+                        if (curFrac >= 0.5 && curStep * 2 + 2 < visitedSlice.length) {
+                            // First half of this step is fully crossed; draw state→action edge.
+                            this._drawEdge(stateNode, actionNode, runColor, 255);
+                            // Draw action node and start of second half.
+                            this._drawNode(actionNode, runColor, 255, fitScale);
+                        }
+                    }
+                }
+
+                // ── Agent token: position along bézier arcs ────────────────────────────────
+                const isAtRest = Math.abs(contT - Math.round(contT)) < 0.001 &&
+                                  Number.isInteger(Math.round(contT));
+                if (!isAtRest && visitedSlice.length >= 2) {
+                    // Token is travelling. Compute its position on the bézier.
+                    const step = Math.floor(contT);
+                    const frac = contT - step;
+                    let tokenPos = null;
+
+                    if (frac < 0.5) {
+                        // First half: state → action node
+                        const sIdx = step * 2;
+                        const aIdx = step * 2 + 1;
+                        if (sIdx < visitedSlice.length && aIdx < visitedSlice.length) {
+                            const fromNode = this.graph.getNodeById(visitedSlice[sIdx].id);
+                            const toNode = this.graph.getNodeById(visitedSlice[aIdx].id);
+                            if (fromNode && toNode) {
+                                const C = this._controlPointFor(fromNode, toNode);
+                                tokenPos = this._pointOnBezier(fromNode, C, toNode, frac * 2);
+                            }
+                        }
+                    } else {
+                        // Second half: action → next state
+                        const aIdx = step * 2 + 1;
+                        const nsIdx = step * 2 + 2;
+                        if (aIdx < visitedSlice.length && nsIdx < visitedSlice.length) {
+                            const fromNode = this.graph.getNodeById(visitedSlice[aIdx].id);
+                            const toNode = this.graph.getNodeById(visitedSlice[nsIdx].id);
+                            if (fromNode && toNode) {
+                                const C = this._controlPointFor(fromNode, toNode);
+                                tokenPos = this._pointOnBezier(fromNode, C, toNode, (frac - 0.5) * 2);
+                            }
+                        }
+                    }
+
+                    if (tokenPos) {
+                        // Outer glow circle (r=16, 18% opacity)
+                        const glowCol = ColorUtils.applyAlpha(runColor, Math.round(255 * 0.18));
                         noStroke();
-                        fill(AppPalette.simulation.travelBall);
-                        circle(bx, by, Math.max(4, (from.size || 20) * 0.35));
+                        fill(glowCol);
+                        circle(tokenPos.x, tokenPos.y, 32); // diameter = 2*16
+
+                        // Filled token circle (r=8, 1px white stroke)
+                        stroke(255);
+                        strokeWeight(1 / fitScale);
+                        fill(runColor);
+                        circle(tokenPos.x, tokenPos.y, 16); // diameter = 2*8
+                    }
+                } else if (isAtRest && visitedSlice.length > 0) {
+                    // Token is at rest at an integer contT. Draw double highlight ring around
+                    // the current state node (the state at trace[curStep*2]).
+                    const restStep = Math.round(contT);
+                    const sIdx = restStep * 2;
+                    if (sIdx < visitedSlice.length) {
+                        const stateEntry = visitedSlice[sIdx];
+                        const stateNode = this.graph.getNodeById(stateEntry.id);
+                        if (stateNode && stateNode.type === 'state') {
+                            // Redraw the node in run color at full opacity.
+                            this._drawNode(stateNode, runColor, 255, fitScale);
+                            const nr = stateNode.size || 20;
+                            noFill();
+                            // Inner ring: run color, r = nodeRadius + 6, strokeWeight 2.5px
+                            stroke(runColor);
+                            strokeWeight(2.5 / fitScale);
+                            circle(stateNode.x, stateNode.y, (nr + 6) * 2);
+                            // Outer ring: run color, r = nodeRadius + 11, strokeWeight 1px, 35% opacity
+                            stroke(ColorUtils.applyAlpha(runColor, Math.round(255 * 0.35)));
+                            strokeWeight(1 / fitScale);
+                            circle(stateNode.x, stateNode.y, (nr + 11) * 2);
+                        }
                     }
                 }
             }
@@ -938,6 +1103,8 @@ class ExpectationView {
             const oldT = state.currentT;
             state.currentT++;
             this._maybeAnimateReveal(oldT, state.currentT);
+            // Start contT tween for agent token animation in focused-run mode (Task 5).
+            if (vm.focusedRun) this._startContTTween(state.currentT);
             this._syncScrubber();
             if (typeof redraw === 'function') redraw();
             this._notifyDataChanged();
@@ -978,6 +1145,7 @@ class ExpectationView {
     // step during an active play doesn't race the scheduled tick. Mirrors the single-tick body
     // of _scheduleNextTick, matching Build/VI's Step button semantics.
     step() {
+        const vm = this.expectationViewModel;
         const state = this.expectationState;
         if (!state.computed) return;
         this.stopPlay();
@@ -985,6 +1153,8 @@ class ExpectationView {
         const oldT = state.currentT;
         state.currentT++;
         this._maybeAnimateReveal(oldT, state.currentT);
+        // Start contT tween for agent token animation in focused-run mode (Task 5).
+        if (vm.focusedRun) this._startContTTween(state.currentT);
         this._syncScrubber();
         if (typeof redraw === 'function') redraw();
         this._notifyDataChanged();
@@ -1023,12 +1193,25 @@ class ExpectationView {
         this._scrubber = mainView.traceScrubber;
         this._scrubberCallbacks = {
             onScrub: (index, isFinal) => {
+                const vm = this.expectationViewModel;
                 this.stopPlay();
+                const oldT = this.expectationState.currentT;
                 this.expectationState.currentT = index;
                 // Dragging the scrubber always jumps instantly - cancel any in-progress
                 // Play/Step reveal fade so it doesn't keep animating toward a position the drag
                 // has already moved past.
                 this._graphPanelReveal = null;
+                // In focused-run mode: if this is a final scrub (finger-up / mouseup), start a
+                // contT tween so the agent token glides to the new position. While still
+                // dragging (isFinal === false), snap contT directly to keep the token responsive.
+                if (vm.focusedRun) {
+                    if (isFinal && oldT !== index) {
+                        this._startContTTween(index);
+                    } else {
+                        this._contTTween = null;
+                        vm.contT = index;
+                    }
+                }
                 if (typeof redraw === 'function') redraw();
                 this._notifyDataChanged();
             },
@@ -1229,6 +1412,8 @@ class ExpectationView {
         this._destroyPanel();
         this._destroyCompactCard();
         this._graphOffsetTween = null;
+        this._contTTween = null;
+        this.expectationViewModel.contT = 0;
         this.expectationViewModel.focusedRun = false;
         this._imageCache.clear();
         // Its rAF loop checks `if (!this._graphPanelReveal) return;` every frame, so clearing
