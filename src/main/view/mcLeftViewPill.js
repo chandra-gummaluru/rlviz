@@ -5,7 +5,8 @@
 // convention (mcRunsPill.js, treeViewPill.js, zoomPill.js are all separate files too).
 const MC_LEFT_VIEW_PILL_OPTIONS = [
     { key: 'grid',  label: 'Grid' },
-    { key: 'chart', label: 'Chart' }
+    { key: 'chart', label: 'Chart' },
+    { key: 'tree',  label: 'Tree' }
 ];
 
 class McLeftViewPill {
