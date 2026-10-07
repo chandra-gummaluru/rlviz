@@ -1,3 +1,6 @@
+// DEPRECATED — partial observability is IN DEVELOPMENT. This file is kept but is no longer
+// reachable from the UI (inDevelopmentCard.js is shown instead; main.js's VI handlers no-op while
+// observability === 'partial'). See CLAUDE.md "Partial observability (in development)".
 // Interactor for switching the POMDP exploration algorithm and its hyperparameter.
 // Does NOT reset Q/N/belief — switching algorithm only changes selection behavior going forward,
 // preserving learned Q values across algorithm switches (same rationale as SetQLAlgorithmInteractor).

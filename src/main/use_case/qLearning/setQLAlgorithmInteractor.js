@@ -10,6 +10,14 @@ class SetQLAlgorithmInteractor extends SetQLAlgorithmInputBoundary {
     }
 
     execute(inputData) {
+        // Horizon-only update (Max steps slider): no algorithm change, no reset.
+        if (inputData && inputData.algorithm === null && inputData.maxDepth !== undefined) {
+            const d = parseInt(inputData.maxDepth, 10);
+            if (isFinite(d)) this.qLearningState.maxDepth = Math.max(1, Math.min(50, d));
+            this.outputBoundary.presentComplete({ algorithm: this.qLearningState.algorithm, maxDepth: this.qLearningState.maxDepth });
+            return;
+        }
+
         const validAlgorithms = ['epsilonGreedy', 'ucb', 'softmax', 'optimistic'];
         if (!inputData || !validAlgorithms.includes(inputData.algorithm)) {
             this.outputBoundary.presentError(`Unknown algorithm: ${inputData && inputData.algorithm}`);

@@ -65,11 +65,11 @@ The codebase follows **Clean Architecture** with clear separation of concerns.
    - `zoomPill.js`: Floating bottom-right `[−] [zoom%] [+]` control; kept in sync by every zoom entry point (wheel, pinch, keyboard shortcuts, this pill's own buttons).
    - `rightPanel.js` + `RightPanelBuilder.js`: Context-sensitive side panel (node/edge inspector, Build panel, Policy-mode panel, MC/Method panels, VI/MC controls); `RightPanelBuilder` holds small reusable DOM-factory helpers (badges, slider rows). The panel element itself is natively scrollable (`overflow-y: auto`) once content exceeds the viewport. This is the **one place Build and Policy mode intentionally differ** — everything else (canvas, top bar) is shared. Every mode's default (nothing-selected) panel also renders a shared **Policy log** section (`_renderPolicyLog()`) — see "Evaluate π / Policy log" below.
    - `expectationView.js` + `expectationScrubber.js`: Monte Carlo mini-panel grid and its custom shifting-timeline scrubber. `ExpectationView.step()` advances `currentT` by one tick without starting continuous playback (backs the MC Step button); `startPlay()`/`stopPlay()` back Play/Pause.
-   - `valueIterationView.js`: Value Iteration / Learning Iteration / Belief Iteration / PO Q-Learning canvas rendering (V*/Q*/belief labels, Bellman backup animation, editable Q-table cells, dashed node stroke in partial-observability quadrants)
+   - `valueIterationView.js`: Value Iteration canvas rendering (V*/Q* labels, Bellman backup animation, editable Q-table cells). `learningIterationView.js`: Learning Iteration's own Graph/Tree renderer (learned P̂ edge labels, Q̂ labels, UCB/Softmax exploration halos). `inDevelopmentCard.js`: the partial-observability placeholder overlay.
    - `chartDock.js`: Resizable bottom dock in Values mode with two chart slots (Convergence, Histogram, Q-table, MC-tree — see `helpers/chartDataBuilders.js` for the pure data-shaping functions)
    - `SimulationRenderer.js`, `rewardParticleSystem.js`: Build-mode reward-collection animation/VFX helpers (the reward particle flies to the right panel's Utility G value)
    - `helpers/AppPalette.js`: Theming — see below
-   - `helpers/valuesMethodMatrix.js`: `ValuesMethodMatrix` — the central 2×2 lookup (`modelKnown × observability` → `{title, pillLabel, paletteNamespace, accent}`) for the four Values-mode quadrants: Value Iteration, Learning Iteration, Belief Iteration, PO Q-Learning. Also exposes `beliefFor(viState, stateId, colIdx)`, the shared illustrative belief-scalar heuristic used by the two partial-observability quadrants (see "Value Iteration / Learning Iteration" below).
+   - `helpers/valuesMethodMatrix.js`: `ValuesMethodMatrix` — the central 2×2 lookup (`modelKnown × observability` → `{title, pillLabel, paletteNamespace, accent}`) for the four Values-mode quadrants: Value Iteration, Learning Iteration, and the two partial-observability quadrants (both resolve to the placeholder "In development" — see "Partial observability (in development)" below). `beliefFor()` is deprecated along with them.
    - `helpers/RecentFiles.js`: Pure `localStorage`-backed MRU list (capped at 8) backing the top bar's filename-chip recent-files entries.
    - `helpers/Typography.js`: Loads vendored fonts for both canvas (p5 `loadFont`) and DOM (`@font-face` in `style.css`)
    - `helpers/GeometricHelper.js`: Hit-testing and geometry
@@ -121,16 +121,51 @@ Mode and sub-view transitions run through `CanvasController`'s mode-lifecycle ho
 4. **Policy π**: Policy mode's right panel (`RightPanel._renderPolicyModeSection()`) is the only place π is edited — a per-state Deterministic/Random toggle, an action-segment row when Deterministic, or one independent weighted slider per action when Random (normalized-at-sample-time, not normalized-on-write). The deterministic/weighted policy edge renders bold/width-proportional on canvas (`EdgeViewModel.policyEdgeProbability`, gated to Build/Policy mode). This is the **Stationary** representation — see "Time-dependent policy (π_t)" below for the additive time-indexed alternative.
 5. **Steps / Utility G** (`RightPanel._renderStepsAndUtility()`): a nested Utility G row (formula left, value right, colored green/red by sign via `_applyRewardColor()`) and an always-visible contribution bar (`_renderContributionBar()`) — one block per non-zero reward step, width ∝ the discounted magnitude `|γᵗ·rₜ|`, opacity fading with `γᵗ`, plus a trailing gray block for the remaining episode tail. A "t" progress bar (div-based, not a native range input — see below) sits in the shared Parameters section instead of a standalone step count.
 
-### Value Iteration / Learning Iteration / Belief Iteration / PO Q-Learning (Values → vi)
+### Value Iteration / Learning Iteration (Values → vi)
 
 `ValueIterationState` runs the real Bellman-backup computation and animates it column by column. The right panel's title/equation/pill label/accent all resolve through `ValuesMethodMatrix.resolve(modelKnown, observability)`, covering four quadrants:
 
 - `known:full` → **Value Iteration** (exact Bellman backup)
-- `unknown:full` → **Learning Iteration** (P unknown — no algorithm runs; the student edits the Q-table directly)
-- `known:partial` → **Belief Iteration** (illustrative only)
-- `unknown:partial` → **PO Q-Learning** (illustrative only)
+- `unknown:full` → **Learning Iteration** (P unknown — real episodic tabular Q-learning, see below)
+- `known:partial` / `unknown:partial` → **In development** (see "Partial observability (in development)" below)
 
-The two partial-observability quadrants are **illustrative, not real POMDP algorithms** — they reuse Value Iteration's real backward-induction numbers under a relabeled belief scalar (`ValuesMethodMatrix.beliefFor()`, a deterministic presentation-only heuristic derived from each column's V-value spread), not a real belief-state update. When P is unknown, displayed Q-values become directly editable regardless of the observability axis: `ValueIterationState.manualOverrides[`${stateId}:${actionId}`]` takes precedence over the computed value wherever a Q/V value is rendered (right-panel table and in-canvas labels). Overrides are presentation-layer only and are not included in graph import/export.
+#### Learning Iteration (`unknown:full`): real Q-learning with a learned transition model
+
+`QLearningState` (`src/main/domain/qLearningState.js`) runs genuine sample-average tabular
+Q-learning over episodes sampled through the graph's REAL P (via `QLearningEpisodeGenerator` →
+`TraceGenerator.selectRandomNextState()`), with four behavior policies (`explorationPolicies/`:
+ε-greedy, UCB, Softmax, Optimistic). "P unknown" means the agent never reads the real
+probabilities — it only counts what it observed: `getEstimatedP(s,a,s') = N(s,a,s')/N(s,a)` is the
+**learned transition model P̂**, shown on the canvas (`learningIterationView.js` Graph view: edge
+labels flip from `p = ?` to `p̂ = 0.43` + `n = 3/7` once `(s,a)` has been tried, edge width/alpha
+scale with p̂, the last episode's path is highlighted in the method accent) and in the right
+panel's "Learned transition model P̂" table (`RightPanel._renderEstimatedModelTable()`, with a
+muted "true p" column for comparison only). The Graph and Tree views both draw exploration halos:
+UCB bonus rings (`_drawUCBHalos`) or Softmax probability-mass rings (`_drawSoftmaxHalos`, sweep ∝
+π(a|s)). `vHatHistory` records Q̂(s₀) after every episode and feeds the ChartDock Convergence slot
+("Q̂(S₀) per episode"). The shared VI buttons map to: **Play** = continuous one-episode-per-tick
+playback (`main.js` `startQLPlay()`/`stopQLPlay()`, tick length from the animation-speed slider,
+Play reads ⏸ Pause while running), **Step** = one episode, **Skip** = 50 episodes at once,
+**Reset** = clear learned Q/N/P̂. `maxDepth` (episode cap) is the panel's "Max steps" slider,
+committed through `CanvasController.setQLMaxDepth()` → `SetQLAlgorithmInputData.forMaxDepth()`.
+Leaving Values mode is the one full reset boundary; switching quadrant/algorithm preserves Q/N.
+
+#### Partial observability (in development)
+
+The partial-observability half of the matrix is **scoped out for now**. Selecting Observability →
+"Partial · in dev" in the Parameters popover keeps the `observability` flag but, in Values →
+Iteration, shows `inDevelopmentCard.js` (a full-canvas "That's all, folks… for now!" overlay with a
+"Back to full observability" CTA) instead of any method view; the right panel shows a short note
+(`RightPanel._renderInDevelopmentPanel()`), `mainView._viSplitWidths()` returns `null` (no split
+chrome), and every VI Play/Step/Skip/Reset handler in `main.js` early-returns via
+`_isPartialObservability()`. `ValuesMethodMatrix` resolves both partial quadrants to the
+placeholder title "In development". The old Belief Iteration / PO Q-Learning code
+(`pomdpState.js`, `pomdpEpisodeGenerator.js`, `use_case/pomdp/*`, `RightPanel._renderPomdpPanel()`,
+`ValuesMethodMatrix.beliefFor()`, the belief cards in `viStatesView.js`) is **deprecated**: still
+loaded and constructed, header-commented as such, but unreachable from the UI. Delete it or revive
+it deliberately — don't build on it.
+
+Historical note on what those quadrants were: the two partial-observability quadrants were **illustrative, not real POMDP algorithms** — they reuse Value Iteration's real backward-induction numbers under a relabeled belief scalar (`ValuesMethodMatrix.beliefFor()`, a deterministic presentation-only heuristic derived from each column's V-value spread), not a real belief-state update. When P is unknown, displayed Q-values become directly editable regardless of the observability axis: `ValueIterationState.manualOverrides[`${stateId}:${actionId}`]` takes precedence over the computed value wherever a Q/V value is rendered (right-panel table and in-canvas labels). Overrides are presentation-layer only and are not included in graph import/export.
 
 Values → Iteration's canvas is a persistent **52% left / 48% right split** (Phase 3b of the
 Evaluate redesign roadmap — see `docs/superpowers/specs/2026-07-17-vi-screen-split-design.md`),

@@ -1,3 +1,6 @@
+// DEPRECATED — partial observability is IN DEVELOPMENT. This file is kept but is no longer
+// reachable from the UI (inDevelopmentCard.js is shown instead; main.js's VI handlers no-op while
+// observability === 'partial'). See CLAUDE.md "Partial observability (in development)".
 // Generates one episodic POMDP rollout and applies incremental Q-updates for each transition.
 // Mirrors QLearningEpisodeGenerator but adds a Bayesian belief update step after each sampled
 // transition — the agent selects actions using belief-weighted Q while the Q-update uses the

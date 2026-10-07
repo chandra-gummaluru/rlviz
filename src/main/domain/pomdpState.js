@@ -1,3 +1,6 @@
+// DEPRECATED — partial observability is IN DEVELOPMENT. This file is kept but is no longer
+// reachable from the UI (inDevelopmentCard.js is shown instead; main.js's VI handlers no-op while
+// observability === 'partial'). See CLAUDE.md "Partial observability (in development)".
 // Domain entity for real episodic belief-state Q-learning (the "PO Q-Learning" / unknown:partial
 // quadrant of Values mode's 2x2 method matrix).
 //

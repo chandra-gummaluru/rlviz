@@ -588,8 +588,11 @@ class CanvasController {
     }
 
     // Toggles the second method-matrix axis: 'full' or 'partial' observability. Same
-    // presentation-tier pattern as setModelKnown - no domain change here. Consumption (dashed
-    // partially-observable nodes, selecting Belief Iteration / PO Q-Learning) is a later phase.
+    // presentation-tier pattern as setModelKnown - no domain change here. NOTE: partial
+    // observability is IN DEVELOPMENT - selecting it shows inDevelopmentCard.js's full-canvas
+    // placeholder in Values -> Iteration instead of the (deprecated, unwired) Belief Iteration /
+    // PO Q-Learning panels. The flag itself still round-trips so the Parameters popover can show
+    // which axis the user picked.
     setObservability(value) {
         this.viewModel.observability = value === 'partial' ? 'partial' : 'full';
     }
@@ -627,11 +630,18 @@ class CanvasController {
         this.interactors.qlReset.execute(new QLResetInputData());
     }
 
-    // Switches exploration algorithm ('epsilonGreedy' | 'ucb' | 'optimistic') and, optionally,
-    // its single hyperparameter. Does NOT reset learned Q/N (see SetQLAlgorithmInteractor).
+    // Switches exploration algorithm ('epsilonGreedy' | 'ucb' | 'softmax' | 'optimistic') and,
+    // optionally, its single hyperparameter. Does NOT reset learned Q/N (see SetQLAlgorithmInteractor).
     setQLAlgorithm(algorithm, param) {
         if (!this.interactors.setQLAlgorithm) return;
         this.interactors.setQLAlgorithm.execute(new SetQLAlgorithmInputData(algorithm, param));
+    }
+
+    // Sets the Q-learning episode horizon ("Max steps" slider). Same interactor, horizon-only
+    // input - learned Q/N are preserved, only future episodes are capped differently.
+    setQLMaxDepth(maxDepth) {
+        if (!this.interactors.setQLAlgorithm) return;
+        this.interactors.setQLAlgorithm.execute(SetQLAlgorithmInputData.forMaxDepth(maxDepth));
     }
 
     // ===== POMDP (PO Q-Learning, unknown:partial quadrant) =====
@@ -696,9 +706,9 @@ class CanvasController {
         // hoveredNode/hoveredEdge are cleared on BOTH directions (not just entering tree view):
         // Graph view's own handleMouseMove() naturally re-populates them on the next real
         // mouse-move regardless, but Tree view drives its own hover via treeView.handleMouseMove()
-        // happens to overwrite it (and vice versa on entry).
         // and never touches these fields itself - so a real EdgeObj left over from a tree-edge
         // hover could otherwise leak into Graph view's panel until the next Graph-view mouse-move
+        // happens to overwrite it (and vice versa on entry).
         this.viewModel.interaction.hoveredNode = null;
         this.viewModel.interaction.hoveredEdge = null;
     }

@@ -260,9 +260,16 @@ class ChartDock {
         const { mcMeans, mcSEs, mcLabels, viValues, viLabels, vStar } = ChartDataBuilders.buildConvergenceData(
             this.expectationState, this.valueIterationState);
 
+        // Learning Iteration (unknown:full): Q̂(s₀) after each episode, from
+        // QLearningState.vHatHistory - the only series this quadrant produces (VI never runs).
+        const qls = this.viewModel.qLearningState;
+        const isLI = ValuesMethodMatrix.key(this.viewModel.modelKnown, this.viewModel.observability) === 'unknown:full';
+        const qlValues = (isLI && qls && qls.vHatHistory) ? qls.vHatHistory : [];
+        if (isLI) caption.textContent = 'Q̂(S₀) per episode';
+
         const canvas = document.createElement('canvas');
         body.appendChild(canvas);
-        const maxLen = Math.max(mcLabels.length, viLabels.length, 1);
+        const maxLen = Math.max(mcLabels.length, viLabels.length, qlValues.length, 1);
 
         // All datasets use explicit {x,y} points on a shared linear x-axis (rather than a
         // category axis) so the hover marker below can place a vertical line at an arbitrary x.
@@ -293,6 +300,14 @@ class ChartDock {
                 label: `V (${methodEntry.pillLabel})`,
                 data: viValues.map((y, x) => ({ x, y })),
                 borderColor: AppPalette.accent[methodEntry.accent],
+                borderWidth: 2, pointRadius: 0, tension: 0
+            });
+        }
+        if (qlValues.length > 0) {
+            datasets.push({
+                label: 'Q̂(S₀) (Learning Iter)',
+                data: qlValues.map((y, x) => ({ x: x + 1, y })),
+                borderColor: AppPalette.accent.purpleT,
                 borderWidth: 2, pointRadius: 0, tension: 0
             });
         }

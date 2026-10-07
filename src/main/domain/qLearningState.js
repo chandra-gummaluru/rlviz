@@ -25,7 +25,7 @@ class QLearningState {
         this.optimisticQ0 = 5;
         this.softmaxTau = 1.0;
         this.gamma = 0.9;
-        this.maxDepth = 8;                  // fixed v1 episode-depth cap, not user-configurable
+        this.maxDepth = 8;                  // episode-depth cap ("Max steps" slider in the Learning Iteration panel)
 
         this.Q = {};                        // "${s}:${a}" -> running-mean Q (visited pairs only)
         this.N = {};                        // "${s}:${a}" -> visit count
@@ -36,6 +36,10 @@ class QLearningState {
         this.root = null;                   // tree SHAPE only: { stateId, stateName, depth: 0 }
         this.episodeCount = 0;
         this.lastEpisodePath = null;
+        // Q̂(s₀) = max_a Q(s₀,a) recorded after every episode (index k = value after episode k+1),
+        // the Learning Iteration analogue of ValueIterationState's per-sweep V(s₀) history that
+        // the Convergence chart plots (see chartDock.js / ChartDataBuilders).
+        this.vHatHistory = [];
     }
 
     _key(stateId, actionId) {
@@ -61,6 +65,28 @@ class QLearningState {
     // Count of observed s -> a -> s' transitions (drives the tree outcome N= labels).
     getTransitionCount(stateId, actionId, nextStateId) {
         return this.transitionCounts[`${stateId}:${actionId}:${nextStateId}`] || 0;
+    }
+
+    // The LEARNED transition model: P̂(s'|s,a) = N(s,a,s') / N(s,a), the maximum-likelihood
+    // estimate from the sampled transitions so far. This is what "P unknown" means in this
+    // quadrant - the agent never reads the graph's real probabilities, it only counts what it
+    // observed. Returns null while (s,a) has never been tried (no estimate exists yet).
+    getEstimatedP(stateId, actionId, nextStateId) {
+        const n = this.getN(stateId, actionId);
+        if (n === 0) return null;
+        return this.getTransitionCount(stateId, actionId, nextStateId) / n;
+    }
+
+    // Greedy value estimate Q̂(s) = max_a Q(s,a) (0 for a terminal state).
+    getVHat(stateId, actionIds) {
+        if (!actionIds || actionIds.length === 0) return 0;
+        return Math.max(...actionIds.map(a => this.getQ(stateId, a)));
+    }
+
+    // Appends Q̂(s₀) to the per-episode history. Called by QLearningEpisodeGenerator once per
+    // completed episode, so vHatHistory.length === episodeCount at all times.
+    recordEpisodeValue(startStateId, startActionIds) {
+        this.vHatHistory.push(this.getVHat(startStateId, startActionIds));
     }
 
     // Mean observed reward for the s -> a -> s' transition (illustrative tree label only).

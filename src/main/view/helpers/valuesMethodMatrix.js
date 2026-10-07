@@ -12,8 +12,11 @@ const ValuesMethodMatrix = {
     entries: {
         'known:full':      { title: 'Value Iteration',   pillLabel: 'Value Iter',   paletteNamespace: 'valueIteration',       accent: 'teal',     runLabel: '▶ Find Optimal' },
         'unknown:full':    { title: 'Learning Iteration', pillLabel: 'Learning Iter', paletteNamespace: 'learningIteration',    accent: 'purpleT',  runLabel: '▶ Run learning' },
-        'known:partial':   { title: 'Belief Iteration',   pillLabel: 'Belief Iter',  paletteNamespace: 'partialObservability', accent: 'yellow',   runLabel: '▶ Run belief update' },
-        'unknown:partial': { title: 'PO Q-Learning',      pillLabel: 'PO Learning',  paletteNamespace: 'partialObservability', accent: 'yellow',   runLabel: '▶ Run PO learning' }
+        // Partial observability is IN DEVELOPMENT (see inDevelopmentCard.js): both quadrants
+        // resolve to placeholder labels; their old Belief Iteration / PO Q-Learning panels are
+        // deprecated and unreachable.
+        'known:partial':   { title: 'In development',     pillLabel: 'In dev',       paletteNamespace: 'partialObservability', accent: 'yellow',   runLabel: '▶ Play' },
+        'unknown:partial': { title: 'In development',     pillLabel: 'In dev',       paletteNamespace: 'partialObservability', accent: 'yellow',   runLabel: '▶ Play' }
     },
 
     key(modelKnown, observability) {
