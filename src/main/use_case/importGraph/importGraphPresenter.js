@@ -25,6 +25,12 @@ class ImportGraphPresenter extends ImportGraphOutputBoundary {
             // Clear any active selections
             this.viewModel.clearSelection();
             this.viewModel.interaction.clearEditorFocus();
+
+            // Restore start node from the saved startStateId, if any
+            if (responseModel.startStateId !== null && responseModel.startStateId !== undefined) {
+                const startNode = this.viewModel.graph.getNodeById(responseModel.startStateId);
+                if (startNode) this.viewModel.startNode = startNode;
+            }
             
             // The graph has already been updated by the interactor
             // Could trigger a UI notification here if needed

@@ -529,9 +529,10 @@ class TopBar {
             if (this.callbacks.onObservabilityToggle) this.callbacks.onObservabilityToggle('full');
         });
 
-        this._partialBtn = createButton('Partial');
+        this._partialBtn = createButton('Partial · in dev');
         this._partialBtn.parent(row);
         this._partialBtn.addClass('menubar-segmented-btn');
+        this._partialBtn.elt.title = 'Partial observability is in development';
         this._partialBtn.mousePressed(() => {
             if (this.callbacks.onObservabilityToggle) this.callbacks.onObservabilityToggle('partial');
         });

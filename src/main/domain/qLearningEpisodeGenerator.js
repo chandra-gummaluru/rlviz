@@ -31,6 +31,8 @@ class QLearningEpisodeGenerator {
         }
         qLearningState.episodeCount++;
         qLearningState.lastEpisodePath = path;
+        const startNode = this.graph.getNodeById(startStateId);
+        qLearningState.recordEpisodeValue(startStateId, startNode ? (startNode.actions || []) : []);
         return path;
     }
 }

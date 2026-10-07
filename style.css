@@ -3564,6 +3564,64 @@ input[type="range"]::-moz-range-thumb {
   font-variant-numeric: tabular-nums;
 }
 
+/* Belief bar chart card (unknown:partial / PO Q-Learning quadrant) */
+.vi-states-view-card--belief {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  padding: 6px 8px;
+  cursor: default;
+}
+
+.vi-states-belief-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+
+.vi-states-belief-row--dominant {
+  background: var(--surface-hover);
+}
+
+.vi-states-belief-row-name {
+  flex: 0 0 56px;
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vi-states-belief-bar-wrap {
+  flex: 1;
+  height: 8px;
+  background: var(--surface-hover);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.vi-states-belief-bar {
+  height: 100%;
+  background: var(--accent-yellow);
+  border-radius: 4px;
+  transition: width 0.15s ease;
+}
+
+.vi-states-belief-row--dominant .vi-states-belief-bar {
+  background: var(--accent-orange);
+}
+
+.vi-states-belief-row-pct {
+  flex: 0 0 32px;
+  font-size: 10px;
+  color: var(--text-muted);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
 .vi-states-view-card--diagram {
   display: flex;
   flex-direction: column;
@@ -3650,3 +3708,60 @@ input[type="range"]::-moz-range-thumb {
   pointer-events: all;
 }
 .expectation-back-btn:hover { background: var(--surface-white); }
+
+
+/* ── In-development card (inDevelopmentCard.js) - reuses .goal-card-overlay/.goal-card for the
+   shell; shown over the canvas in Values -> Iteration while Observability = Partial. ──────── */
+.in-dev-card-title {
+  font-family: 'STIX Two Text', var(--font-family);
+  font-style: italic;
+  font-size: 30px;
+  color: var(--text-dark);
+  line-height: 1.2;
+  margin-bottom: 8px;
+}
+
+.in-dev-card-body {
+  font-size: 13px;
+  color: var(--text-lighter);
+  line-height: 1.5;
+  margin-bottom: 20px;
+}
+
+.in-dev-card-back {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px;
+  margin-bottom: 14px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--accent-yellow) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-yellow) 50%, transparent);
+  color: var(--text-dark);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.in-dev-card-back:hover {
+  background: color-mix(in srgb, var(--accent-yellow) 28%, transparent);
+}
+
+.panel-in-dev-badge {
+  display: inline-block;
+  margin: 2px 0 10px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--accent-yellow);
+  border: 1px solid color-mix(in srgb, var(--accent-yellow) 55%, transparent);
+  background: color-mix(in srgb, var(--accent-yellow) 12%, transparent);
+}
+
+.q-table .q-table-muted {
+  color: var(--text-lighter);
+  font-style: italic;
+}

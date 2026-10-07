@@ -588,8 +588,11 @@ class CanvasController {
     }
 
     // Toggles the second method-matrix axis: 'full' or 'partial' observability. Same
-    // presentation-tier pattern as setModelKnown - no domain change here. Consumption (dashed
-    // partially-observable nodes, selecting Belief Iteration / PO Q-Learning) is a later phase.
+    // presentation-tier pattern as setModelKnown - no domain change here. NOTE: partial
+    // observability is IN DEVELOPMENT - selecting it shows inDevelopmentCard.js's full-canvas
+    // placeholder in Values -> Iteration instead of the (deprecated, unwired) Belief Iteration /
+    // PO Q-Learning panels. The flag itself still round-trips so the Parameters popover can show
+    // which axis the user picked.
     setObservability(value) {
         this.viewModel.observability = value === 'partial' ? 'partial' : 'full';
     }
@@ -627,11 +630,48 @@ class CanvasController {
         this.interactors.qlReset.execute(new QLResetInputData());
     }
 
-    // Switches exploration algorithm ('epsilonGreedy' | 'ucb' | 'optimistic') and, optionally,
-    // its single hyperparameter. Does NOT reset learned Q/N (see SetQLAlgorithmInteractor).
+    // Switches exploration algorithm ('epsilonGreedy' | 'ucb' | 'softmax' | 'optimistic') and,
+    // optionally, its single hyperparameter. Does NOT reset learned Q/N (see SetQLAlgorithmInteractor).
     setQLAlgorithm(algorithm, param) {
         if (!this.interactors.setQLAlgorithm) return;
         this.interactors.setQLAlgorithm.execute(new SetQLAlgorithmInputData(algorithm, param));
+    }
+
+    // Sets the Q-learning episode horizon ("Max steps" slider). Same interactor, horizon-only
+    // input - learned Q/N are preserved, only future episodes are capped differently.
+    setQLMaxDepth(maxDepth) {
+        if (!this.interactors.setQLAlgorithm) return;
+        this.interactors.setQLAlgorithm.execute(SetQLAlgorithmInputData.forMaxDepth(maxDepth));
+    }
+
+    // ===== POMDP (PO Q-Learning, unknown:partial quadrant) =====
+
+    runPomdp(episodeCount = 10) {
+        if (!this.interactors.runPomdp) return;
+        const startNode = this.viewModel.startNode;
+        if (!startNode) return;
+        const gamma = this.viewModel.pomdpState ? this.viewModel.pomdpState.gamma : 0.9;
+        this.interactors.runPomdp.execute(new RunPomdpInputData(startNode.id, gamma, episodeCount));
+    }
+
+    stepPomdp() {
+        this.runPomdp(1);
+    }
+
+    resetPomdp() {
+        if (!this.interactors.pomdpReset) return;
+        this.interactors.pomdpReset.execute(new PomdpResetInputData());
+    }
+
+    setPomdpAlgorithm(algorithm, param) {
+        if (!this.interactors.setPomdpAlgorithm) return;
+        this.interactors.setPomdpAlgorithm.execute(new SetPomdpAlgorithmInputData(algorithm, param));
+    }
+
+    setPomdpNoise(p) {
+        if (this.viewModel.pomdpState) {
+            this.viewModel.pomdpState.observationNoise = Math.max(0, Math.min(0.5, p));
+        }
     }
 
     // "Animations · per mode" (top bar Parameters popover, presentation-only flags) - see

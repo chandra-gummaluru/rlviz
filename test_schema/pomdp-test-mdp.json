@@ -1,0 +1,86 @@
+{
+  "nodes": [
+    {
+      "id": 0,
+      "type": "state",
+      "name": "S0",
+      "x": 200,
+      "y": 300,
+      "size": 30,
+      "actions": [1, 2]
+    },
+    {
+      "id": 1,
+      "type": "action",
+      "name": "left",
+      "x": 350,
+      "y": 200,
+      "size": 20,
+      "transitions": [
+        { "stateId": 0, "probability": 0.8, "reward": 0 },
+        { "stateId": 3, "probability": 0.2, "reward": 1 }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "action",
+      "name": "right",
+      "x": 350,
+      "y": 400,
+      "size": 20,
+      "transitions": [
+        { "stateId": 3, "probability": 0.9, "reward": 1 },
+        { "stateId": 0, "probability": 0.1, "reward": 0 }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "state",
+      "name": "S1",
+      "x": 550,
+      "y": 300,
+      "size": 30,
+      "actions": [4, 5]
+    },
+    {
+      "id": 4,
+      "type": "action",
+      "name": "left",
+      "x": 700,
+      "y": 200,
+      "size": 20,
+      "transitions": [
+        { "stateId": 0, "probability": 0.7, "reward": 0 },
+        { "stateId": 3, "probability": 0.3, "reward": -1 }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "action",
+      "name": "right",
+      "x": 700,
+      "y": 400,
+      "size": 20,
+      "transitions": [
+        { "stateId": 3, "probability": 0.6, "reward": 1 },
+        { "stateId": 0, "probability": 0.4, "reward": 0 }
+      ]
+    }
+  ],
+  "edges": [
+    { "from": 0, "to": 1 },
+    { "from": 0, "to": 2 },
+    { "from": 1, "to": 0 },
+    { "from": 1, "to": 3 },
+    { "from": 2, "to": 3 },
+    { "from": 2, "to": 0 },
+    { "from": 3, "to": 4 },
+    { "from": 3, "to": 5 },
+    { "from": 4, "to": 0 },
+    { "from": 4, "to": 3 },
+    { "from": 5, "to": 3 },
+    { "from": 5, "to": 0 }
+  ],
+  "startStateId": 0,
+  "textLabels": []
+}
