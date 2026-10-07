@@ -304,7 +304,7 @@ class ViChartView {
         }
         shown.forEach(t => {
             const th = document.createElement('td');
-            th.textContent = `t = ${t}`;
+            th.textContent = `t = ${this.viState.displaySweepIndex(t)}`;
             th.className = 'vi-chart-view-qtable-headcell vi-chart-view-qtable-headcell--num';
             if (t === k) th.classList.add('vi-chart-view-qtable-col--live');
             headRow.appendChild(th);

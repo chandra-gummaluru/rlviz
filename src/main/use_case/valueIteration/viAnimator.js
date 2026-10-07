@@ -88,14 +88,14 @@ class VIAnimator {
         await this._sleep(durationMs);
     }
 
-    /** Continuous playback: auto-stops at the T cap OR at convergence. */
+    /** Continuous playback: Infinite Time never auto-stops; Finite Time auto-stops at the T cap. */
     async continuousPlay() {
         const myGeneration = ++this._playGeneration;
         this._loopRunning = true;
         try {
             while (
                 this.viState.isPlaying && myGeneration === this._playGeneration
-                && this.viState.canAdvance() && !this.viState.converged
+                && this.viState.canAdvance()
             ) {
                 await this.animateOneSweep();
                 if (!this.viState.isPlaying || myGeneration !== this._playGeneration) break;
@@ -117,8 +117,9 @@ class VIAnimator {
     /**
      * Advance exactly one sweep (Step). Only reached for the 3 non-diagram quadrants -
      * VIStepInteractor/VISkipInteractor call revealNextState()/skipCurrentState() FIRST and only
-     * fall through to this method when those report "not my quadrant" (false). NOT blocked by
-     * convergence - only by the T cap. With durationMs = 0 this is the instant "Skip" variant.
+     * fall through to this method when those report "not my quadrant" (false). Only blocked by
+     * canAdvance() (the Finite Time T cap; never blocked in Infinite Time). With durationMs = 0
+     * this is the instant "Skip" variant.
      *
      * Ignores the call outright while a reveal is still ACTIVELY PLAYING (whether from a PREVIOUS
      * Step/Skip click on this same animator, or from Play's own animator) - without this guard, a

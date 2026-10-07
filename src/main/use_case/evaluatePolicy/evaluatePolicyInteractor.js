@@ -30,7 +30,7 @@ class EvaluatePolicyInteractor extends EvaluatePolicyInputBoundary {
                 this.graph, this.simulationState, startNode.id, inputData.gamma, this.simulationState.piHorizon
             )
             : this.policyEvaluationState.evaluate(
-                this.graph, this.simulationState, startNode.id, inputData.gamma, inputData.epsilon
+                this.graph, this.simulationState, startNode.id, inputData.gamma
             );
         const valueAtStart = isTimeDependent ? result.valueAt0 : result.valueAtStart;
 

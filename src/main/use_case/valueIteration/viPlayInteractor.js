@@ -1,4 +1,5 @@
-// Interactor for VI Play — continuous sweep playback (auto-stops at convergence or the T cap)
+// Interactor for VI Play — continuous sweep playback (Infinite Time: no auto-stop; Finite Time:
+// auto-stops at the T cap)
 class VIPlayInteractor extends VIPlayInputBoundary {
     constructor(viState, outputBoundary, graph, simulationState, options = {}) {
         super();
@@ -13,7 +14,7 @@ class VIPlayInteractor extends VIPlayInputBoundary {
             return;
         }
 
-        if (!this.viState.canAdvance() || this.viState.converged) {
+        if (!this.viState.canAdvance()) {
             this.outputBoundary.presentComplete();
             return;
         }
