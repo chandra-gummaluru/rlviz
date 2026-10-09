@@ -2175,6 +2175,7 @@ input[type="range"]::-moz-range-thumb {
   display: flex;
   align-items: center;
   gap: 6px;
+  white-space: nowrap;
 }
 
 .mc-left-view-pill-track {
@@ -3664,6 +3665,7 @@ input[type="range"]::-moz-range-thumb {
   border: 0.5px solid var(--border-hairline, rgba(255,255,255,0.12));
   box-shadow: 0 4px 24px rgba(0,0,0,0.18);
   overflow: hidden;
+  contain: paint;
   z-index: 10;
   /* pointer-events: none allows canvas interactions to pass through (grid click/hover handled
      on the p5 canvas underneath); chart view inside the panel re-enables pointer-events on
@@ -3745,12 +3747,13 @@ input[type="range"]::-moz-range-thumb {
   gap: 2px;
   padding: 4px 7px 5px;
   border-radius: 6px;
-  background: var(--surface-card, rgba(30,30,35,0.90));
+  background: var(--surface-card2, var(--bg-card));
   border: 0.5px solid var(--border-hairline, rgba(255,255,255,0.10));
   box-shadow: 0 2px 8px rgba(0,0,0,0.18);
   min-width: 60px;
   max-width: 130px;
   white-space: nowrap;
+  transition: opacity 0.25s ease;
 }
 
 .mc-tree-leaf-card__mean {
@@ -3786,7 +3789,7 @@ input[type="range"]::-moz-range-thumb {
   align-items: center;
   gap: 10px;
   padding: 7px 12px 6px;
-  background: var(--surface-card, rgba(24,24,28,0.88));
+  background: var(--surface-card2, var(--bg-card));
   border-bottom: 0.5px solid var(--border-hairline, rgba(255,255,255,0.10));
   border-radius: 14px 14px 0 0;
   pointer-events: all;

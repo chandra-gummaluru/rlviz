@@ -3,8 +3,21 @@
 // Called from ExpectationView.draw() when vm.leftView === 'tree'.
 // Uses its own pan/zoom (vm.treePanX, vm.treePanY, vm.treeZoom), NOT the main viewport.
 //
-// Leaf value cards are DOM overlays (<div class="mc-tree-leaf-card">) appended to document.body
-// and repositioned on every draw().
+// Leaf value cards are DOM children of the MC panel so its overflow clip constrains them to the
+// same overlay as the canvas-rendered tree.
+
+const MC_TREE_MIN_ZOOM = 0.25;
+const MC_TREE_MAX_ZOOM = 2.5;
+
+// Reveal animation (Task 9) — nodes/edges/chips pop in the first time their pathKey is drawn,
+// timed off of when each element's reveal-state entry was first created (see _getRevealStart).
+const MC_TREE_EDGE_FADE_MS = 400;   // edge grows from its source node to its target over this long
+const MC_TREE_NODE_DELAY_MS = 100;  // node pop starts this long after its edge starts drawing
+const MC_TREE_NODE_DURATION_MS = 300;
+const MC_TREE_CHIP_DELAY_MS = 200;  // ×n chip fade starts this long after its edge starts drawing
+const MC_TREE_CHIP_DURATION_MS = 250;
+const MC_TREE_EDGE_ALPHA_FLOOR = 0.35; // was 0.2 — low-share branches read as barely-there yellow
+const MC_TREE_EDGE_ALPHA_RANGE = 0.65; // 0.35 + 0.65*share tops out at 1.0, same as before
 
 class MCTreeView {
     constructor(expectationState, graph, expectationViewModel) {
@@ -13,6 +26,10 @@ class MCTreeView {
         this._vm = expectationViewModel;
         this._leafCards = []; // active DOM leaf card elements
         this._imageCache = new Map(); // nodeId:src → HTMLImageElement
+        // Task 9 — reveal-animation timestamps, keyed by a stable "n:"/"e:"/"c:" + pathKey string
+        // so tweens survive re-renders (only cleared on leaving/tearing down the tree view).
+        this._revealState = new Map();
+        this._revealAnimating = false;
 
         // Task 9 — panel element reference (set via setPanelEl)
         this._panelEl = null;
@@ -81,6 +98,7 @@ class MCTreeView {
         this._wasDrawing = false;
         this.stopAutoFollow();
         this._clearLeafCards();
+        this._revealState.clear();
         if (this._headerEl) this._headerEl.style.display = 'none';
     }
 
@@ -148,6 +166,10 @@ class MCTreeView {
         // Draw column headers (t = 0, 1, 2, ...)
         this._drawColumnHeaders(tree);
 
+        // Reset before this frame's edge/node/chip draws — each sets it back to true if its own
+        // reveal tween (Task 9) hasn't finished yet, so we know whether to keep animating below.
+        this._revealAnimating = false;
+
         // Draw edges first (behind nodes)
         this._drawEdges(tree);
 
@@ -156,6 +178,11 @@ class MCTreeView {
 
         pop();
         drawingContext.restore();
+
+        // Keep redrawing while any node/edge/chip reveal tween is still in progress (Task 9).
+        if (this._revealAnimating && typeof redraw === 'function') {
+            requestAnimationFrame(() => redraw());
+        }
 
         // Position leaf DOM cards after the transform so we can compute screen coords
         this._updateLeafCards(tree, panelBounds, vm);
@@ -182,6 +209,7 @@ class MCTreeView {
             this._panelEl = null;
         }
         this._clearLeafCards();
+        this._revealState.clear();
         this._wasDrawing = false;
         this._dragStart = null;
         this._lastPanelBounds = null;
@@ -296,7 +324,8 @@ class MCTreeView {
         e.preventDefault();
 
         const zoomFactor = Math.pow(1.12, -e.deltaY / 100);
-        const newZoom = Math.min(2.5, Math.max(0.5, vm.treeZoom * zoomFactor));
+        const newZoom = Math.min(MC_TREE_MAX_ZOOM,
+            Math.max(MC_TREE_MIN_ZOOM, vm.treeZoom * zoomFactor));
 
         // Anchor zoom at cursor position
         const rect = this._panelEl.getBoundingClientRect();
@@ -371,7 +400,8 @@ class MCTreeView {
         const vm = this._vm;
         const panelBounds = this._lastPanelBounds;
         const factor = direction > 0 ? 1.12 : (1 / 1.12);
-        const newZoom = Math.min(2.5, Math.max(0.5, vm.treeZoom * factor));
+        const newZoom = Math.min(MC_TREE_MAX_ZOOM,
+            Math.max(MC_TREE_MIN_ZOOM, vm.treeZoom * factor));
 
         if (panelBounds) {
             // Anchor zoom at panel center
@@ -447,31 +477,60 @@ class MCTreeView {
         }
     }
 
+    // Returns the timestamp a reveal key first appeared (creating the entry on first sight), so
+    // every consumer of that key computes progress off the same "just revealed" instant.
+    _getRevealStart(key, now) {
+        let start = this._revealState.get(key);
+        if (start === undefined) {
+            start = now;
+            this._revealState.set(key, start);
+        }
+        return start;
+    }
+
     _drawEdges(tree) {
         const edgeColor = AppPalette.expectation.treeEdge;
+        const now = performance.now();
         for (const edge of tree.edges) {
             const from = edge.from;
             const to = edge.to;
-            const alpha = Math.round(255 * (0.2 + 0.7 * edge.share));
+            const edgeKey = `e:${from.id}|${to.id}`;
+            const edgeStart = this._getRevealStart(edgeKey, now);
+            const rawT = (now - edgeStart) / MC_TREE_EDGE_FADE_MS;
+            const growT = Math.max(0, Math.min(1, rawT));
+            if (growT < 1) this._revealAnimating = true;
+            const eased = EasingUtils.easeOut(growT);
+
+            const alpha = Math.round(255 * (MC_TREE_EDGE_ALPHA_FLOOR + MC_TREE_EDGE_ALPHA_RANGE * edge.share));
             const weight = (1 + 5 * edge.share) / (this._vm.treeZoom || 1);
 
             const col = ColorUtils.applyAlpha(edgeColor, alpha);
+
+            // Grow the edge from its source toward its target rather than popping in at full
+            // length (Task 9's stroke-dashoffset draw-in, adapted to a canvas 2D context).
+            const curX = from.x + (to.x - from.x) * eased;
+            const curY = from.y + (to.y - from.y) * eased;
 
             drawingContext.save();
             drawingContext.strokeStyle = col;
             drawingContext.lineWidth = weight;
             drawingContext.beginPath();
             drawingContext.moveTo(from.x, from.y);
-            drawingContext.lineTo(to.x, to.y);
+            drawingContext.lineTo(curX, curY);
             drawingContext.stroke();
             drawingContext.restore();
 
-            // ×n chip at edge midpoint
-            this._drawEdgeChip(from, to, edge, edgeColor, alpha);
+            // ×n chip at edge midpoint — fades in after a delay relative to the edge's own start.
+            this._drawEdgeChip(from, to, edge, edgeColor, alpha, edgeStart, now);
         }
     }
 
-    _drawEdgeChip(from, to, edge, edgeColor, edgeAlpha) {
+    _drawEdgeChip(from, to, edge, edgeColor, edgeAlpha, edgeStart, now) {
+        const chipT = Math.max(0, Math.min(1, (now - edgeStart - MC_TREE_CHIP_DELAY_MS) / MC_TREE_CHIP_DURATION_MS));
+        if (chipT < 1) this._revealAnimating = true;
+        if (chipT <= 0) return; // not revealed yet — nothing to draw
+        const chipAlphaMul = EasingUtils.easeOut(chipT);
+
         const midX = (from.x + to.x) / 2;
         const midY = (from.y + to.y) / 2;
         const label = `\xD7${edge.count}`; // ×n
@@ -487,14 +546,14 @@ class MCTreeView {
         const chipX = midX - chipW / 2;
         const chipY = midY - chipH / 2;
 
-        // Background: treeEdge color at 20% opacity
-        const bgCol = ColorUtils.applyAlpha(edgeColor, Math.round(255 * 0.2));
+        // Background: treeEdge color at 28% opacity (scaled by the chip's own fade-in progress)
+        const bgCol = ColorUtils.applyAlpha(edgeColor, Math.round(255 * 0.28 * chipAlphaMul));
         fill(bgCol);
         noStroke();
         rect(chipX, chipY, chipW, chipH, 4);
 
-        // Text: use edgeColor at edgeAlpha
-        fill(ColorUtils.applyAlpha(edgeColor, edgeAlpha));
+        // Text: use edgeColor at edgeAlpha, scaled by the same fade-in progress
+        fill(ColorUtils.applyAlpha(edgeColor, Math.round(edgeAlpha * chipAlphaMul)));
         noStroke();
         textAlign(CENTER, CENTER);
         textFont(Typography.mono());
@@ -516,36 +575,57 @@ class MCTreeView {
         }
     }
 
+    // Reveal (Task 9): pop-in scale (spring, delayed after the incoming edge starts drawing) +
+    // linear fade, keyed by the node's own pathKey so tweens are stable across re-renders.
+    _nodeReveal(node) {
+        const now = performance.now();
+        const key = `n:${node.id}`;
+        const start = this._getRevealStart(key, now);
+        const elapsed = now - start - MC_TREE_NODE_DELAY_MS;
+        if (elapsed <= 0) {
+            this._revealAnimating = true;
+            return { scale: 0, alpha: 0 };
+        }
+        const t = Math.min(1, elapsed / MC_TREE_NODE_DURATION_MS);
+        if (t < 1) this._revealAnimating = true;
+        return { scale: EasingUtils.easeOutBack(t), alpha: EasingUtils.easeOut(t) };
+    }
+
     _drawStateNode(node) {
         const R = 24; // radius in tree space (before zoom)
         const color = AppPalette.node.state;
+        const { scale: s, alpha: revealAlpha } = this._nodeReveal(node);
+        if (revealAlpha <= 0) return; // not revealed yet — nothing to draw
 
         push();
+        translate(node.x, node.y);
+        scale(Math.max(0.001, s));
         noStroke();
-        fill(color);
-        circle(node.x, node.y, R * 2);
+        fill(ColorUtils.applyAlpha(color, Math.round(255 * revealAlpha)));
+        circle(0, 0, R * 2);
 
         // Circle-clip image if present
         if (node.image) {
             const img = this._getImage(node);
             if (img && img !== 'failed' && img.complete && img.naturalWidth > 0) {
                 drawingContext.save();
+                drawingContext.globalAlpha = revealAlpha;
                 drawingContext.beginPath();
-                drawingContext.arc(node.x, node.y, R * 0.95, 0, Math.PI * 2);
+                drawingContext.arc(0, 0, R * 0.95, 0, Math.PI * 2);
                 drawingContext.clip();
-                drawingContext.drawImage(img, node.x - R, node.y - R, R * 2, R * 2);
+                drawingContext.drawImage(img, -R, -R, R * 2, R * 2);
                 drawingContext.restore();
             }
         }
 
         // Name text above node (always visible, even with image)
-        fill(AppPalette.text.muted);
+        fill(ColorUtils.applyAlpha(AppPalette.text.muted, Math.round(255 * revealAlpha)));
         noStroke();
         textSize(11);
         textAlign(CENTER, BOTTOM);
         textFont(Typography.sans());
         const label = node.name && node.name.length > 6 ? node.name.slice(0, 5) + '…' : (node.name || '');
-        text(label, node.x, node.y - R - 4);
+        text(label, 0, -R - 4);
 
         pop();
     }
@@ -553,20 +633,24 @@ class MCTreeView {
     _drawActionNode(node) {
         const R = 14; // radius in tree space (before zoom)
         const color = AppPalette.node.action;
+        const { scale: s, alpha: revealAlpha } = this._nodeReveal(node);
+        if (revealAlpha <= 0) return; // not revealed yet — nothing to draw
 
         push();
+        translate(node.x, node.y);
+        scale(Math.max(0.001, s));
         noStroke();
-        fill(color);
-        circle(node.x, node.y, R * 2);
+        fill(ColorUtils.applyAlpha(color, Math.round(255 * revealAlpha)));
+        circle(0, 0, R * 2);
 
         // Name inside
-        fill(AppPalette.text.inverse);
+        fill(ColorUtils.applyAlpha(AppPalette.text.inverse, Math.round(255 * revealAlpha)));
         noStroke();
         textSize(10);
         textAlign(CENTER, CENTER);
         textFont(Typography.mono());
         const label = node.name && node.name.length > 4 ? node.name.slice(0, 3) + '…' : (node.name || '');
-        text(label, node.x, node.y);
+        text(label, 0, 0);
 
         pop();
     }
@@ -594,28 +678,18 @@ class MCTreeView {
         this._leafCards = [];
     }
 
-    // Convert a tree-local coordinate to canvas screen space, then to page space.
-    // Tree local → canvas: translate by (panelBounds.x + treePanX, panelBounds.y + treePanY), scale by treeZoom
-    // Canvas → page: canvas is positioned below the topbar; p5 canvas element's getBoundingClientRect().top
-    _treeToPage(treeX, treeY, panelBounds, vm) {
-        const canvasX = panelBounds.x + vm.treePanX + treeX * vm.treeZoom;
-        const canvasY = panelBounds.y + vm.treePanY + treeY * vm.treeZoom;
-        // Get the p5 canvas element's position on the page
-        let canvasTop = 0;
-        let canvasLeft = 0;
-        const cnv = document.querySelector('canvas');
-        if (cnv) {
-            const rect = cnv.getBoundingClientRect();
-            canvasTop = rect.top + window.scrollY;
-            canvasLeft = rect.left + window.scrollX;
-        }
+    // Convert tree-local coords to panel-local coords (top-left of _panelEl = 0,0).
+    // Cards appended to _panelEl use these directly as left/top.
+    _treeToPanelLocal(treeX, treeY, vm) {
         return {
-            x: canvasLeft + canvasX,
-            y: canvasTop + canvasY
+            x: Math.round(vm.treePanX + treeX * vm.treeZoom),
+            y: Math.round(vm.treePanY + treeY * vm.treeZoom)
         };
     }
 
     _updateLeafCards(tree, panelBounds, vm) {
+        const container = this._panelEl || document.body;
+
         // Collect leaf nodes
         const leaves = [];
         MCPrefixTree._forEach(tree.root, node => {
@@ -627,7 +701,7 @@ class MCTreeView {
             this._clearLeafCards();
             for (const leaf of leaves) {
                 const card = this._buildLeafCard(leaf);
-                document.body.appendChild(card);
+                container.appendChild(card);
                 this._leafCards.push(card);
             }
         }
@@ -639,11 +713,21 @@ class MCTreeView {
             if (!card) continue;
 
             const R = 24; // state node radius
-            const pos = this._treeToPage(leaf.x + R + 6, leaf.y - 20, panelBounds, vm);
-            card.style.left = `${Math.round(pos.x)}px`;
-            card.style.top = `${Math.round(pos.y)}px`;
+            if (this._panelEl) {
+                // Panel-local positioning — panel's overflow:hidden clips the cards automatically
+                const pos = this._treeToPanelLocal(leaf.x + R + 6, leaf.y - 20, vm);
+                card.style.left = `${pos.x}px`;
+                card.style.top = `${pos.y}px`;
+            } else {
+                // Fallback: page-absolute positioning when panel isn't available
+                const canvasX = panelBounds.x + vm.treePanX + (leaf.x + R + 6) * vm.treeZoom;
+                const canvasY = panelBounds.y + vm.treePanY + (leaf.y - 20) * vm.treeZoom;
+                const cnv = document.querySelector('canvas');
+                const cr = cnv ? cnv.getBoundingClientRect() : { left: 0, top: 0 };
+                card.style.left = `${Math.round(cr.left + canvasX)}px`;
+                card.style.top = `${Math.round(cr.top + canvasY)}px`;
+            }
 
-            // Update content in case currentT changed
             this._refreshLeafCard(card, leaf);
         }
     }
@@ -652,6 +736,10 @@ class MCTreeView {
         const card = document.createElement('div');
         card.className = 'mc-tree-leaf-card';
         this._refreshLeafCard(card, leaf);
+        // Fade in (Task 9) — starts at opacity 0, then flips to 1 on the next frame so the
+        // CSS `transition` on .mc-tree-leaf-card actually animates instead of snapping in.
+        card.style.opacity = '0';
+        requestAnimationFrame(() => { card.style.opacity = '1'; });
         return card;
     }
 

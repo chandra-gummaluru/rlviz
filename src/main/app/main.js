@@ -1433,7 +1433,7 @@ function setup() {
             }
             if (typeof redraw === 'function') redraw();
         }
-    }, canvasViewModel);
+    }, canvasViewModel, estimatorPill);
     mcLeftViewPill.setup(mainView.TOP_BARS_HEIGHT);
     mainView.mcLeftViewPill = mcLeftViewPill;
     mcLeftViewPill.hide();

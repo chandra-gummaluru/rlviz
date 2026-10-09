@@ -1291,10 +1291,8 @@ class ExpectationView {
         for (let i = 0; i < panels.length; i++) {
             const p = panels[i];
             if (cx >= p.x && cx <= p.x + p.w && cy >= p.y && cy <= p.y + p.h) {
-                // selectRun() handles all state transitions:
-                // - first click on a new card: highlight in graph
-                // - click on already-selected card: enter focused mode
-                // - click while in focused mode: switch focused run
+                // A grid card is a direct navigation target: one click focuses its rollout.
+                // Hover still provides the lightweight graph preview before committing.
                 this.selectRun(i);
                 return;
             }
@@ -1319,8 +1317,7 @@ class ExpectationView {
 
     // Sets which rollout's path the graph highlights.
     // - index === null: deselect and exit focused mode.
-    // - First click on a new card: highlight run in graph (panel stays open).
-    // - Clicking the already-selected card: enter focused mode (panel hides, full-canvas graph).
+    // - Clicking a card enters focused mode immediately.
     // - Clicking any card while already in focused mode: stay focused, just switch run.
     selectRun(index) {
         const vm = this.expectationViewModel;
@@ -1345,17 +1342,9 @@ class ExpectationView {
             return;
         }
 
-        if (vm.selectedRunIndex === index) {
-            // Second click on the already-selected card → enter focused mode.
-            this.enterFocusMode(index);
-            return;
-        }
-
-        // First click on a new card: highlight in graph, panel stays open.
-        vm.selectedRunIndex = index;
         this._graphPanelReveal = null;
+        this.enterFocusMode(index);
         this._notifyDataChanged();
-        if (typeof redraw === 'function') redraw();
     }
 
     // Updates the compact card's content when the focused run changes without rebuilding the DOM.
