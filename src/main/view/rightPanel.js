@@ -1049,6 +1049,18 @@ class RightPanel {
         const matrixEntry = ValuesMethodMatrix.resolve(modelKnown, observability);
         const matrixKey = ValuesMethodMatrix.key(modelKnown, observability);
 
+        // Partial observability is IN DEVELOPMENT: the two partial quadrants (Belief Iteration /
+        // PO Q-Learning) are deprecated and unreachable - the canvas shows inDevelopmentCard.js's
+        // placeholder, and this panel shows only a short note plus the shared sections that are
+        // still meaningful (s₀, Policy log). _renderPomdpPanel() and friends below are kept but
+        // no longer called from anywhere.
+        if (observability === 'partial') {
+            this._renderInDevelopmentPanel();
+            this.renderInitialStateSection();
+            this._renderPolicyLog();
+            return;
+        }
+
         // Header row: title top-left, time-mode/sweep status right-aligned on the same line -
         // only for the three quadrants that run a real Bellman sweep; Learning Iteration renders
         // its own title inside _renderLearningIterationPanel.
@@ -1072,6 +1084,8 @@ class RightPanel {
                     this._renderTSlider(paramsDiv);
                 }
             }
+            // Obs. noise slider only for PO Q-Learning (auto-derived observation model parameter).
+            if (liKey === 'unknown:partial') this._renderObservationNoiseSlider(paramsDiv);
         });
 
         this.renderInitialStateSection();
@@ -1095,6 +1109,12 @@ class RightPanel {
 
         if (liKey === 'unknown:full') {
             this._renderLearningIterationPanel();
+            this._renderPolicyLog();
+            return;
+        }
+
+        if (liKey === 'unknown:partial') {
+            this._renderPomdpPanel();
             this._renderPolicyLog();
             return;
         }
@@ -1245,6 +1265,13 @@ class RightPanel {
 
         this._renderQLAlgorithmSection(qls);
 
+        // Episode horizon - lives here (not the shared Parameters section) because it is a
+        // Q-learning-only concept, same reasoning as π_t's own colocated horizon slider.
+        const horizonWrap = createDiv();
+        horizonWrap.parent(this.contentContainer);
+        horizonWrap.addClass('panel-section-content');
+        this._renderQLMaxDepthSlider(horizonWrap, qls);
+
         // Episode count readout.
         const stat = createDiv(`<strong>Episodes:</strong> ${qls.episodeCount}`);
         stat.parent(this.contentContainer);
@@ -1268,6 +1295,275 @@ class RightPanel {
         tableContainer.parent(this.contentContainer);
         tableContainer.addClass('q-table-scroll');
         this._renderQLearningTable(tableContainer, qls);
+
+        // Learned transition model P̂ - the "P unknown" half of this quadrant made visible.
+        const pTitle = createDiv('Learned transition model P̂');
+        pTitle.parent(this.contentContainer);
+        pTitle.addClass('panel-section-title');
+        pTitle.style('margin-top', '14px');
+        const pDesc = createDiv('p̂(s′|s,a) = n(s,a,s′) / n(s,a) — counted from sampled transitions only.');
+        pDesc.parent(this.contentContainer);
+        pDesc.addClass('panel-hint');
+        pDesc.style('margin-top', '4px');
+        const pContainer = createDiv();
+        pContainer.parent(this.contentContainer);
+        pContainer.addClass('q-table-scroll');
+        this._renderEstimatedModelTable(pContainer, qls);
+    }
+
+    // Short right-panel note for the partial-observability quadrants while they are in
+    // development (see renderValueIterationPanel's early return).
+    _renderInDevelopmentPanel() {
+        const title = createDiv('Partial observability');
+        title.parent(this.contentContainer);
+        title.addClass('panel-title');
+
+        const badge = createDiv('In development');
+        badge.parent(this.contentContainer);
+        badge.addClass('panel-in-dev-badge');
+
+        const desc = createDiv();
+        desc.parent(this.contentContainer);
+        desc.addClass('panel-section-content');
+        desc.html('Belief-state methods (Belief Iteration, PO Q-Learning) aren\'t available yet. '
+            + 'Switch Observability back to <strong>Full</strong> in the Parameters popover to use '
+            + 'Value Iteration or Learning Iteration.');
+    }
+
+    // "Max steps" (episode-depth cap) slider for Learning Iteration - same row layout as the
+    // π_t horizon slider in _renderTimeDependentPolicySection. Commits on 'change' through the
+    // controller (SetQLAlgorithmInputData.forMaxDepth) so learned Q/N survive; only the next
+    // episodes are capped differently.
+    _renderQLMaxDepthSlider(parentDiv, qls) {
+        const MIN = 1, MAX = 30;
+        const row = createDiv();
+        row.parent(parentDiv);
+        row.addClass('panel-param-row');
+
+        const label = createDiv('Max steps');
+        label.parent(row);
+        label.addClass('panel-param-row-label');
+
+        const slider = createElement('input');
+        slider.parent(row);
+        slider.attribute('type', 'range');
+        slider.attribute('min', String(MIN));
+        slider.attribute('max', String(MAX));
+        slider.attribute('step', '1');
+        slider.attribute('value', String(qls.maxDepth));
+        slider.addClass('panel-param-row-slider');
+        slider.elt.addEventListener('mousedown', e => e.stopPropagation());
+        slider.elt.addEventListener('click', e => e.stopPropagation());
+        slider.elt.style.setProperty('--fill', (qls.maxDepth - MIN) / (MAX - MIN));
+
+        const value = createDiv(String(qls.maxDepth));
+        value.parent(row);
+        value.addClass('panel-param-row-value');
+
+        slider.input(() => {
+            const d = parseInt(slider.value(), 10);
+            value.html(String(d));
+            slider.elt.style.setProperty('--fill', (d - MIN) / (MAX - MIN));
+        });
+        slider.elt.addEventListener('change', () => {
+            this.controller.setQLMaxDepth(parseInt(slider.value(), 10));
+            this.updateContent();
+            if (typeof redraw === 'function') redraw();
+        });
+    }
+
+    // The learned transition model P̂(s'|s,a) = N(s,a,s')/N(s,a): one row per observed outcome,
+    // only for (s,a) pairs that have been tried at least once. The muted "true p" column shows
+    // the graph's real probability for comparison - the AGENT never reads it (see
+    // QLearningState.getEstimatedP), it is there so a student can watch p̂ converge to p.
+    _renderEstimatedModelTable(container, qls) {
+        const graph = this.viewModel.graph;
+        const states = graph.nodes.filter(n => n.type === 'state');
+
+        const tableEl = document.createElement('table');
+        tableEl.className = 'q-table';
+        const thead = document.createElement('thead');
+        const headerRow = document.createElement('tr');
+        ['s', 'a', "s'", 'n', 'p̂', 'true p'].forEach((h, i) => {
+            const th = document.createElement('th');
+            th.textContent = h;
+            if (i === 5) th.className = 'q-table-muted';
+            headerRow.appendChild(th);
+        });
+        thead.appendChild(headerRow);
+        tableEl.appendChild(thead);
+
+        const tbody = document.createElement('tbody');
+        let rows = 0;
+        states.forEach(stateNode => {
+            (stateNode.actions || []).forEach(actionId => {
+                const actionNode = graph.getNodeById(actionId);
+                if (!actionNode || !actionNode.sas) return;
+                const nSA = qls.getN(stateNode.id, actionId);
+                if (nSA === 0) return;
+                actionNode.sas.forEach((t, ti) => {
+                    const toNode = graph.getNodeById(t.nextState);
+                    if (!toNode) return;
+                    rows++;
+                    const tr = document.createElement('tr');
+                    const nSAS = qls.getTransitionCount(stateNode.id, actionId, t.nextState);
+                    const pHat = qls.getEstimatedP(stateNode.id, actionId, t.nextState);
+                    const cells = [
+                        ti === 0 ? stateNode.name : '',
+                        ti === 0 ? actionNode.name : '',
+                        toNode.name,
+                        `${nSAS}/${nSA}`,
+                        pHat === null ? '—' : pHat.toFixed(2),
+                        (t.probability || 0).toFixed(2)
+                    ];
+                    cells.forEach((text, ci) => {
+                        const td = document.createElement('td');
+                        td.textContent = text;
+                        if (ci === 0) td.className = 'q-table-state';
+                        else if (ci === 1) td.className = 'q-table-action';
+                        else td.className = 'q-table-cell ' + (ci === 5 ? 'q-table-muted' : 'q-table-cell--revealed');
+                        if (ci === 4 && nSAS === 0) td.classList.add('q-table-cell--unknown');
+                        tr.appendChild(td);
+                    });
+                    tbody.appendChild(tr);
+                });
+            });
+        });
+
+        if (rows === 0) {
+            const tr = document.createElement('tr');
+            const td = document.createElement('td');
+            td.colSpan = 6;
+            td.textContent = 'No transitions sampled yet';
+            td.className = 'q-table-cell q-table-cell--unknown';
+            tr.appendChild(td);
+            tbody.appendChild(tr);
+        }
+        tableEl.appendChild(tbody);
+        container.elt.appendChild(tableEl);
+    }
+
+    // DEPRECATED (partial observability is in development) - no longer called; see
+    // renderValueIterationPanel's observability === 'partial' early return.
+    _renderPomdpPanel() {
+        const ps = this.viewModel.pomdpState;
+        const matrixEntry = ValuesMethodMatrix.resolve(this.viewModel.modelKnown, this.viewModel.observability);
+
+        if (ps) ps.gamma = this.discountFactor;
+
+        const title = createDiv(matrixEntry.title);
+        title.parent(this.contentContainer);
+        title.addClass('panel-title');
+
+        const desc = createDiv();
+        desc.parent(this.contentContainer);
+        desc.addClass('panel-section-content');
+        desc.html('P unknown, partial observability. Belief b(s) is updated via Bayes after each '
+            + 'transition; actions are selected by the exploration policy using belief-weighted Q̃(a) = Σ b(s)·Q(s,a).');
+
+        if (!ps) return;
+
+        this._renderPomdpAlgorithmSection(ps);
+
+        const stat = createDiv(`<strong>Episodes:</strong> ${ps.episodeCount}`);
+        stat.parent(this.contentContainer);
+        stat.addClass('panel-section-content');
+        stat.style('margin-top', '8px');
+
+        const tableTitle = createDiv('Belief-weighted Q-values');
+        tableTitle.parent(this.contentContainer);
+        tableTitle.addClass('panel-section-title');
+        tableTitle.style('margin-top', '12px');
+
+        if (ps.episodeCount === 0) {
+            const hint = createDiv('Press Run or Step to begin sampling episodes.');
+            hint.parent(this.contentContainer);
+            hint.addClass('panel-hint');
+            hint.style('margin-top', '6px');
+        }
+
+        const tableContainer = createDiv();
+        tableContainer.parent(this.contentContainer);
+        tableContainer.addClass('q-table-scroll');
+        this._renderQLearningTable(tableContainer, ps);
+    }
+
+    // Same algorithm toggle as Learning Iteration but wired to setPomdpAlgorithm.
+    _renderPomdpAlgorithmSection(ps) {
+        this.createSection('Algorithm', () => {
+            const wrap = createDiv();
+            wrap.parent(this.contentContainer);
+            wrap.addClass('panel-section-content');
+
+            const toggle = createDiv();
+            toggle.parent(wrap);
+            toggle.addClass('policy-det-random-toggle');
+            toggle.addClass('ql-algo-toggle');
+
+            const options = [
+                { key: 'epsilonGreedy', label: 'ε-greedy' },
+                { key: 'ucb', label: 'UCB' },
+                { key: 'softmax', label: 'Softmax' },
+                { key: 'optimistic', label: 'Optimistic' }
+            ];
+            options.forEach(opt => {
+                const btn = createButton(opt.label);
+                btn.parent(toggle);
+                btn.addClass('policy-det-random-btn');
+                if (ps.algorithm === opt.key) btn.addClass('policy-det-random-btn--active');
+                btn.mousePressed(() => {
+                    if (ps.algorithm !== opt.key) {
+                        this.controller.setPomdpAlgorithm(opt.key);
+                        this.updateContent();
+                        if (typeof redraw === 'function') redraw();
+                    }
+                });
+            });
+
+            const chipRow = createDiv();
+            chipRow.parent(wrap);
+            chipRow.addClass('ql-param-row');
+
+            const paramMeta = {
+                epsilonGreedy: { label: 'ε', value: ps.epsilon, step: '0.01' },
+                ucb:           { label: 'c', value: ps.ucbC, step: '0.1' },
+                softmax:       { label: 'τ', value: ps.softmaxTau, step: '0.1' },
+                optimistic:    { label: 'Q₀', value: ps.optimisticQ0, step: '0.5' }
+            }[ps.algorithm];
+
+            const chip = createDiv(`${paramMeta.label} = ${this._fmtParam(paramMeta.value)}`);
+            chip.parent(chipRow);
+            chip.addClass('ql-param-chip');
+            chip.elt.title = 'Click to edit';
+            chip.mousePressed(() => this._startEditingPomdpParam(chip.elt, ps.algorithm, paramMeta));
+        });
+    }
+
+    _startEditingPomdpParam(chipEl, algorithm, meta) {
+        if (chipEl.querySelector('input')) return;
+        chipEl.textContent = '';
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.step = meta.step;
+        input.value = this._fmtParam(meta.value);
+        input.className = 'q-table-cell-input';
+        chipEl.appendChild(input);
+        input.focus();
+        input.select();
+        let settled = false;
+        const commit = () => {
+            if (settled) return;
+            settled = true;
+            const parsed = parseFloat(input.value);
+            if (isFinite(parsed)) this.controller.setPomdpAlgorithm(algorithm, parsed);
+            this.updateContent();
+            if (typeof redraw === 'function') redraw();
+        };
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); commit(); }
+            if (e.key === 'Escape') { settled = true; this.updateContent(); }
+        });
+        input.addEventListener('blur', commit);
     }
 
     // Algorithm toggle (ε-greedy | UCB | Optimistic) + a small click-to-edit hyperparameter chip
@@ -1287,6 +1583,7 @@ class RightPanel {
             const options = [
                 { key: 'epsilonGreedy', label: 'ε-greedy' },
                 { key: 'ucb', label: 'UCB' },
+                { key: 'softmax', label: 'Softmax' },
                 { key: 'optimistic', label: 'Optimistic' }
             ];
             options.forEach(opt => {
@@ -1311,6 +1608,7 @@ class RightPanel {
             const paramMeta = {
                 epsilonGreedy: { label: 'ε', value: qls.epsilon, step: '0.01' },
                 ucb:           { label: 'c', value: qls.ucbC, step: '0.1' },
+                softmax:       { label: 'τ', value: qls.softmaxTau, step: '0.1' },
                 optimistic:    { label: 'Q₀', value: qls.optimisticQ0, step: '0.5' }
             }[qls.algorithm];
 
@@ -1573,6 +1871,45 @@ class RightPanel {
             }
             this.updateContent();
             if (typeof redraw === 'function') redraw();
+        });
+    }
+
+    // Observation noise slider for PO Q-Learning (unknown:partial quadrant only).
+    // Controls the auto-derived observation model: O(o|s') = (1-p) if o==s', p/(|S|-1) otherwise.
+    // Change takes effect immediately (not deferred like epsilon) — noise is read per episode.
+    _renderObservationNoiseSlider(parentDiv) {
+        const pomdpState = this.viewModel && this.viewModel.pomdpState;
+        const current = pomdpState ? pomdpState.observationNoise : 0.1;
+
+        const row = createDiv();
+        row.parent(parentDiv);
+        row.addClass('panel-param-row');
+
+        const label = createDiv('Obs. noise (p)');
+        label.parent(row);
+        label.addClass('panel-param-row-label');
+
+        const slider = createElement('input');
+        slider.parent(row);
+        slider.attribute('type', 'range');
+        slider.attribute('min', '0');
+        slider.attribute('max', '0.5');
+        slider.attribute('step', '0.01');
+        slider.attribute('value', String(current));
+        slider.addClass('panel-param-row-slider');
+        slider.elt.addEventListener('mousedown', e => e.stopPropagation());
+        slider.elt.addEventListener('click', e => e.stopPropagation());
+        slider.elt.style.setProperty('--fill', current / 0.5);
+
+        const value = createDiv(current.toFixed(2));
+        value.parent(row);
+        value.addClass('panel-param-row-value');
+
+        slider.input(() => {
+            const p = parseFloat(slider.value());
+            value.html(p.toFixed(2));
+            slider.elt.style.setProperty('--fill', p / 0.5);
+            if (this.controller) this.controller.setPomdpNoise(p);
         });
     }
 

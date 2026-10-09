@@ -26,6 +26,12 @@ const qLearningState = new QLearningState();
 const qLearningEpisodeGenerator = new QLearningEpisodeGenerator(graph, traceGenerator);
 canvasViewModel.qLearningState = qLearningState;
 
+// PO Q-Learning (unknown:partial quadrant) real POMDP belief Q-learning domain. Also
+// presentation/session-only; excluded from graph import/export.
+const pomdpState = new PomdpState();
+const pomdpEpisodeGenerator = new PomdpEpisodeGenerator(graph, traceGenerator);
+canvasViewModel.pomdpState = pomdpState;
+
 // Presenters for existing use cases
 const createNodePresenter = new CreateNodePresenter(canvasViewModel.interaction);
 const createEdgePresenter = new CreateEdgePresenter(canvasViewModel);
@@ -236,6 +242,7 @@ const onOpenRecent = (entry) => {
 // ===== Parameters popover: P known/unknown, observability =====
 
 const onModelKnownToggle = (known) => {
+    stopQLPlay();
     canvasController.setModelKnown(known);
     if (topBar) topBar.refreshParameters();
     if (topBar) topBar.setEvaluatePolicyEnabled(canvasViewModel.modelKnown);
@@ -252,6 +259,7 @@ const onModelKnownToggle = (known) => {
     // own chrome (Phase 3b) is quadrant-dependent too - entering/leaving Learning Iteration must
     // show/hide the States view immediately, the same way it already does for the sweep chip via
     // refreshLearningTreePill() above - not just on the next mode/subview transition.
+    refreshInDevCard();
     if (canvasViewModel.mode === 'values' && canvasViewModel.valuesSubView === 'vi') {
         refreshVIButtons();
         setUpVISplitChrome();
@@ -273,12 +281,15 @@ const onModelKnownToggle = (known) => {
 };
 
 const onObservabilityToggle = (value) => {
+    stopQLPlay();
     canvasController.setObservability(value);
     if (topBar) topBar.refreshParameters();
+    if (topBar) topBar.setVIPlayPauseMode('play');
     if (estimatorPill) estimatorPill.refresh();
     if (rightPanel) rightPanel.updateContent();
     if (mainView && mainView.chartDock) mainView.chartDock.refresh();
     refreshLearningTreePill();
+    refreshInDevCard();
     if (canvasViewModel.mode === 'values' && canvasViewModel.valuesSubView === 'vi') {
         refreshVIButtons();
         setUpVISplitChrome();
@@ -313,6 +324,59 @@ const onSetIterationAnimationEnabled = (enabled) => {
 // quadrant driven by the real Q-learning subsystem rather than VI's Bellman sweep.
 function _isLearningIterationActive() {
     return ValuesMethodMatrix.key(canvasViewModel.modelKnown, canvasViewModel.observability) === 'unknown:full';
+}
+
+// True while Observability = Partial. Both partial quadrants are IN DEVELOPMENT: the canvas is
+// covered by inDevelopmentCard.js and every Play/Step/Skip/Reset handler below no-ops, so the
+// deprecated POMDP subsystem (pomdpState.js, use_case/pomdp/*) is never driven from the UI.
+function _isPartialObservability() {
+    return canvasViewModel.observability === 'partial';
+}
+
+// Shows/hides the "in development" overlay from current viewmodel state (see
+// InDevelopmentCard.isActive()). Called from every place mode/sub-view/observability can change.
+function refreshInDevCard() {
+    if (mainView && mainView.inDevelopmentCard) mainView.inDevelopmentCard.refresh();
+}
+
+// ===== Learning Iteration continuous playback =====
+// "▶ Run learning" samples one episode per tick until Pause/Step/Skip/Reset or leaving the
+// quadrant/sub-view/mode stops it. Tick length follows the shared animation-speed slider
+// (currentSpeed: 0 = fastest, 1 = slowest - same convention as SPEED_FAST/SPEED_SLOW).
+let qlPlayTimer = null;
+
+function isQLPlaying() {
+    return qlPlayTimer !== null;
+}
+
+function _qlTickMs() {
+    return Math.round(120 + 1080 * currentSpeed);
+}
+
+function startQLPlay() {
+    if (qlPlayTimer !== null) return;
+    if (!canvasViewModel.startNode) {
+        alert('Please select a start node first (right-click a state in Build mode, or use the s₀ dropdown)');
+        return;
+    }
+    const tick = () => {
+        if (!_isLearningIterationActive() || canvasViewModel.mode !== 'values' || canvasViewModel.valuesSubView !== 'vi') {
+            stopQLPlay();
+            return;
+        }
+        canvasController.stepQLearning();
+        _afterQLChange();
+        qlPlayTimer = setTimeout(tick, _qlTickMs());
+    };
+    qlPlayTimer = setTimeout(tick, 0);
+    refreshVIButtons();
+}
+
+function stopQLPlay() {
+    if (qlPlayTimer === null) return;
+    clearTimeout(qlPlayTimer);
+    qlPlayTimer = null;
+    refreshVIButtons();
 }
 
 // viSweepChip only ever shows for the 3 split quadrants (Learning Iteration hides it in favor of
@@ -466,6 +530,10 @@ function setUpMCSplitChrome() {
 // splits.
 function setUpVISplitChrome() {
     if (!mainView || !mainView.viStatesView) return;
+    // Partial observability (in development): no split chrome at all - inDevelopmentCard.js
+    // covers the canvas. _viSplitWidths() returns null here too, so the else-branch below hides
+    // the panes/pills; the sweep chip is hidden explicitly since it is shown by other paths.
+    if (_isPartialObservability() && mainView.viSweepChip) mainView.viSweepChip.hide();
     const panelW = rightPanel ? rightPanel.getWidth() : 272;
     const canvasW = windowWidth - panelW;
     const canvasH = windowHeight - mainView.TOP_BARS_HEIGHT - mainView.getDockHeight();
@@ -518,6 +586,7 @@ function setUpVISplitChrome() {
 }
 
 function leaveVISubView() {
+    stopQLPlay();
     mathRenderer.clear();
     valueIterationViewModel?.clearExplanationDetail();
     if (rightPanel) rightPanel.updateContent();
@@ -550,7 +619,9 @@ canvasController.registerModeLifecycle({
             // Leaving Values mode entirely is the ONE full-reset boundary for Q-learning (the
             // graph may be edited before Values is re-entered, so stale learned Q must not
             // survive). Switching quadrants/algorithm/sub-view deliberately preserves it.
+            stopQLPlay();
             qLearningState.reset();
+            if (mainView && mainView.inDevelopmentCard) mainView.inDevelopmentCard.hide();
             if (mainView && mainView.chartDock) mainView.chartDock.hide();
             if (mainView && mainView.estimatorPill) mainView.estimatorPill.hide();
             if (mainView && mainView.mcRunsPill) mainView.mcRunsPill.hide();
@@ -665,6 +736,7 @@ canvasController.registerModeLifecycle({
                 refreshLearningTreePill();
                 setUpVISplitChrome();
             }
+            refreshInDevCard();
         }
     },
     onEnterSubView: {
@@ -685,9 +757,11 @@ canvasController.registerModeLifecycle({
                 mainView.mcRunsPill.refresh();
             }
             setUpMCSplitChrome();
+            refreshInDevCard();
         },
         vi: () => {
             // VI has no other "run on enter" behavior - starts via explicit Play click
+            refreshInDevCard();
             if (mainView && mainView.zoomPill) mainView.zoomPill.show();
             if (mainView && mainView.estimatorPill) mainView.estimatorPill.refresh();
             if (mainView && mainView.mcRunsPill) mainView.mcRunsPill.hide();
@@ -711,6 +785,7 @@ canvasController.registerModeLifecycle({
             }
             refreshLearningTreePill();
             setUpVISplitChrome();
+            refreshInDevCard();
         }
     },
     onLeaveSubView: {
@@ -1046,8 +1121,16 @@ const refreshVIButtons = () => {
     // Bellman sweep - there's no "converged"/"T-capped" concept there, so Play/Step/Reset stay
     // always enabled. Reuse the same quadrant check onVIPlay/onVIStep/onVIReset already use,
     // rather than re-deriving it here.
+    if (_isPartialObservability()) {
+        // In development - nothing to run.
+        topBar.updateVIButtonStates(false, false, false, false);
+        return;
+    }
     if (_isLearningIterationActive()) {
-        topBar.updateVIButtonStates(false, true, true, true);
+        // Continuous "Run learning" playback: Step/Skip are disabled while playing, Play always
+        // enabled (it reads ⏸ Pause while the loop runs).
+        const playing = isQLPlaying();
+        topBar.updateVIButtonStates(playing, !playing, true, !playing);
         return;
     }
     // known:full (real Value Iteration): Step/Skip are gated by whether the live sweep's
@@ -1104,9 +1187,10 @@ function _afterQLChange() {
 // The actual Play/"Find Optimal" logic, unconditional - see onVIPlay below for the name-gate
 // wrapped around this for known:full's own "▶ Evaluate π" click specifically.
 const _runVIPlay = (forcedMode) => {
+    if (_isPartialObservability()) return;   // in development
     if (_isLearningIterationActive()) {
-        canvasController.runQLearning(10);   // "▶ Run learning": 10 episodes
-        _afterQLChange();
+        // "▶ Run learning" toggles continuous one-episode-per-tick playback (see startQLPlay).
+        if (isQLPlaying()) stopQLPlay(); else startQLPlay();
         return;
     }
     if (!runVIInteractor || !viPlayInteractor) return;
@@ -1146,8 +1230,8 @@ const onVIPlay = (forcedMode) => {
 };
 
 const onVIPause = () => {
-    // No continuous playback in Q-learning (Run is synchronous) - nothing to pause.
-    if (_isLearningIterationActive()) return;
+    if (_isPartialObservability()) return;
+    if (_isLearningIterationActive()) { stopQLPlay(); return; }
     if (!viPauseInteractor) return;
     viPauseInteractor.execute(new VIPauseInputData());
     // Freezes whichever state is currently mid-reveal exactly where it is, instead of only
@@ -1161,7 +1245,9 @@ const onVIPause = () => {
 };
 
 const onVIStep = (forcedMode) => {
+    if (_isPartialObservability()) return;
     if (_isLearningIterationActive()) {
+        stopQLPlay();
         canvasController.stepQLearning();    // exactly one episode
         _afterQLChange();
         return;
@@ -1174,10 +1260,11 @@ const onVIStep = (forcedMode) => {
 };
 
 const onVISkip = (forcedMode) => {
+    if (_isPartialObservability()) return;
     if (_isLearningIterationActive()) {
-        // Skip has no distinct meaning here yet - behave like Run (10 episodes) as an interim
-        // stopgap rather than a dead button.
-        canvasController.runQLearning(10);
+        // Skip = fast-forward: 50 episodes at once, no per-episode animation.
+        stopQLPlay();
+        canvasController.runQLearning(50);
         _afterQLChange();
         return;
     }
@@ -1189,7 +1276,9 @@ const onVISkip = (forcedMode) => {
 };
 
 const onVIReset = () => {
+    if (_isPartialObservability()) return;
     if (_isLearningIterationActive()) {
+        stopQLPlay();
         canvasController.resetQLearning();
         ensureQLRoot();                      // re-seed root so Tree shows its placeholder again
         _afterQLChange();
@@ -1517,6 +1606,14 @@ function setup() {
     }, canvasViewModel);
     mainView.findOptimalCard.setup();
 
+    // Partial observability "in development" placeholder (inDevelopmentCard.js) - covers the
+    // Iteration canvas while Observability = Partial; its CTA routes back through the same
+    // Parameters-popover handler so the whole refresh cascade runs.
+    mainView.inDevelopmentCard = new InDevelopmentCard({
+        onBackToFull: () => onObservabilityToggle('full')
+    }, canvasViewModel);
+    mainView.inDevelopmentCard.setup();
+
     // "Name this policy" modal (namePolicyModal.js) - shared by both Evaluate π (onEvaluatePolicy)
     // and Find Optimal π (promptNameOptimalPolicy/onRunFindOptimalBackups); each supplies its own
     // onConfirm/onCancel per show() call rather than being bound here at construction time.
@@ -1773,6 +1870,23 @@ function setup() {
     canvasController.interactors.runQL = runQLInteractor;
     canvasController.interactors.qlReset = qlResetInteractor;
     canvasController.interactors.setQLAlgorithm = setQLAlgorithmInteractor;
+
+    // DEPRECATED: PO Q-Learning (unknown:partial) POMDP interactors. Still constructed so the
+    // controller's thin runPomdp/stepPomdp/resetPomdp methods stay valid, but nothing in the UI
+    // reaches them while partial observability is in development (see _isPartialObservability).
+    const pomdpPresenter = new PomdpPresenter(canvasViewModel);
+    pomdpPresenter.onComplete = () => {
+        if (typeof redraw === 'function') redraw();
+    };
+    pomdpPresenter.onError = () => {
+        if (rightPanel) rightPanel.updateContent();
+    };
+    const runPomdpInteractor = new RunPomdpInteractor(graph, pomdpEpisodeGenerator, pomdpState, pomdpPresenter);
+    const pomdpResetInteractor = new PomdpResetInteractor(pomdpState, pomdpPresenter);
+    const setPomdpAlgorithmInteractor = new SetPomdpAlgorithmInteractor(pomdpState, pomdpPresenter);
+    canvasController.interactors.runPomdp = runPomdpInteractor;
+    canvasController.interactors.pomdpReset = pomdpResetInteractor;
+    canvasController.interactors.setPomdpAlgorithm = setPomdpAlgorithmInteractor;
 
     const learningIterationView = new LearningIterationView(canvasViewModel);
     mainView.learningIterationView = learningIterationView;
@@ -2056,3 +2170,15 @@ function touchMoved() {
 function windowResized() {
     mainView.windowResized();
 }
+
+// Minimal test/debug hook — exposes import + start-node setter so automated tests can drive the
+// app without needing a file-picker dialog. Not used by any production code path.
+window._rlvizTest = {
+    importGraph: (json) => canvasController.importGraph(json),
+    setStartNode: (id) => {
+        const node = graph.getNodeById(id);
+        if (node) canvasController.setStartNode(node);
+        return node ? node.name : 'not found';
+    },
+    getStartNodeName: () => canvasViewModel.startNode ? canvasViewModel.startNode.name : null,
+};

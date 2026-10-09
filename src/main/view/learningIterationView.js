@@ -57,28 +57,61 @@ class LearningIterationView {
         const graph = this.graph;
         const qls = this.qls;
 
+        // Edges of the most recent episode get an accent highlight so a Step visibly "walks" the
+        // graph. Keyed "s:a" (state->action) and "s:a:s'" (action->outcome).
+        const lastSA = new Set();
+        const lastSAS = new Set();
+        if (qls.lastEpisodePath) {
+            qls.lastEpisodePath.forEach(({ stateId, actionId, nextStateId }) => {
+                lastSA.add(`${stateId}:${actionId}`);
+                lastSAS.add(`${stateId}:${actionId}:${nextStateId}`);
+            });
+        }
+
         // Edges first (behind nodes).
         for (const stateNode of graph.nodes) {
             if (stateNode.type !== 'state' || !stateNode.actions) continue;
             for (const actionId of stateNode.actions) {
                 const actionNode = graph.getNodeById(actionId);
                 if (!actionNode) continue;
+                const nSA = qls.getN(stateNode.id, actionId);
+                const onPathSA = lastSA.has(`${stateNode.id}:${actionId}`);
                 // state -> action
                 this._drawEdge(stateNode.x, stateNode.y, actionNode.x, actionNode.y,
-                    stateNode.size, LI_ACTION_RADIUS, ColorUtils.applyAlpha(AppPalette.edge.default, 150), 1.4);
+                    stateNode.size, LI_ACTION_RADIUS,
+                    onPathSA ? ColorUtils.applyAlpha(this.accentHex, 230) : ColorUtils.applyAlpha(AppPalette.edge.default, 150),
+                    onPathSA ? 2.4 : 1.4);
                 // action -> next states
                 if (actionNode.sas) {
                     actionNode.sas.forEach(({ nextState, reward }) => {
                         const toNode = graph.getNodeById(nextState);
                         if (!toNode) return;
+                        const onPath = lastSAS.has(`${stateNode.id}:${actionId}:${nextState}`);
+                        const pHat = qls.getEstimatedP(stateNode.id, actionId, nextState);
+                        const sampled = pHat !== null && pHat > 0;
+                        // Learned-P edges: width/alpha scale with P̂ so the model visibly
+                        // sharpens as samples accumulate; never-observed outcomes stay faint.
+                        const alpha = onPath ? 230 : (sampled ? 90 + Math.round(120 * pHat) : 70);
+                        const weight = onPath ? 2.4 : (sampled ? 1 + 2 * pHat : 1);
                         this._drawEdge(actionNode.x, actionNode.y, toNode.x, toNode.y,
-                            LI_ACTION_RADIUS, toNode.size, ColorUtils.applyAlpha(AppPalette.edge.default, 90), 1);
+                            LI_ACTION_RADIUS, toNode.size,
+                            ColorUtils.applyAlpha(onPath ? this.accentHex : AppPalette.edge.default, alpha), weight);
                         const lx = (actionNode.x + toNode.x) / 2;
                         const ly = (actionNode.y + toNode.y) / 2 - 8;
-                        // P is unknown in this quadrant -> "p = ?"; reward is unaffected.
-                        mathRenderer.draw(drawingContext, 'p = ?', lx, ly,
-                            { color: AppPalette.text.placeholder, em: 9, alignX: 'center', alignY: 'middle' });
-                        mathRenderer.draw(drawingContext, `r = ${(reward || 0).toFixed(1)}`, lx, ly + 11,
+                        // P is unknown in this quadrant: before any sample the label is "p = ?";
+                        // once (s,a) has been tried it becomes the LEARNED estimate
+                        // p̂ = N(s,a,s')/N(s,a) with its sample count. Reward is observed directly.
+                        if (pHat === null) {
+                            mathRenderer.draw(drawingContext, 'p = ?', lx, ly,
+                                { color: AppPalette.text.placeholder, em: 9, alignX: 'center', alignY: 'middle' });
+                        } else {
+                            const nSAS = qls.getTransitionCount(stateNode.id, actionId, nextState);
+                            mathRenderer.draw(drawingContext, `p̂ = ${pHat.toFixed(2)}`, lx, ly,
+                                { color: sampled ? this.colors.result : AppPalette.text.placeholder, em: 9, alignX: 'center', alignY: 'middle' });
+                            mathRenderer.draw(drawingContext, `n = ${nSAS}/${nSA}`, lx, ly + 11,
+                                { color: AppPalette.text.light, em: 8, alignX: 'center', alignY: 'middle' });
+                        }
+                        mathRenderer.draw(drawingContext, `r = ${(reward || 0).toFixed(1)}`, lx, ly + (pHat === null ? 11 : 21),
                             { color: AppPalette.text.medium, em: 9, alignX: 'center', alignY: 'middle' });
                     });
                 }
@@ -92,6 +125,20 @@ class LearningIterationView {
                 ColorUtils.applyAlpha(AppPalette.node.action, 220), 255);
         }
 
+        // Exploration halos on the flat graph too (same semantics as the Tree view's): the
+        // action the current behavior policy favors from each state, and (UCB/Softmax) how much
+        // of that is exploration bonus / probability mass.
+        for (const node of graph.nodes) {
+            if (node.type !== 'state' || !node.actions || node.actions.length < 2) continue;
+            const children = node.actions.map(a => {
+                const an = graph.getNodeById(a);
+                return an ? { kind: 'action', actionId: a, x: an.x, y: an.y, visited: qls.getN(node.id, a) > 0 } : null;
+            }).filter(Boolean);
+            const pseudo = { stateId: node.id, children };
+            if (qls.algorithm === 'ucb') this._drawUCBHalos(pseudo);
+            else if (qls.algorithm === 'softmax') this._drawSoftmaxHalos(pseudo);
+        }
+
         // State nodes with Q̂ estimate.
         for (const node of graph.nodes) {
             if (node.type !== 'state') continue;
@@ -102,8 +149,7 @@ class LearningIterationView {
             if (actions.length === 0) {
                 label = 'terminal';
             } else {
-                const vHat = Math.max(...actions.map(a => qls.getQ(node.id, a)));
-                label = `Q̂ = ${vHat.toFixed(2)}`;
+                label = `Q̂ = ${qls.getVHat(node.id, actions).toFixed(2)}`;
             }
             mathRenderer.draw(drawingContext, label, node.x, node.y + 11,
                 { color: hasData ? this.colors.result : AppPalette.text.light, em: 11, alignX: 'center', alignY: 'middle' });
@@ -141,10 +187,15 @@ class LearningIterationView {
             });
         });
 
-        // UCB halos (drawn under the diamonds so the diamond sits on top of the ring center).
+        // Exploration halos (drawn under the diamonds so the diamond sits on top of the ring
+        // center): UCB bonus rings, or Softmax probability-mass rings.
         if (qls.algorithm === 'ucb') {
             this._forEachTreeNode(tree, node => {
                 if (node.kind === 'state') this._drawUCBHalos(node);
+            });
+        } else if (qls.algorithm === 'softmax') {
+            this._forEachTreeNode(tree, node => {
+                if (node.kind === 'state') this._drawSoftmaxHalos(node);
             });
         }
 
@@ -315,6 +366,35 @@ class LearningIterationView {
                         ColorUtils.applyAlpha(ringHex, 70), 2);
                 }
             }
+        });
+    }
+
+    // Softmax counterpart of _drawUCBHalos: each sibling action gets a ring whose angular sweep
+    // is its selection probability π(a|s) = softmax(Q/τ) (a full ring = probability 1), so a
+    // flat distribution (high τ / similar Q) reads as equal partial rings and a peaked one as a
+    // single near-complete ring. The argmax-probability action (== argmax-Q) gets the "best"
+    // color; no "explore vs exploit" split applies since Softmax explores by sampling, not by
+    // ever deliberately picking a non-greedy argmax.
+    _drawSoftmaxHalos(stateNode) {
+        const qls = this.qls;
+        const actionChildren = stateNode.children.filter(c => c.kind === 'action');
+        if (actionChildren.length < 2) return;
+        const allActionIds = actionChildren.map(c => c.actionId);
+        const probs = qls.softmaxProbabilities(stateNode.stateId, allActionIds);
+        if (!probs) return;
+        let bestId = null, bestP = -1;
+        actionChildren.forEach(c => {
+            const p = probs.get(c.actionId);
+            if (typeof p === 'number' && p > bestP) { bestP = p; bestId = c.actionId; }
+        });
+        actionChildren.forEach(c => {
+            const p = probs.get(c.actionId);
+            if (typeof p !== 'number' || !isFinite(p)) return;
+            const sweep = Math.max(Math.PI / 12, p * 2 * Math.PI);
+            const isBest = c.actionId === bestId;
+            this._drawHaloArc(c.x, c.y, LI_ACTION_RADIUS + 7, sweep,
+                ColorUtils.applyAlpha(isBest ? AppPalette.reward.positive : this.accentHex, isBest ? 235 : 150),
+                isBest ? 3 : 2);
         });
     }
 

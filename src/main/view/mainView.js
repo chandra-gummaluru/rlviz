@@ -341,6 +341,9 @@ class MainView {
         if (!this.expectationView) return null;
         const quadrant = ValuesMethodMatrix.key(this.viewModel.modelKnown, this.viewModel.observability);
         if (quadrant === 'unknown:full') return null;
+        // Partial observability is in development - the canvas is covered by inDevelopmentCard.js,
+        // so no split chrome (States/Equation/Chart panes, pills) is laid out for it.
+        if (this.viewModel.observability === 'partial') return null;
         return this.expectationView.expectationViewModel.splitWidths(usableW);
     }
 
